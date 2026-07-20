@@ -1,0 +1,1231 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>LightCode — 任务历史</title>
+<link href="https://fonts.googleapis.com/css2?family=Caveat:wght@400;600;700&family=Patrick+Hand&family=Architects+Daughter&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --pencil: #2a2a2a;
+    --marker-dark: #1a1a1a;
+    --marker-accent: #d4a017;
+    --paper: #f5f0e8;
+    --green-ink: #2d7a3a;
+    --red-ink: #b83030;
+    --blue-ink: #3a6090;
+    --orange-ink: #c87020;
+    --blue-grey: #6b7d8e;
+  }
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body { height: 100%; overflow: hidden; }
+
+  body {
+    background: var(--paper);
+    font-family: 'Architects Daughter', 'Patrick Hand', cursive;
+    color: var(--pencil);
+    height: 100vh;
+    display: flex; flex-direction: column;
+    padding: 0;
+  }
+
+  /* ========== SHELL: header + workbench ========== */
+  .shell {
+    flex: 1; min-height: 0; display: flex; flex-direction: column;
+    max-width: 100%; width: 100%; margin: 0 auto;
+    padding: 18px 150px 0; overflow: hidden;
+  }
+
+  /* ========== TOP BAR ========== */
+  .top-bar {
+    display: flex; align-items: center; justify-content: space-between;
+    padding-bottom: 12px; border-bottom: 2px solid var(--pencil);
+    margin-bottom: 14px; flex-shrink: 0;
+  }
+  .brand {
+    font-family: 'Caveat', cursive; font-size: 26px; font-weight: 700;
+    color: var(--marker-dark); letter-spacing: 0.5px;
+    transform: rotate(-0.4deg); display: flex; align-items: center; gap: 8px;
+  }
+  .brand-dot {
+    width: 8px; height: 8px; border-radius: 50%;
+    background: var(--green-ink); border: 1.5px solid var(--green-ink);
+    flex-shrink: 0; position: relative; top: -1px;
+  }
+  .top-right { display: flex; align-items: center; gap: 12px; }
+  .runtime-badge {
+    font-family: 'JetBrains Mono', monospace; font-size: 10px;
+    color: var(--green-ink); border: 1.5px solid var(--green-ink);
+    border-radius: 4px; padding: 3px 8px;
+    background: rgba(45,122,58,0.06);
+    display: flex; align-items: center; gap: 5px; transform: rotate(0.2deg);
+  }
+  .runtime-badge::before {
+    content: ''; width: 5px; height: 5px; border-radius: 50%;
+    background: var(--green-ink);
+  }
+  .settings-icon {
+    font-family: 'JetBrains Mono', monospace; font-size: 16px;
+    color: #999; cursor: pointer; padding: 4px; line-height: 1;
+    transform: rotate(0.3deg);
+  }
+  .settings-icon:hover { color: var(--pencil); }
+
+  /* ========== PROJECT CONTEXT ========== */
+  .project-context {
+    display: flex; align-items: center; gap: 10px;
+    margin-bottom: 14px; flex-shrink: 0;
+    padding-bottom: 10px; border-bottom: 1.5px dashed #ccc;
+  }
+  .back-link {
+    font-family: 'Architects Daughter', cursive; font-size: 13px;
+    color: var(--blue-grey); cursor: pointer; text-decoration: none;
+    display: flex; align-items: center; gap: 4px; transition: color 0.12s;
+  }
+  .back-link:hover { color: var(--pencil); }
+  .back-link .arrow { font-size: 11px; }
+  .project-name-inline {
+    font-family: 'Caveat', cursive; font-size: 18px; font-weight: 700;
+    color: var(--marker-dark); transform: rotate(-0.2deg);
+  }
+  .project-path-inline {
+    font-family: 'JetBrains Mono', monospace; font-size: 10px; color: #999;
+  }
+  .ctx-spacer { flex: 1; }
+  .status-chip {
+    font-family: 'JetBrains Mono', monospace; font-size: 9px;
+    padding: 2px 7px; border-radius: 3px;
+    display: flex; align-items: center; gap: 4px;
+  }
+  .status-chip::before {
+    content: ''; width: 5px; height: 5px; border-radius: 50%; flex-shrink: 0;
+  }
+  .chip-running { color: var(--green-ink); background: rgba(45,122,58,0.08); border: 1px solid rgba(45,122,58,0.25); }
+  .chip-running::before { background: var(--green-ink); }
+
+  /* ========== PAGE HEADER ========== */
+  .page-header { margin-bottom: 10px; flex-shrink: 0; }
+  .page-title {
+    font-family: 'Caveat', cursive; font-size: 28px; font-weight: 700;
+    color: var(--marker-dark); transform: rotate(-0.3deg); margin-bottom: 2px;
+  }
+  .page-subtitle {
+    font-family: 'Patrick Hand', cursive; font-size: 13px;
+    color: var(--blue-grey); transform: rotate(-0.1deg);
+  }
+
+  /* ========== SEARCH ========== */
+  .search-bar { display: flex; align-items: center; gap: 8px; margin-bottom: 10px; flex-shrink: 0; }
+  .search-input {
+    flex: 1; padding: 8px 12px;
+    font-family: 'JetBrains Mono', monospace; font-size: 11px;
+    color: var(--pencil); background: rgba(255,255,255,0.5);
+    border: 1.5px solid #d8d0c4; border-radius: 4px;
+    outline: none; transition: border-color 0.15s;
+  }
+  .search-input:focus { border-color: var(--blue-grey); }
+  .search-input::placeholder { color: #bbb; }
+
+  /* ========== FILTERS ========== */
+  .filter-bar { display: flex; align-items: center; gap: 5px; margin-bottom: 14px; flex-shrink: 0; flex-wrap: wrap; }
+  .filter-chip {
+    font-family: 'Architects Daughter', cursive; font-size: 12px;
+    padding: 4px 10px; border: 1.5px solid #d8d0c4; border-radius: 4px;
+    background: none; color: #888; cursor: pointer;
+    transition: all 0.12s; white-space: nowrap;
+  }
+  .filter-chip:hover { border-color: #bbb; color: var(--pencil); }
+  .filter-chip.active {
+    border-color: var(--pencil); color: var(--pencil);
+    background: rgba(0,0,0,0.04); font-weight: 600;
+  }
+  .filter-count {
+    font-family: 'JetBrains Mono', monospace; font-size: 9px;
+    color: #bbb; margin-left: 2px;
+  }
+
+  /* ========== WORKBENCH (squeeze layout) ========== */
+  .workbench {
+    flex: 1; min-height: 0; display: flex; gap: 0;
+  }
+
+  /* ========== LEFT: task list ========== */
+  .task-list-panel {
+    flex: 1; min-width: 0; display: flex; flex-direction: column;
+    overflow: hidden;
+  }
+  .main-scroll { flex: 1; min-height: 0; overflow-y: auto; padding-right: 4px; }
+  .main-scroll::-webkit-scrollbar { width: 5px; }
+  .main-scroll::-webkit-scrollbar-track { background: rgba(0,0,0,0.03); border-radius: 4px; }
+  .main-scroll::-webkit-scrollbar-thumb { background: #c5b9a8; border-radius: 4px; border: 1px solid rgba(0,0,0,0.06); }
+  .main-scroll::-webkit-scrollbar-thumb:hover { background: #a99e8d; }
+  .main-scroll { scrollbar-width: thin; scrollbar-color: #c5b9a8 rgba(0,0,0,0.03); }
+
+  /* ========== TIMELINE ========== */
+  .timeline { display: flex; flex-direction: column; gap: 0; position: relative; }
+  .timeline::before {
+    content: ''; position: absolute; left: 11px; top: 0; bottom: 0; width: 2px;
+    background: repeating-linear-gradient(to bottom, #d8d0c4 0px, #d8d0c4 4px, transparent 4px, transparent 8px);
+  }
+
+  /* ========== TASK ENTRY ========== */
+  .task-entry {
+    display: flex; gap: 14px; padding: 10px 0; position: relative;
+    cursor: pointer; transition: background 0.1s;
+  }
+  .task-entry:hover { background: rgba(0,0,0,0.015); }
+  .task-entry.active-entry { background: rgba(0,0,0,0.03); }
+
+  .tl-dot-col {
+    flex-shrink: 0; width: 24px; display: flex; justify-content: center;
+    padding-top: 6px; position: relative; z-index: 1;
+  }
+  .tl-dot {
+    width: 10px; height: 10px; border-radius: 50%;
+    border: 2px solid var(--pencil); background: var(--paper); flex-shrink: 0;
+  }
+  .tl-dot.waiting { background: var(--orange-ink); border-color: var(--orange-ink); }
+  .tl-dot.done { background: var(--green-ink); border-color: var(--green-ink); }
+  .tl-dot.fail { background: var(--red-ink); border-color: var(--red-ink); }
+  .tl-dot.cancelled { background: #bbb; border-color: #bbb; border-style: dashed; }
+
+  .entry-body { flex: 1; min-width: 0; }
+
+  .task-entry.primary {
+    border: 2.5px solid var(--orange-ink); border-radius: 6px;
+    background: rgba(212,160,23,0.04); padding: 12px 16px;
+    transform: rotate(-0.15deg); margin-bottom: 4px;
+  }
+  .task-entry.primary .tl-dot-col { padding-top: 6px; }
+
+  .task-entry.secondary {
+    border: 1.5px solid #e0d8cc; border-radius: 5px;
+    background: rgba(255,255,255,0.15); padding: 10px 14px; margin-bottom: 4px;
+  }
+  .task-entry.secondary.fail-entry {
+    border-color: rgba(184,48,48,0.25); background: rgba(184,48,48,0.02);
+  }
+  .task-entry.secondary.cancelled-entry {
+    border-style: dashed; border-color: #d8d0c4; opacity: 0.7;
+  }
+
+  .entry-header {
+    display: flex; align-items: center; gap: 8px;
+    margin-bottom: 4px; flex-wrap: wrap;
+  }
+  .entry-status {
+    font-family: 'JetBrains Mono', monospace; font-size: 9px;
+    padding: 1px 6px; border-radius: 3px;
+    display: flex; align-items: center; gap: 4px; flex-shrink: 0;
+  }
+  .entry-status::before {
+    content: ''; width: 5px; height: 5px; border-radius: 50%; flex-shrink: 0;
+  }
+  .entry-status.s-waiting { color: var(--orange-ink); background: rgba(212,160,23,0.1); border: 1px solid rgba(200,112,32,0.3); }
+  .entry-status.s-waiting::before { background: var(--orange-ink); }
+  .entry-status.s-done { color: var(--green-ink); background: rgba(45,122,58,0.08); border: 1px solid rgba(45,122,58,0.25); }
+  .entry-status.s-done::before { background: var(--green-ink); }
+  .entry-status.s-fail { color: var(--red-ink); background: rgba(184,48,48,0.06); border: 1px solid rgba(184,48,48,0.2); }
+  .entry-status.s-fail::before { background: var(--red-ink); }
+  .entry-status.s-cancelled { color: var(--blue-grey); background: rgba(107,125,142,0.06); border: 1px solid rgba(107,125,142,0.2); }
+  .entry-status.s-cancelled::before { background: #bbb; }
+
+  .entry-time { font-family: 'JetBrains Mono', monospace; font-size: 9px; color: #aaa; flex-shrink: 0; }
+  .entry-duration { font-family: 'JetBrains Mono', monospace; font-size: 9px; color: #ccc; flex-shrink: 0; }
+  .entry-spacer { flex: 1; }
+
+  .entry-task {
+    font-family: 'Caveat', cursive; font-size: 17px; font-weight: 700;
+    color: var(--marker-dark); margin-bottom: 3px;
+    transform: rotate(-0.15deg); line-height: 1.3;
+  }
+  .task-entry.secondary .entry-task { font-size: 15px; }
+
+  .entry-summary {
+    font-family: 'Architects Daughter', cursive; font-size: 12px;
+    color: #555; line-height: 1.5; margin-bottom: 5px;
+    transform: rotate(-0.05deg);
+  }
+
+  .entry-meta { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+  .meta-files {
+    font-family: 'JetBrains Mono', monospace; font-size: 10px;
+    color: var(--blue-ink); display: flex; align-items: center; gap: 4px;
+  }
+  .file-chip {
+    padding: 1px 5px; border: 1px solid rgba(58,96,144,0.25);
+    border-radius: 3px; background: rgba(58,96,144,0.04); white-space: nowrap;
+  }
+  .diff-stat-add { color: var(--green-ink); font-weight: 500; }
+  .diff-stat-del { color: var(--red-ink); font-weight: 500; }
+
+  .meta-tests { font-family: 'JetBrains Mono', monospace; font-size: 10px; display: flex; align-items: center; gap: 4px; }
+  .test-badge { padding: 1px 5px; border-radius: 3px; }
+  .test-badge.pass { color: var(--green-ink); background: rgba(45,122,58,0.08); border: 1px solid rgba(45,122,58,0.2); }
+  .test-badge.fail { color: var(--red-ink); background: rgba(184,48,48,0.06); border: 1px solid rgba(184,48,48,0.15); }
+  .test-badge.none { color: #bbb; background: rgba(0,0,0,0.02); border: 1px solid #e0d8cc; }
+
+  .meta-tools { font-family: 'JetBrains Mono', monospace; font-size: 9px; color: #bbb; }
+
+  .entry-action {
+    font-family: 'Caveat', cursive; font-size: 14px; font-weight: 600;
+    padding: 5px 12px; border: 2px solid var(--pencil); border-radius: 4px;
+    background: none; color: var(--pencil); cursor: pointer;
+    white-space: nowrap; flex-shrink: 0; transform: rotate(-0.3deg);
+    transition: background 0.12s, border-color 0.12s, color 0.12s;
+    align-self: flex-start; margin-top: 2px;
+  }
+  .entry-action:hover { background: rgba(0,0,0,0.04); }
+  .action-review {
+    border-color: var(--orange-ink); color: var(--orange-ink);
+    background: rgba(212,160,23,0.1); font-weight: 700;
+  }
+  .action-review:hover { background: rgba(212,160,23,0.18); }
+  .action-fail-detail { border-color: var(--red-ink); color: var(--red-ink); }
+  .action-fail-detail:hover { background: rgba(184,48,48,0.06); }
+
+  /* ========== RESIZE HANDLE ========== */
+  .resize-handle {
+    width: 8px; cursor: col-resize; flex-shrink: 0;
+    display: flex; align-items: center; justify-content: center;
+    opacity: 0; transition: opacity 0.15s; position: relative; z-index: 5;
+  }
+  .resize-handle.visible { opacity: 1; }
+  .resize-handle::after {
+    content: ''; width: 2px; height: 40px; border-radius: 1px;
+    background: #ccc; transition: background 0.15s;
+  }
+  .resize-handle:hover::after { background: var(--orange-ink); }
+  .resize-handle.dragging::after { background: var(--orange-ink); height: 60px; }
+
+  /* ========== RIGHT: detail panel (squeeze) ========== */
+  .detail-panel {
+    width: 0; min-width: 0; border: none; border-radius: 0;
+    padding: 0; background: none; overflow: hidden;
+    display: flex; flex-direction: column;
+    transition: width 0.25s ease, min-width 0.25s ease, padding 0.25s ease, border 0.25s ease, background 0.25s ease;
+    flex-shrink: 0;
+  }
+  .detail-panel.open {
+    width: 45vw; min-width: 340px; max-width: 55vw;
+    border: 2px solid var(--pencil); border-radius: 6px;
+    padding: 10px 14px; background: rgba(255,255,255,0.25);
+  }
+
+  .detail-header {
+    display: flex; align-items: flex-start; gap: 10px;
+    padding-bottom: 10px; border-bottom: 1.5px dashed #d8d0c4;
+    flex-shrink: 0;
+  }
+  .detail-status {
+    font-family: 'JetBrains Mono', monospace; font-size: 10px;
+    padding: 2px 8px; border-radius: 3px;
+    display: flex; align-items: center; gap: 4px; flex-shrink: 0; margin-top: 2px;
+  }
+  .detail-status::before {
+    content: ''; width: 6px; height: 6px; border-radius: 50%; flex-shrink: 0;
+  }
+  .detail-status.ds-done { color: var(--green-ink); background: rgba(45,122,58,0.08); border: 1px solid rgba(45,122,58,0.25); }
+  .detail-status.ds-done::before { background: var(--green-ink); }
+  .detail-status.ds-fail { color: var(--red-ink); background: rgba(184,48,48,0.06); border: 1px solid rgba(184,48,48,0.2); }
+  .detail-status.ds-fail::before { background: var(--red-ink); }
+  .detail-status.ds-cancelled { color: var(--blue-grey); background: rgba(107,125,142,0.06); border: 1px solid rgba(107,125,142,0.2); }
+  .detail-status.ds-cancelled::before { background: #bbb; }
+
+  .detail-title-group { flex: 1; min-width: 0; }
+  .detail-title {
+    font-family: 'Caveat', cursive; font-size: 18px; font-weight: 700;
+    color: var(--marker-dark); transform: rotate(-0.2deg); line-height: 1.3;
+  }
+  .detail-meta {
+    font-family: 'JetBrains Mono', monospace; font-size: 9px;
+    color: #aaa; margin-top: 3px; display: flex; gap: 8px;
+  }
+
+  .detail-close {
+    font-family: 'JetBrains Mono', monospace; font-size: 16px;
+    color: #999; cursor: pointer; padding: 3px 5px; line-height: 1;
+    border: 1.5px solid #d8d0c4; border-radius: 4px; background: none;
+    transition: all 0.12s; flex-shrink: 0;
+  }
+  .detail-close:hover { color: var(--pencil); border-color: #bbb; background: rgba(0,0,0,0.03); }
+
+  .detail-scroll {
+    flex: 1; overflow-y: auto; padding-top: 12px;
+  }
+  .detail-scroll::-webkit-scrollbar { width: 4px; }
+  .detail-scroll::-webkit-scrollbar-thumb { background: #c5b9a8; border-radius: 4px; }
+
+  /* Detail sections */
+  .detail-section { margin-bottom: 14px; }
+  .detail-section:last-child { margin-bottom: 0; }
+  .detail-section-label {
+    font-family: 'JetBrains Mono', monospace; font-size: 9px;
+    text-transform: uppercase; letter-spacing: 1.5px;
+    color: var(--blue-grey); margin-bottom: 6px;
+    padding-bottom: 4px; border-bottom: 1px dashed #e0d8cc;
+  }
+  .detail-summary {
+    font-family: 'Architects Daughter', cursive; font-size: 12px;
+    color: #444; line-height: 1.6; transform: rotate(-0.05deg);
+  }
+
+  /* Failure / Cancel alerts */
+  .fail-alert {
+    border: 2px solid var(--red-ink); border-radius: 5px;
+    background: rgba(184,48,48,0.04); padding: 10px 12px; margin-bottom: 12px;
+  }
+  .fail-alert-title {
+    font-family: 'Caveat', cursive; font-size: 15px; font-weight: 700;
+    color: var(--red-ink); margin-bottom: 4px;
+  }
+  .fail-alert-body {
+    font-family: 'Architects Daughter', cursive; font-size: 12px;
+    color: #555; line-height: 1.5;
+  }
+  .fail-alert-cmd {
+    font-family: 'JetBrains Mono', monospace; font-size: 10px;
+    color: var(--red-ink); background: rgba(184,48,48,0.06);
+    border: 1px solid rgba(184,48,48,0.15); border-radius: 3px;
+    padding: 3px 6px; margin-top: 6px; display: inline-block;
+  }
+  .cancel-alert {
+    border: 1.5px dashed var(--blue-grey); border-radius: 5px;
+    background: rgba(107,125,142,0.04); padding: 10px 12px; margin-bottom: 12px;
+  }
+  .cancel-alert-title {
+    font-family: 'Caveat', cursive; font-size: 15px; font-weight: 700;
+    color: var(--blue-grey); margin-bottom: 4px;
+  }
+  .cancel-alert-body {
+    font-family: 'Architects Daughter', cursive; font-size: 12px;
+    color: #555; line-height: 1.5;
+  }
+
+  /* Plan steps */
+  .plan-steps { display: flex; flex-direction: column; gap: 3px; }
+  .plan-step {
+    display: flex; align-items: center; gap: 6px;
+    font-family: 'Architects Daughter', cursive; font-size: 12px;
+    color: #555; transform: rotate(-0.1deg); padding: 3px 0;
+  }
+  .step-mark {
+    width: 14px; height: 14px; border: 1.5px solid var(--pencil);
+    border-radius: 3px; display: flex; align-items: center; justify-content: center;
+    font-size: 9px; flex-shrink: 0; background: rgba(255,255,255,0.5);
+  }
+  .step-mark.done { background: rgba(45,122,58,0.15); border-color: var(--green-ink); color: var(--green-ink); }
+  .step-mark.fail { background: rgba(184,48,48,0.1); border-color: var(--red-ink); color: var(--red-ink); }
+  .step-mark.waiting { background: rgba(212,160,23,0.1); border-color: var(--orange-ink); color: var(--orange-ink); }
+  .step-mark.pending { color: #ccc; }
+  .step-label { flex: 1; }
+  .step-tag {
+    font-family: 'JetBrains Mono', monospace; font-size: 8px;
+    padding: 1px 4px; border-radius: 2px; flex-shrink: 0;
+  }
+  .step-tag.t-done { color: var(--green-ink); background: rgba(45,122,58,0.08); }
+  .step-tag.t-fail { color: var(--red-ink); background: rgba(184,48,48,0.06); }
+  .step-tag.t-waiting { color: var(--orange-ink); background: rgba(212,160,23,0.08); }
+  .step-tag.t-pending { color: #ccc; background: rgba(0,0,0,0.02); }
+
+  /* Tool call log */
+  .tool-log { display: flex; flex-direction: column; gap: 2px; }
+  .tool-line {
+    display: flex; align-items: center; gap: 6px;
+    font-family: 'JetBrains Mono', monospace; font-size: 10px;
+    padding: 3px 6px; border-radius: 3px; color: #555;
+    background: rgba(255,255,255,0.25); border: 1px solid #eee;
+    cursor: pointer; transition: background 0.1s;
+  }
+  .tool-line:hover { background: rgba(255,255,255,0.5); }
+  .tool-icon { font-size: 9px; flex-shrink: 0; width: 14px; text-align: center; }
+  .tool-name { color: var(--blue-ink); font-weight: 500; }
+  .tool-args { color: #999; flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .tool-status { font-size: 9px; flex-shrink: 0; }
+  .tool-status.ts-ok { color: var(--green-ink); }
+  .tool-status.ts-fail { color: var(--red-ink); }
+
+  /* File changes */
+  .file-list { display: flex; flex-direction: column; gap: 4px; }
+  .file-row {
+    display: flex; align-items: center; gap: 8px;
+    font-family: 'JetBrains Mono', monospace; font-size: 10px;
+    padding: 5px 8px; border: 1px solid #e0d8cc; border-radius: 4px;
+    background: rgba(255,255,255,0.2); cursor: pointer; transition: background 0.1s;
+  }
+  .file-row:hover { background: rgba(255,255,255,0.45); }
+  .file-name { color: var(--blue-ink); font-weight: 500; flex: 1; }
+  .file-diff { display: flex; gap: 4px; flex-shrink: 0; }
+  .file-diff span { font-weight: 500; }
+  .file-expand-icon { color: #ccc; font-size: 9px; flex-shrink: 0; }
+
+  .file-diff-inline {
+    display: none; margin-top: 4px; padding: 6px 8px;
+    border: 1px solid #e0d8cc; border-radius: 3px;
+    background: rgba(0,0,0,0.02); font-family: 'JetBrains Mono', monospace;
+    font-size: 9px; line-height: 1.6; color: #555;
+    white-space: pre; overflow-x: auto;
+  }
+  .file-diff-inline.show { display: block; }
+
+  /* Approval */
+  .approval-row {
+    display: flex; align-items: center; gap: 8px;
+    font-family: 'Architects Daughter', cursive; font-size: 12px;
+    padding: 6px 0; color: #555;
+  }
+  .approval-dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
+  .approval-dot.ap-approved { background: var(--green-ink); }
+  .approval-dot.ap-rejected { background: var(--red-ink); }
+  .approval-dot.ap-pending { background: var(--orange-ink); }
+  .approval-dot.ap-none { background: #ccc; border: 1.5px dashed #bbb; }
+  .approval-time {
+    font-family: 'JetBrains Mono', monospace; font-size: 9px; color: #aaa; margin-left: auto;
+  }
+
+  /* Test result */
+  .test-block {
+    border: 1.5px solid #e0d8cc; border-radius: 4px;
+    padding: 8px 10px; background: rgba(255,255,255,0.2);
+  }
+  .test-cmd {
+    font-family: 'JetBrains Mono', monospace; font-size: 10px;
+    color: var(--blue-grey); margin-bottom: 4px;
+  }
+  .test-result {
+    font-family: 'Caveat', cursive; font-size: 16px; font-weight: 700;
+    transform: rotate(-0.1deg);
+  }
+  .test-result.tr-pass { color: var(--green-ink); }
+  .test-result.tr-fail { color: var(--red-ink); }
+  .test-result.tr-none { color: #bbb; }
+  .test-detail {
+    font-family: 'JetBrains Mono', monospace; font-size: 9px;
+    color: #999; margin-top: 2px;
+  }
+
+  /* Detail footer */
+  .detail-footer {
+    flex-shrink: 0; padding-top: 10px;
+    border-top: 1.5px dashed #d8d0c4; margin-top: 10px;
+    display: flex; justify-content: flex-end;
+  }
+  .detail-close-btn {
+    font-family: 'Caveat', cursive; font-size: 14px; font-weight: 600;
+    padding: 6px 16px; border: 1.5px solid #d8d0c4; border-radius: 4px;
+    background: none; color: #888; cursor: pointer; transition: all 0.12s;
+  }
+  .detail-close-btn:hover { border-color: #bbb; color: var(--pencil); background: rgba(0,0,0,0.03); }
+
+  /* ========== FOOTER ========== */
+  .footer-bar {
+    flex-shrink: 0; padding: 10px 0 14px;
+    border-top: 1.5px dashed #d8d0c4; margin-top: 10px;
+    display: flex; align-items: center; justify-content: center; gap: 5px;
+  }
+  .footer-note-text { font-family: 'JetBrains Mono', monospace; font-size: 9px; color: #bbb; }
+
+  /* ========== RESPONSIVE ========== */
+  @media (max-width: 900px) {
+    .detail-panel.open { width: 80vw; min-width: 0; max-width: none; }
+  }
+  @media (max-width: 640px) {
+    .shell { padding: 12px 24px 0; }
+    .top-bar { flex-wrap: wrap; gap: 6px; }
+    .project-context { flex-wrap: wrap; }
+    .entry-header { gap: 4px; }
+    .entry-meta { gap: 6px; }
+  }
+</style>
+</head>
+<body>
+
+<div class="shell">
+
+  <!-- TOP BAR -->
+  <div class="top-bar" data-od-id="top-bar">
+    <div class="brand"><span class="brand-dot"></span>LightCode</div>
+    <div class="top-right">
+      <div class="runtime-badge">Local runtime ready</div>
+      <div class="settings-icon" title="设置">⚙</div>
+    </div>
+  </div>
+
+  <!-- PROJECT CONTEXT -->
+  <div class="project-context" data-od-id="project-context">
+    <a class="back-link" href="#" data-od-id="back-to-workspace"><span class="arrow">←</span> 返回工作区</a>
+    <span class="project-name-inline">login-service</span>
+    <span class="project-path-inline">~/workspace/login-service</span>
+    <span class="ctx-spacer"></span>
+    <span class="status-chip chip-running">本地运行中</span>
+  </div>
+
+  <!-- PAGE HEADER -->
+  <div class="page-header" data-od-id="page-header">
+    <div class="page-title">任务历史</div>
+    <div class="page-subtitle">Agent 在本项目中执行过的所有任务</div>
+  </div>
+
+  <!-- SEARCH -->
+  <div class="search-bar" data-od-id="search-bar">
+    <input class="search-input" type="text" placeholder="搜索任务描述、文件名、测试命令…" id="searchInput">
+  </div>
+
+  <!-- FILTERS -->
+  <div class="filter-bar" data-od-id="filter-bar">
+    <button class="filter-chip active" data-filter="all">全部 <span class="filter-count">8</span></button>
+    <button class="filter-chip" data-filter="waiting">等待审批 <span class="filter-count">1</span></button>
+    <button class="filter-chip" data-filter="done">已完成 <span class="filter-count">4</span></button>
+    <button class="filter-chip" data-filter="fail">失败 <span class="filter-count">2</span></button>
+    <button class="filter-chip" data-filter="cancelled">已取消 <span class="filter-count">1</span></button>
+  </div>
+
+  <!-- WORKBENCH: left list + handle + right detail -->
+  <div class="workbench" data-od-id="workbench">
+
+    <!-- LEFT: task list -->
+    <div class="task-list-panel" data-od-id="task-list-panel">
+      <div class="main-scroll" data-od-id="main-scroll">
+        <div class="timeline" data-od-id="timeline">
+
+          <!-- ENTRY 1: 等待审批 -->
+          <div class="task-entry primary" data-od-id="entry-1" data-status="waiting" data-task-id="1">
+            <div class="tl-dot-col"><div class="tl-dot waiting"></div></div>
+            <div class="entry-body">
+              <div class="entry-header">
+                <span class="entry-status s-waiting">等待审批</span>
+                <span class="entry-time">今天 14:32</span>
+                <span class="entry-duration">· 3 分钟前</span>
+                <span class="entry-spacer"></span>
+                <button class="entry-action action-review" onclick="event.stopPropagation(); openReview();">继续审查</button>
+              </div>
+              <div class="entry-task">为 login.py 的登录接口增加输入校验，并运行相关测试</div>
+              <div class="entry-summary">已读取 login.py，分析现有登录接口。当前实现缺少类型检查、长度校验和输入清洗。Diff 已生成，等待你审批后写入文件并运行测试。</div>
+              <div class="entry-meta">
+                <span class="meta-files"><span class="file-chip">login.py <span class="diff-stat-add">+6</span> <span class="diff-stat-del">-2</span></span></span>
+                <span class="meta-tests"><span class="test-badge none">未运行</span></span>
+                <span class="meta-tools">4 次工具调用</span>
+              </div>
+            </div>
+          </div>
+
+          <!-- ENTRY 2: 已完成 -->
+          <div class="task-entry secondary" data-od-id="entry-2" data-status="done" data-task-id="2">
+            <div class="tl-dot-col"><div class="tl-dot done"></div></div>
+            <div class="entry-body">
+              <div class="entry-header">
+                <span class="entry-status s-done">已完成</span>
+                <span class="entry-time">今天 13:18</span>
+                <span class="entry-duration">· 5 分钟</span>
+                <span class="entry-spacer"></span>
+                <button class="entry-action" onclick="event.stopPropagation(); openDetail(2);">查看记录</button>
+              </div>
+              <div class="entry-task">重构 utils.py 中的日期格式化函数</div>
+              <div class="entry-summary">将分散的日期格式化逻辑统一为 format_date() 工具函数，支持 ISO 和本地化两种模式。已更新 3 处调用方。</div>
+              <div class="entry-meta">
+                <span class="meta-files">
+                  <span class="file-chip">utils.py <span class="diff-stat-add">+18</span> <span class="diff-stat-del">-32</span></span>
+                  <span class="file-chip">login.py <span class="diff-stat-add">+2</span> <span class="diff-stat-del">-4</span></span>
+                  <span class="file-chip">test_utils.py <span class="diff-stat-add">+14</span> <span class="diff-stat-del">-0</span></span>
+                </span>
+                <span class="meta-tests"><span class="test-badge pass">6 passed</span></span>
+                <span class="meta-tools">12 次工具调用</span>
+              </div>
+            </div>
+          </div>
+
+          <!-- ENTRY 3: 失败 -->
+          <div class="task-entry secondary fail-entry" data-od-id="entry-3" data-status="fail" data-task-id="3">
+            <div class="tl-dot-col"><div class="tl-dot fail"></div></div>
+            <div class="entry-body">
+              <div class="entry-header">
+                <span class="entry-status s-fail">失败</span>
+                <span class="entry-time">今天 11:45</span>
+                <span class="entry-duration">· 2 分钟</span>
+                <span class="entry-spacer"></span>
+                <button class="entry-action action-fail-detail" onclick="event.stopPropagation(); openDetail(3);">查看失败详情</button>
+              </div>
+              <div class="entry-task">为 login.py 添加 rate limiting 中间件</div>
+              <div class="entry-summary">尝试引入 slowapi 库实现请求限流，但 requirements.txt 中缺少依赖且 pip install 在沙箱中被拒绝。任务终止。</div>
+              <div class="entry-meta">
+                <span class="meta-files"><span class="file-chip">login.py <span class="diff-stat-add">+8</span> <span class="diff-stat-del">-0</span></span></span>
+                <span class="meta-tests"><span class="test-badge fail">1 failed</span></span>
+                <span class="meta-tools">6 次工具调用</span>
+              </div>
+            </div>
+          </div>
+
+          <!-- ENTRY 4: 已完成 -->
+          <div class="task-entry secondary" data-od-id="entry-4" data-status="done" data-task-id="4">
+            <div class="tl-dot-col"><div class="tl-dot done"></div></div>
+            <div class="entry-body">
+              <div class="entry-header">
+                <span class="entry-status s-done">已完成</span>
+                <span class="entry-time">昨天 16:20</span>
+                <span class="entry-duration">· 8 分钟</span>
+                <span class="entry-spacer"></span>
+                <button class="entry-action" onclick="event.stopPropagation(); openDetail(4);">查看记录</button>
+              </div>
+              <div class="entry-task">修复用户列表分页偏移量计算 bug</div>
+              <div class="entry-summary">分页参数 offset 在第一页时错误地设为 1 而非 0，导致跳过首条记录。已修复并补充边界测试。</div>
+              <div class="entry-meta">
+                <span class="meta-files">
+                  <span class="file-chip">login.py <span class="diff-stat-add">+1</span> <span class="diff-stat-del">-1</span></span>
+                  <span class="file-chip">test_login.py <span class="diff-stat-add">+8</span> <span class="diff-stat-del">-0</span></span>
+                </span>
+                <span class="meta-tests"><span class="test-badge pass">5 passed</span></span>
+                <span class="meta-tools">9 次工具调用</span>
+              </div>
+            </div>
+          </div>
+
+          <!-- ENTRY 5: 已完成 -->
+          <div class="task-entry secondary" data-od-id="entry-5" data-status="done" data-task-id="5">
+            <div class="tl-dot-col"><div class="tl-dot done"></div></div>
+            <div class="entry-body">
+              <div class="entry-header">
+                <span class="entry-status s-done">已完成</span>
+                <span class="entry-time">昨天 14:05</span>
+                <span class="entry-duration">· 3 分钟</span>
+                <span class="entry-spacer"></span>
+                <button class="entry-action" onclick="event.stopPropagation(); openDetail(5);">查看记录</button>
+              </div>
+              <div class="entry-task">添加结构化日志模块</div>
+              <div class="entry-summary">引入 logging 配置，统一所有模块的日志输出格式为 JSON，包含 request_id、timestamp 和 level 字段。</div>
+              <div class="entry-meta">
+                <span class="meta-files">
+                  <span class="file-chip">logger.py <span class="diff-stat-add">+28</span> <span class="diff-stat-del">-0</span></span>
+                  <span class="file-chip">login.py <span class="diff-stat-add">+3</span> <span class="diff-stat-del">-0</span></span>
+                </span>
+                <span class="meta-tests"><span class="test-badge pass">3 passed</span></span>
+                <span class="meta-tools">7 次工具调用</span>
+              </div>
+            </div>
+          </div>
+
+          <!-- ENTRY 6: 失败 -->
+          <div class="task-entry secondary fail-entry" data-od-id="entry-6" data-status="fail" data-task-id="6">
+            <div class="tl-dot-col"><div class="tl-dot fail"></div></div>
+            <div class="entry-body">
+              <div class="entry-header">
+                <span class="entry-status s-fail">失败</span>
+                <span class="entry-time">7 月 18 日</span>
+                <span class="entry-duration">· 4 分钟</span>
+                <span class="entry-spacer"></span>
+                <button class="entry-action action-fail-detail" onclick="event.stopPropagation(); openDetail(6);">查看失败详情</button>
+              </div>
+              <div class="entry-task">生成数据库迁移脚本</div>
+              <div class="entry-summary">尝试从 SQLAlchemy model 自动生成 Alembic migration，但检测到数据库连接配置缺失，无法完成。</div>
+              <div class="entry-meta">
+                <span class="meta-files"><span class="file-chip">migrations/001.py <span class="diff-stat-add">+0</span> <span class="diff-stat-del">-0</span></span></span>
+                <span class="meta-tests"><span class="test-badge none">未运行</span></span>
+                <span class="meta-tools">5 次工具调用</span>
+              </div>
+            </div>
+          </div>
+
+          <!-- ENTRY 7: 已完成 -->
+          <div class="task-entry secondary" data-od-id="entry-7" data-status="done" data-task-id="7">
+            <div class="tl-dot-col"><div class="tl-dot done"></div></div>
+            <div class="entry-body">
+              <div class="entry-header">
+                <span class="entry-status s-done">已完成</span>
+                <span class="entry-time">7 月 17 日</span>
+                <span class="entry-duration">· 2 分钟</span>
+                <span class="entry-spacer"></span>
+                <button class="entry-action" onclick="event.stopPropagation(); openDetail(7);">查看记录</button>
+              </div>
+              <div class="entry-task">初始化项目结构和 config.yaml</div>
+              <div class="entry-summary">创建基础目录结构、配置文件和入口脚本。设置 FastAPI 应用骨架。</div>
+              <div class="entry-meta">
+                <span class="meta-files">
+                  <span class="file-chip">config.yaml <span class="diff-stat-add">+15</span> <span class="diff-stat-del">-0</span></span>
+                  <span class="file-chip">main.py <span class="diff-stat-add">+22</span> <span class="diff-stat-del">-0</span></span>
+                  <span class="file-chip">requirements.txt <span class="diff-stat-add">+6</span> <span class="diff-stat-del">-0</span></span>
+                </span>
+                <span class="meta-tests"><span class="test-badge pass">2 passed</span></span>
+                <span class="meta-tools">5 次工具调用</span>
+              </div>
+            </div>
+          </div>
+
+          <!-- ENTRY 8: 已取消 -->
+          <div class="task-entry secondary cancelled-entry" data-od-id="entry-8" data-status="cancelled" data-task-id="8">
+            <div class="tl-dot-col"><div class="tl-dot cancelled"></div></div>
+            <div class="entry-body">
+              <div class="entry-header">
+                <span class="entry-status s-cancelled">已取消</span>
+                <span class="entry-time">7 月 17 日</span>
+                <span class="entry-duration">· 1 分钟</span>
+                <span class="entry-spacer"></span>
+                <button class="entry-action" onclick="event.stopPropagation(); openDetail(8);">查看记录</button>
+              </div>
+              <div class="entry-task">添加 OAuth2 第三方登录</div>
+              <div class="entry-summary">用户主动取消。Agent 仅完成了需求分析，未进入实现阶段。</div>
+              <div class="entry-meta">
+                <span class="meta-files"></span>
+                <span class="meta-tests"><span class="test-badge none">未运行</span></span>
+                <span class="meta-tools">2 次工具调用</span>
+              </div>
+            </div>
+          </div>
+
+        </div><!-- /timeline -->
+      </div><!-- /main-scroll -->
+    </div><!-- /task-list-panel -->
+
+    <!-- RESIZE HANDLE -->
+    <div class="resize-handle" id="resizeHandle" data-od-id="resize-handle"></div>
+
+    <!-- RIGHT: detail panel (squeeze) -->
+    <div class="detail-panel" id="detailPanel" data-od-id="detail-panel">
+      <div class="detail-header" id="detailHeader"></div>
+      <div class="detail-scroll" id="detailBody"></div>
+      <div class="detail-footer">
+        <button class="detail-close-btn" onclick="closeDetail();">关闭</button>
+      </div>
+    </div>
+
+  </div><!-- /workbench -->
+
+  <!-- FOOTER -->
+  <div class="footer-bar" data-od-id="footer-bar">
+    <span style="font-size:10px;color:#ccc;">🔒</span>
+    <span class="footer-note-text">会话历史和审批记录仅存储在本机 · 不上传任何数据</span>
+  </div>
+
+</div><!-- /shell -->
+
+<script>
+(function() {
+  /* ============================================================
+     TASK DATA
+     ============================================================ */
+  const TASKS = {
+    2: {
+      status: 'done', statusText: '已完成', statusClass: 'ds-done',
+      title: '重构 utils.py 中的日期格式化函数',
+      time: '今天 13:18', duration: '5 分钟', tools: 12,
+      summary: '将分散的日期格式化逻辑统一为 format_date() 工具函数，支持 ISO 和本地化两种模式。已更新 3 处调用方。',
+      plan: [
+        { text: '分析 utils.py 中所有日期格式化调用', state: 'done' },
+        { text: '设计统一的 format_date() 接口', state: 'done' },
+        { text: '重构并更新调用方', state: 'done' },
+        { text: '编写并运行测试', state: 'done' },
+      ],
+      toolCalls: [
+        { icon: '📖', name: 'read_file', args: 'utils.py', ok: true },
+        { icon: '📖', name: 'read_file', args: 'login.py', ok: true },
+        { icon: '📖', name: 'read_file', args: 'test_utils.py', ok: true },
+        { icon: '🔍', name: 'search_files', args: 'date_format|strftime', ok: true },
+        { icon: '📝', name: 'generate_diff', args: 'utils.py', ok: true },
+        { icon: '📝', name: 'generate_diff', args: 'login.py', ok: true },
+        { icon: '📝', name: 'generate_diff', args: 'test_utils.py', ok: true },
+        { icon: '✍️', name: 'write_file', args: 'utils.py', ok: true },
+        { icon: '✍️', name: 'write_file', args: 'login.py', ok: true },
+        { icon: '✍️', name: 'write_file', args: 'test_utils.py', ok: true },
+        { icon: '🧪', name: 'run_test', args: 'test_utils.py', ok: true },
+        { icon: '📊', name: 'summarize', args: 'task complete', ok: true },
+      ],
+      files: [
+        { name: 'utils.py', add: 18, del: 32, diff: '- def parse_date(s):\n-     return datetime.strptime(s, "%Y-%m-%d")\n- def format_iso(dt):\n-     return dt.isoformat()\n+ def format_date(dt, mode="iso"):\n+     if mode == "iso":\n+         return dt.isoformat()\n+     return dt.strftime("%Y年%m月%d日")' },
+        { name: 'login.py', add: 2, del: 4, diff: '- from utils import parse_date, format_iso\n+ from utils import format_date' },
+        { name: 'test_utils.py', add: 14, del: 0, diff: '+ def test_format_date_iso():\n+     assert format_date(dt, "iso") == "2026-07-20T00:00:00"\n+ def test_format_date_local():\n+     assert format_date(dt, "local") == "2026年07月20日"' },
+      ],
+      approval: { status: 'approved', text: '已批准写入', time: '今天 13:16' },
+      test: { cmd: 'pytest test_utils.py -v', result: 'pass', detail: '6 passed · 0 failed · 0.4s' },
+    },
+    3: {
+      status: 'fail', statusText: '失败', statusClass: 'ds-fail',
+      title: '为 login.py 添加 rate limiting 中间件',
+      time: '今天 11:45', duration: '2 分钟', tools: 6,
+      summary: '尝试引入 slowapi 库实现请求限流，但 requirements.txt 中缺少依赖且 pip install 在沙箱中被拒绝。任务终止。',
+      failReason: '依赖缺失',
+      failDetail: 'slowapi 未安装，沙箱安全策略禁止 pip install。Agent 未写入任何文件。',
+      rejectedCmd: 'pip install slowapi',
+      plan: [
+        { text: '读取 login.py 和 requirements.txt', state: 'done' },
+        { text: '搜索现有限流实现', state: 'done' },
+        { text: '生成 rate limiting Diff', state: 'done' },
+        { text: '安装 slowapi 依赖', state: 'fail' },
+        { text: '运行测试验证', state: 'pending' },
+      ],
+      toolCalls: [
+        { icon: '📖', name: 'read_file', args: 'login.py', ok: true },
+        { icon: '📖', name: 'read_file', args: 'requirements.txt', ok: true },
+        { icon: '🔍', name: 'search_files', args: 'rate.limit|throttle', ok: true },
+        { icon: '📝', name: 'generate_diff', args: 'login.py', ok: true },
+        { icon: '🧪', name: 'run_test', args: 'test_login.py', ok: false },
+        { icon: '⚙️', name: 'exec', args: 'pip install slowapi', ok: false },
+      ],
+      files: [
+        { name: 'login.py', add: 8, del: 0, diff: '+ from slowapi import Limiter\n+ from slowapi.util import get_remote_address\n+ limiter = Limiter(key_func=get_remote_address)\n+ @app.route("/login", methods=["POST"])\n+ @limiter.limit("5/minute")' },
+      ],
+      approval: { status: 'none', text: '未进入审批', time: '—' },
+      test: { cmd: 'pytest test_login.py -v', result: 'fail', detail: 'ImportError: No module named \'slowapi\'' },
+    },
+    4: {
+      status: 'done', statusText: '已完成', statusClass: 'ds-done',
+      title: '修复用户列表分页偏移量计算 bug',
+      time: '昨天 16:20', duration: '8 分钟', tools: 9,
+      summary: '分页参数 offset 在第一页时错误地设为 1 而非 0，导致跳过首条记录。已修复并补充边界测试。',
+      plan: [
+        { text: '读取用户列表分页逻辑', state: 'done' },
+        { text: '定位 offset 计算 bug', state: 'done' },
+        { text: '修复并补充边界测试', state: 'done' },
+      ],
+      toolCalls: [
+        { icon: '📖', name: 'read_file', args: 'login.py', ok: true },
+        { icon: '📖', name: 'read_file', args: 'test_login.py', ok: true },
+        { icon: '🔍', name: 'search_files', args: 'offset|pagination', ok: true },
+        { icon: '📝', name: 'generate_diff', args: 'login.py', ok: true },
+        { icon: '📝', name: 'generate_diff', args: 'test_login.py', ok: true },
+        { icon: '✍️', name: 'write_file', args: 'login.py', ok: true },
+        { icon: '✍️', name: 'write_file', args: 'test_login.py', ok: true },
+        { icon: '🧪', name: 'run_test', args: 'test_login.py', ok: true },
+        { icon: '📊', name: 'summarize', args: 'task complete', ok: true },
+      ],
+      files: [
+        { name: 'login.py', add: 1, del: 1, diff: '- offset = page\n+ offset = (page - 1) * per_page' },
+        { name: 'test_login.py', add: 8, del: 0, diff: '+ def test_pagination_first_page():\n+     resp = client.get("/users?page=1&per_page=10")\n+     assert len(resp.json()["items"]) == 10\n+ def test_pagination_empty():\n+     resp = client.get("/users?page=999")\n+     assert resp.json()["items"] == []' },
+      ],
+      approval: { status: 'approved', text: '已批准写入', time: '昨天 16:18' },
+      test: { cmd: 'pytest test_login.py -v', result: 'pass', detail: '5 passed · 0 failed · 0.3s' },
+    },
+    5: {
+      status: 'done', statusText: '已完成', statusClass: 'ds-done',
+      title: '添加结构化日志模块',
+      time: '昨天 14:05', duration: '3 分钟', tools: 7,
+      summary: '引入 logging 配置，统一所有模块的日志输出格式为 JSON，包含 request_id、timestamp 和 level 字段。',
+      plan: [
+        { text: '设计 JSON 日志格式', state: 'done' },
+        { text: '创建 logger.py 模块', state: 'done' },
+        { text: '集成到 login.py 并测试', state: 'done' },
+      ],
+      toolCalls: [
+        { icon: '📖', name: 'read_file', args: 'login.py', ok: true },
+        { icon: '📖', name: 'read_file', args: 'config.yaml', ok: true },
+        { icon: '📝', name: 'generate_diff', args: 'logger.py', ok: true },
+        { icon: '📝', name: 'generate_diff', args: 'login.py', ok: true },
+        { icon: '✍️', name: 'write_file', args: 'logger.py', ok: true },
+        { icon: '✍️', name: 'write_file', args: 'login.py', ok: true },
+        { icon: '🧪', name: 'run_test', args: 'test_logger.py', ok: true },
+      ],
+      files: [
+        { name: 'logger.py', add: 28, del: 0, diff: '+ import logging, json, uuid\n+ class JSONFormatter(logging.Formatter):\n+     def format(self, record):\n+         return json.dumps({\n+             "timestamp": self.formatTime(record),\n+             "level": record.levelname,\n+             "request_id": getattr(record, "request_id", "-"),\n+             "message": record.getMessage()\n+         })' },
+        { name: 'login.py', add: 3, del: 0, diff: '+ from logger import get_logger\n+ logger = get_logger(__name__)' },
+      ],
+      approval: { status: 'approved', text: '已批准写入', time: '昨天 14:03' },
+      test: { cmd: 'pytest test_logger.py -v', result: 'pass', detail: '3 passed · 0 failed · 0.2s' },
+    },
+    6: {
+      status: 'fail', statusText: '失败', statusClass: 'ds-fail',
+      title: '生成数据库迁移脚本',
+      time: '7 月 18 日', duration: '4 分钟', tools: 5,
+      summary: '尝试从 SQLAlchemy model 自动生成 Alembic migration，但检测到数据库连接配置缺失，无法完成。',
+      failReason: '连接缺失',
+      failDetail: 'DATABASE_URL 环境变量未配置，Alembic 无法连接数据库。Agent 未写入任何迁移文件。',
+      rejectedCmd: 'alembic revision --autogenerate -m "init"',
+      plan: [
+        { text: '读取 SQLAlchemy model 定义', state: 'done' },
+        { text: '检查 Alembic 配置', state: 'done' },
+        { text: '读取数据库连接配置', state: 'fail' },
+        { text: '生成 migration 文件', state: 'pending' },
+      ],
+      toolCalls: [
+        { icon: '📖', name: 'read_file', args: 'models.py', ok: true },
+        { icon: '📖', name: 'read_file', args: 'alembic.ini', ok: true },
+        { icon: '🔍', name: 'search_files', args: 'DATABASE_URL|sqlalchemy', ok: true },
+        { icon: '⚙️', name: 'exec', args: 'alembic revision --autogenerate', ok: false },
+        { icon: '⚙️', name: 'exec', args: 'echo $DATABASE_URL', ok: false },
+      ],
+      files: [
+        { name: 'migrations/001.py', add: 0, del: 0, diff: '# 未生成 — 迁移失败' },
+      ],
+      approval: { status: 'none', text: '未进入审批', time: '—' },
+      test: { cmd: 'pytest', result: 'none', detail: '迁移未生成，跳过测试' },
+    },
+    7: {
+      status: 'done', statusText: '已完成', statusClass: 'ds-done',
+      title: '初始化项目结构和 config.yaml',
+      time: '7 月 17 日', duration: '2 分钟', tools: 5,
+      summary: '创建基础目录结构、配置文件和入口脚本。设置 FastAPI 应用骨架。',
+      plan: [
+        { text: '创建目录结构', state: 'done' },
+        { text: '编写 config.yaml', state: 'done' },
+        { text: '创建 main.py 入口', state: 'done' },
+      ],
+      toolCalls: [
+        { icon: '✍️', name: 'write_file', args: 'config.yaml', ok: true },
+        { icon: '✍️', name: 'write_file', args: 'main.py', ok: true },
+        { icon: '✍️', name: 'write_file', args: 'requirements.txt', ok: true },
+        { icon: '⚙️', name: 'exec', args: 'mkdir -p app tests', ok: true },
+        { icon: '🧪', name: 'run_test', args: 'test_main.py', ok: true },
+      ],
+      files: [
+        { name: 'config.yaml', add: 15, del: 0, diff: '+ app:\n+   name: login-service\n+   port: 8000\n+   debug: true' },
+        { name: 'main.py', add: 22, del: 0, diff: '+ from fastapi import FastAPI\n+ app = FastAPI()\n+ @app.get("/health")\n+ async def health():\n+     return {"status": "ok"}' },
+        { name: 'requirements.txt', add: 6, del: 0, diff: '+ fastapi\n+ uvicorn\n+ pydantic\n+ sqlalchemy\n+ alembic\n+ pytest' },
+      ],
+      approval: { status: 'approved', text: '首次创建，无需审批', time: '7 月 17 日' },
+      test: { cmd: 'pytest test_main.py -v', result: 'pass', detail: '2 passed · 0 failed · 0.1s' },
+    },
+    8: {
+      status: 'cancelled', statusText: '已取消', statusClass: 'ds-cancelled',
+      title: '添加 OAuth2 第三方登录',
+      time: '7 月 17 日', duration: '1 分钟', tools: 2,
+      summary: '用户主动取消。Agent 仅完成了需求分析，未进入实现阶段。',
+      cancelInfo: { stage: '需求分析完成后', detail: 'Agent 刚完成 OAuth2 provider 调研，正准备生成 Diff 时被用户终止。' },
+      plan: [
+        { text: '调研 OAuth2 provider 集成方式', state: 'done' },
+        { text: '读取现有登录接口', state: 'done' },
+        { text: '设计 OAuth2 回调流程', state: 'pending' },
+        { text: '生成 Diff', state: 'pending' },
+      ],
+      toolCalls: [
+        { icon: '🔍', name: 'search_files', args: 'oauth|authlib', ok: true },
+        { icon: '📖', name: 'read_file', args: 'login.py', ok: true },
+      ],
+      files: [],
+      approval: { status: 'none', text: '未进入审批', time: '—' },
+      test: { cmd: '—', result: 'none', detail: '任务已取消' },
+    },
+  };
+
+  /* ============================================================
+     DOM REFS
+     ============================================================ */
+  const panel = document.getElementById('detailPanel');
+  const handle = document.getElementById('resizeHandle');
+  const header = document.getElementById('detailHeader');
+  const body = document.getElementById('detailBody');
+  let activeEntry = null;
+
+  /* ============================================================
+     RENDER DETAIL
+     ============================================================ */
+  function renderDetail(taskId) {
+    const t = TASKS[taskId];
+    if (!t) return;
+
+    header.innerHTML = `
+      <span class="detail-status ${t.statusClass}">${t.statusText}</span>
+      <div class="detail-title-group">
+        <div class="detail-title">${t.title}</div>
+        <div class="detail-meta">
+          <span>${t.time}</span>
+          <span>· ${t.duration}</span>
+          <span>· ${t.tools} 次工具调用</span>
+        </div>
+      </div>
+      <button class="detail-close" onclick="closeDetail();" title="关闭">✕</button>
+    `;
+
+    let html = '';
+
+    if (t.status === 'fail') {
+      html += `<div class="fail-alert">
+        <div class="fail-alert-title">✕ ${t.failReason}</div>
+        <div class="fail-alert-body">${t.failDetail}</div>
+        <div class="fail-alert-cmd">✗ ${t.rejectedCmd}</div>
+      </div>`;
+    }
+
+    if (t.status === 'cancelled') {
+      html += `<div class="cancel-alert">
+        <div class="cancel-alert-title">⊘ 用户取消</div>
+        <div class="cancel-alert-body">取消发生在<strong>${t.cancelInfo.stage}</strong>。${t.cancelInfo.detail}</div>
+      </div>`;
+    }
+
+    html += `<div class="detail-section">
+      <div class="detail-section-label">任务摘要</div>
+      <div class="detail-summary">${t.summary}</div>
+    </div>`;
+
+    html += `<div class="detail-section">
+      <div class="detail-section-label">Agent 计划</div>
+      <div class="plan-steps">
+        ${t.plan.map(s => {
+          const cls = s.state === 'done' ? 'done' : s.state === 'fail' ? 'fail' : s.state === 'waiting' ? 'waiting' : 'pending';
+          const mark = s.state === 'done' ? '✓' : s.state === 'fail' ? '✕' : s.state === 'waiting' ? '◉' : '';
+          const tag = s.state === 'done' ? '<span class="step-tag t-done">完成</span>'
+            : s.state === 'fail' ? '<span class="step-tag t-fail">失败</span>'
+            : s.state === 'waiting' ? '<span class="step-tag t-waiting">待审批</span>'
+            : '<span class="step-tag t-pending">未执行</span>';
+          return `<div class="plan-step"><div class="step-mark ${cls}">${mark}</div><span class="step-label">${s.text}</span>${tag}</div>`;
+        }).join('')}
+      </div>
+    </div>`;
+
+    html += `<div class="detail-section">
+      <div class="detail-section-label">工具调用</div>
+      <div class="tool-log">
+        ${t.toolCalls.map(c => `<div class="tool-line">
+          <span class="tool-icon">${c.icon}</span>
+          <span class="tool-name">${c.name}</span>
+          <span class="tool-args">${c.args}</span>
+          <span class="tool-status ${c.ok ? 'ts-ok' : 'ts-fail'}">${c.ok ? '✓' : '✕'}</span>
+        </div>`).join('')}
+      </div>
+    </div>`;
+
+    if (t.files.length > 0) {
+      html += `<div class="detail-section">
+        <div class="detail-section-label">文件变更</div>
+        <div class="file-list">
+          ${t.files.map((f, i) => `<div>
+            <div class="file-row" onclick="toggleDiff(${taskId}_${i})">
+              <span class="file-name">${f.name}</span>
+              <span class="file-diff"><span class="diff-stat-add">+${f.add}</span><span class="diff-stat-del">-${f.del}</span></span>
+              <span class="file-expand-icon" id="expandIcon_${taskId}_${i}">▸</span>
+            </div>
+            <div class="file-diff-inline" id="diff_${taskId}_${i}">${f.diff}</div>
+          </div>`).join('')}
+        </div>
+      </div>`;
+    }
+
+    html += `<div class="detail-section">
+      <div class="detail-section-label">审批记录</div>
+      <div class="approval-row">
+        <span class="approval-dot ap-${t.approval.status}"></span>
+        <span>${t.approval.text}</span>
+        <span class="approval-time">${t.approval.time}</span>
+      </div>
+    </div>`;
+
+    html += `<div class="detail-section">
+      <div class="detail-section-label">测试与命令</div>
+      <div class="test-block">
+        <div class="test-cmd">$ ${t.test.cmd}</div>
+        <div class="test-result tr-${t.test.result}">${t.test.result === 'pass' ? '✓ 通过' : t.test.result === 'fail' ? '✕ 失败' : '— 未运行'}</div>
+        <div class="test-detail">${t.test.detail}</div>
+      </div>
+    </div>`;
+
+    body.innerHTML = html;
+  }
+
+  /* ============================================================
+     OPEN / CLOSE DETAIL
+     ============================================================ */
+  window.openDetail = function(taskId) {
+    renderDetail(taskId);
+    panel.classList.add('open');
+    handle.classList.add('visible');
+    document.querySelectorAll('.task-entry').forEach(e => e.classList.remove('active-entry'));
+    const entry = document.querySelector(`[data-task-id="${taskId}"]`);
+    if (entry) { entry.classList.add('active-entry'); activeEntry = entry; }
+    body.scrollTop = 0;
+    /* restore saved width */
+    const saved = localStorage.getItem('lc_detail_width');
+    if (saved) { panel.style.width = saved; panel.style.minWidth = saved; }
+  };
+
+  window.closeDetail = function() {
+    panel.classList.remove('open');
+    handle.classList.remove('visible');
+    panel.style.width = '';
+    panel.style.minWidth = '';
+    if (activeEntry) { activeEntry.classList.remove('active-entry'); activeEntry = null; }
+  };
+
+  window.openReview = function() {
+    alert('跳转到 Agent Workspace，自动打开 Diff 审查抽屉');
+  };
+
+  window.toggleDiff = function(key) {
+    const el = document.getElementById('diff_' + key);
+    const icon = document.getElementById('expandIcon_' + key);
+    if (el) {
+      el.classList.toggle('show');
+      if (icon) icon.textContent = el.classList.contains('show') ? '▾' : '▸';
+    }
+  };
+
+  /* click entry row */
+  document.querySelectorAll('.task-entry').forEach(entry => {
+    entry.addEventListener('click', () => {
+      if (entry.dataset.status === 'waiting') return;
+      const id = parseInt(entry.dataset.taskId);
+      if (id) openDetail(id);
+    });
+  });
+
+  /* ============================================================
+     RESIZE HANDLE DRAG
+     ============================================================ */
+  let isDragging = false;
+  handle.addEventListener('mousedown', (e) => {
+    isDragging = true;
+    handle.classList.add('dragging');
+    document.body.style.cursor = 'col-resize';
+    document.body.style.userSelect = 'none';
+    panel.style.transition = 'none';
+    e.preventDefault();
+  });
+  document.addEventListener('mousemove', (e) => {
+    if (!isDragging) return;
+    const workbench = document.querySelector('.workbench');
+    const rect = workbench.getBoundingClientRect();
+    const fromRight = rect.right - e.clientX;
+    const pct = Math.min(Math.max(fromRight / rect.width, 0.25), 0.55);
+    const px = Math.round(pct * rect.width);
+    panel.style.width = px + 'px';
+    panel.style.minWidth = px + 'px';
+  });
+  document.addEventListener('mouseup', () => {
+    if (isDragging) {
+      isDragging = false;
+      handle.classList.remove('dragging');
+      document.body.style.cursor = '';
+      document.body.style.userSelect = '';
+      panel.style.transition = '';
+      /* persist width */
+      localStorage.setItem('lc_detail_width', panel.style.width);
+    }
+  });
+
+  /* ============================================================
+     FILTERS
+     ============================================================ */
+  const chips = document.querySelectorAll('.filter-chip');
+  const entries = document.querySelectorAll('.task-entry');
+  chips.forEach(chip => {
+    chip.addEventListener('click', (e) => {
+      e.stopPropagation();
+      const filter = chip.dataset.filter;
+      chips.forEach(c => c.classList.remove('active'));
+      chip.classList.add('active');
+      entries.forEach(entry => {
+        const status = entry.dataset.status;
+        entry.style.display = (filter === 'all' || filter === status) ? '' : 'none';
+      });
+    });
+  });
+
+  /* ============================================================
+     SEARCH
+     ============================================================ */
+  const searchInput = document.getElementById('searchInput');
+  searchInput.addEventListener('input', () => {
+    const q = searchInput.value.toLowerCase().trim();
+    entries.forEach(entry => {
+      if (!q) { entry.style.display = ''; return; }
+      entry.style.display = entry.textContent.toLowerCase().includes(q) ? '' : 'none';
+    });
+    if (q) { chips.forEach(c => c.classList.remove('active')); chips[0].classList.add('active'); }
+  });
+
+  /* ESC */
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape') closeDetail();
+  });
+
+})();
+</script>
+
+</body>
+</html>

@@ -1,0 +1,595 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>LightCode — Workspace Home</title>
+<link href="https://fonts.googleapis.com/css2?family=Caveat:wght@400;600;700&family=Patrick+Hand&family=Architects+Daughter&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --pencil: #2a2a2a;
+    --marker-dark: #1a1a1a;
+    --marker-accent: #d4a017;
+    --paper: #f5f0e8;
+    --green-ink: #2d7a3a;
+    --red-ink: #b83030;
+    --blue-ink: #3a6090;
+    --orange-ink: #c87020;
+    --blue-grey: #6b7d8e;
+  }
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  html, body { height: 100%; overflow: hidden; }
+
+  body {
+    background: var(--paper);
+    font-family: 'Architects Daughter', 'Patrick Hand', cursive;
+    color: var(--pencil);
+    height: 100vh;
+    display: flex;
+    flex-direction: column;
+  }
+
+  .page {
+    flex: 1; min-height: 0;
+    display: flex; flex-direction: column;
+    max-width: 100%; width: 100%; margin: 0 auto;
+    padding: 18px 150px 0; overflow: hidden;
+  }
+
+  /* === TOP BAR === */
+  .top-bar {
+    display: flex; align-items: center; justify-content: space-between;
+    padding-bottom: 12px; border-bottom: 2px solid var(--pencil);
+    margin-bottom: 14px; flex-shrink: 0;
+  }
+  .brand {
+    font-family: 'Caveat', cursive; font-size: 26px; font-weight: 700;
+    color: var(--marker-dark); letter-spacing: 0.5px;
+    transform: rotate(-0.4deg); display: flex; align-items: center; gap: 8px;
+  }
+  .brand-dot {
+    width: 8px; height: 8px; border-radius: 50%;
+    background: var(--green-ink); border: 1.5px solid var(--green-ink);
+    flex-shrink: 0; position: relative; top: -1px;
+  }
+  .top-right { display: flex; align-items: center; gap: 12px; }
+  .runtime-badge {
+    font-family: 'JetBrains Mono', monospace; font-size: 10px;
+    color: var(--green-ink); border: 1.5px solid var(--green-ink);
+    border-radius: 4px; padding: 3px 8px;
+    background: rgba(45,122,58,0.06);
+    display: flex; align-items: center; gap: 5px; transform: rotate(0.2deg);
+  }
+  .runtime-badge::before {
+    content: ''; width: 5px; height: 5px; border-radius: 50%;
+    background: var(--green-ink);
+  }
+  .settings-icon {
+    font-family: 'JetBrains Mono', monospace; font-size: 16px;
+    color: #999; cursor: pointer; padding: 4px; line-height: 1;
+    transform: rotate(0.3deg);
+  }
+  .settings-icon:hover { color: var(--pencil); }
+
+  /* === PAGE HEADER === */
+  .page-header { margin-bottom: 12px; flex-shrink: 0; }
+  .page-title {
+    font-family: 'Caveat', cursive; font-size: 28px; font-weight: 700;
+    color: var(--marker-dark); transform: rotate(-0.3deg); margin-bottom: 2px;
+  }
+  .page-subtitle {
+    font-family: 'Patrick Hand', cursive; font-size: 13px;
+    color: var(--blue-grey); transform: rotate(-0.1deg);
+  }
+
+  /* === MAIN SCROLLABLE AREA === */
+  .main-area {
+    flex: 1; min-height: 0; display: flex; flex-direction: column;
+    overflow: hidden;
+  }
+  .section-label {
+    font-family: 'JetBrains Mono', monospace; font-size: 9px;
+    text-transform: uppercase; letter-spacing: 2px; color: var(--blue-grey);
+    margin-bottom: 6px; padding-bottom: 4px;
+    border-bottom: 1.5px dashed #ccc; flex-shrink: 0;
+  }
+  .project-scroll {
+    flex: 1; min-height: 0; overflow-y: auto; padding-right: 4px;
+  }
+  .project-scroll::-webkit-scrollbar { width: 5px; }
+  .project-scroll::-webkit-scrollbar-track {
+    background: rgba(0,0,0,0.03); border-radius: 4px;
+  }
+  .project-scroll::-webkit-scrollbar-thumb {
+    background: #c5b9a8; border-radius: 4px; border: 1px solid rgba(0,0,0,0.06);
+  }
+  .project-scroll::-webkit-scrollbar-thumb:hover { background: #a99e8d; }
+  .project-scroll { scrollbar-width: thin; scrollbar-color: #c5b9a8 rgba(0,0,0,0.03); }
+
+  /* === PROJECT ROWS === */
+  .project-list { display: flex; flex-direction: column; gap: 8px; }
+
+  .project-row {
+    display: flex; align-items: center; gap: 14px;
+    padding: 14px 16px; border-radius: 5px;
+    cursor: pointer; transition: background 0.12s;
+  }
+  .project-row:nth-child(2) { transform: rotate(0.1deg); }
+  .project-row:nth-child(3) { transform: rotate(-0.08deg); }
+  .project-row:nth-child(4) { transform: rotate(0.06deg); }
+  .project-row:nth-child(5) { transform: rotate(-0.1deg); }
+  .project-row:hover { background: rgba(255,255,255,0.35); }
+
+  /* 首条：等待审批 — 突出 */
+  .project-row.primary {
+    border: 2.5px solid var(--orange-ink);
+    background: rgba(212,160,23,0.06);
+    transform: rotate(-0.2deg);
+    padding: 16px 18px;
+  }
+  .project-row.primary .project-name { font-size: 23px; }
+
+  /* 其他项目：降低视觉权重 */
+  .project-row.secondary {
+    border: 1.5px solid #d8d0c4;
+    background: rgba(255,255,255,0.15);
+  }
+  .project-row.secondary .project-name { color: #444; }
+  .project-row.secondary .project-path { color: #aaa; }
+  .project-row.secondary .project-action {
+    border-color: #d8d0c4; color: #999;
+  }
+  .project-row.secondary .project-action:hover {
+    border-color: var(--pencil); color: var(--pencil); background: rgba(0,0,0,0.04);
+  }
+  .project-row.secondary.fail .project-action {
+    border-color: #e0c0c0; color: #c08080;
+  }
+
+  .project-info {
+    flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 4px;
+  }
+  .project-name {
+    font-family: 'Caveat', cursive; font-size: 20px; font-weight: 700;
+    color: var(--marker-dark); white-space: nowrap;
+    overflow: hidden; text-overflow: ellipsis;
+  }
+  .project-path {
+    font-family: 'JetBrains Mono', monospace; font-size: 11px; color: #888;
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  }
+  .project-meta { display: flex; align-items: center; gap: 7px; flex-wrap: wrap; }
+  .tech-tag {
+    font-family: 'JetBrains Mono', monospace; font-size: 10px;
+    padding: 2px 7px; border: 1px solid #ccc; border-radius: 3px;
+    color: var(--blue-grey); background: rgba(255,255,255,0.4); white-space: nowrap;
+  }
+  .project-task {
+    font-family: 'Architects Daughter', cursive; font-size: 12px; color: #555;
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  }
+
+  .status-badge {
+    font-family: 'JetBrains Mono', monospace; font-size: 10px;
+    padding: 3px 8px; border-radius: 3px; white-space: nowrap;
+    display: flex; align-items: center; gap: 4px; flex-shrink: 0;
+  }
+  .status-badge::before {
+    content: ''; width: 6px; height: 6px; border-radius: 50%; flex-shrink: 0;
+  }
+  .status-waiting { color: var(--orange-ink); background: rgba(212,160,23,0.1); border: 1px solid rgba(200,112,32,0.3); }
+  .status-waiting::before { background: var(--orange-ink); }
+  .status-pass { color: var(--green-ink); background: rgba(45,122,58,0.08); border: 1px solid rgba(45,122,58,0.25); }
+  .status-pass::before { background: var(--green-ink); }
+  .status-fail { color: var(--red-ink); background: rgba(184,48,48,0.06); border: 1px solid rgba(184,48,48,0.2); }
+  .status-fail::before { background: var(--red-ink); }
+  .status-idle { color: var(--blue-grey); background: rgba(107,125,142,0.06); border: 1px solid rgba(107,125,142,0.2); }
+  .status-idle::before { background: #bbb; }
+
+  .project-time {
+    font-family: 'JetBrains Mono', monospace; font-size: 10px; color: #aaa;
+    white-space: nowrap; flex-shrink: 0;
+  }
+  .project-action {
+    font-family: 'Caveat', cursive; font-size: 16px; font-weight: 600;
+    padding: 7px 16px; border: 2px solid var(--pencil); border-radius: 4px;
+    background: none; color: var(--pencil); cursor: pointer;
+    white-space: nowrap; flex-shrink: 0; transform: rotate(-0.3deg);
+    transition: background 0.12s, border-color 0.12s, color 0.12s;
+  }
+  .project-action:hover { background: rgba(0,0,0,0.04); }
+  .project-row.primary .project-action {
+    border-color: var(--orange-ink); color: var(--orange-ink);
+    background: rgba(212,160,23,0.1); font-weight: 700;
+  }
+
+  /* === VIEW ALL LINK === */
+  .view-all-link {
+    flex-shrink: 0; padding: 10px 0 0; text-align: center;
+  }
+  .view-all-btn {
+    font-family: 'Patrick Hand', cursive; font-size: 14px;
+    color: var(--blue-grey); cursor: pointer; border: none; background: none;
+    padding: 4px 8px; transition: color 0.15s;
+    text-decoration: none; display: inline-block;
+  }
+  .view-all-btn:hover { color: var(--pencil); }
+  .view-all-btn::after { content: ' →'; }
+
+  /* === OPEN LOCAL — 居中放大 === */
+  .open-local-block {
+    flex-shrink: 0; padding: 14px 0 0; text-align: center;
+  }
+  .open-local-btn {
+    display: inline-flex; align-items: center; gap: 8px;
+    border: 1.5px dashed #bbb; border-radius: 5px;
+    padding: 8px 18px; transform: rotate(-0.15deg);
+    background: none; cursor: default; transition: border-color 0.15s;
+  }
+  .open-local-btn .local-icon { font-size: 16px; opacity: 0.5; }
+  .open-local-btn .local-label {
+    font-family: 'Caveat', cursive; font-size: 17px; font-weight: 600; color: #888;
+  }
+  .open-local-btn .local-hint {
+    font-family: 'JetBrains Mono', monospace; font-size: 10px; color: #bbb;
+    margin-left: 4px;
+  }
+
+  /* === FOOTER === */
+  .footer-bar {
+    flex-shrink: 0; padding: 10px 0 14px;
+    border-top: 1.5px dashed #d8d0c4; margin-top: 10px;
+    display: flex; align-items: center; justify-content: center; gap: 5px;
+  }
+  .footer-note-text {
+    font-family: 'JetBrains Mono', monospace; font-size: 9px; color: #bbb;
+  }
+
+  /* === DRAWER === */
+  .drawer-overlay {
+    position: fixed; inset: 0; background: rgba(0,0,0,0.18);
+    z-index: 100; opacity: 0; pointer-events: none;
+    transition: opacity 0.25s ease;
+  }
+  .drawer-overlay.open { opacity: 1; pointer-events: auto; }
+
+  .drawer {
+    position: fixed; top: 0; right: 0; bottom: 0;
+    width: 380px; max-width: 90vw;
+    background: var(--paper);
+    border-left: 2.5px solid var(--pencil);
+    z-index: 101;
+    transform: translateX(100%);
+    transition: transform 0.3s cubic-bezier(0.22, 1, 0.36, 1);
+    display: flex; flex-direction: column;
+    box-shadow: -4px 0 20px rgba(0,0,0,0.08);
+  }
+  .drawer.open { transform: translateX(0); }
+
+  .drawer-header {
+    padding: 18px 20px 12px;
+    border-bottom: 1.5px solid var(--pencil);
+    flex-shrink: 0;
+  }
+  .drawer-title-row {
+    display: flex; align-items: center; justify-content: space-between;
+    margin-bottom: 10px;
+  }
+  .drawer-title {
+    font-family: 'Caveat', cursive; font-size: 22px; font-weight: 700;
+    color: var(--marker-dark); transform: rotate(-0.2deg);
+  }
+  .drawer-close {
+    font-family: 'JetBrains Mono', monospace; font-size: 18px;
+    color: #999; cursor: pointer; padding: 2px 6px; line-height: 1;
+    border: 1.5px solid #d8d0c4; border-radius: 4px; background: none;
+    transition: color 0.12s, border-color 0.12s;
+  }
+  .drawer-close:hover { color: var(--pencil); border-color: var(--pencil); }
+
+  .drawer-search {
+    width: 100%; padding: 7px 10px;
+    font-family: 'JetBrains Mono', monospace; font-size: 11px;
+    color: var(--pencil); background: rgba(255,255,255,0.5);
+    border: 1.5px solid #d8d0c4; border-radius: 4px;
+    outline: none; transition: border-color 0.15s;
+  }
+  .drawer-search:focus { border-color: var(--blue-grey); }
+  .drawer-search::placeholder { color: #bbb; }
+
+  .drawer-list {
+    flex: 1; min-height: 0; overflow-y: auto; padding: 10px 16px;
+  }
+  .drawer-list::-webkit-scrollbar { width: 5px; }
+  .drawer-list::-webkit-scrollbar-track { background: rgba(0,0,0,0.03); border-radius: 4px; }
+  .drawer-list::-webkit-scrollbar-thumb { background: #c5b9a8; border-radius: 4px; }
+  .drawer-list { scrollbar-width: thin; scrollbar-color: #c5b9a8 rgba(0,0,0,0.03); }
+
+  .drawer-item {
+    display: flex; align-items: center; gap: 8px;
+    padding: 7px 10px; border: 1.5px dashed #d8d0c4; border-radius: 4px;
+    cursor: pointer; transition: background 0.12s, border-color 0.12s;
+    margin-bottom: 4px; transform: rotate(-0.08deg);
+  }
+  .drawer-item:nth-child(even) { transform: rotate(0.06deg); }
+  .drawer-item:hover { background: rgba(0,0,0,0.025); border-color: #bbb; }
+  .drawer-item-icon { font-size: 12px; opacity: 0.5; flex-shrink: 0; }
+  .drawer-item-name {
+    font-family: 'Caveat', cursive; font-size: 15px; font-weight: 600;
+    color: var(--marker-dark); flex-shrink: 0;
+  }
+  .drawer-item-path {
+    font-family: 'JetBrains Mono', monospace; font-size: 9px; color: #aaa;
+    flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  }
+  .drawer-item-arrow {
+    font-family: 'JetBrains Mono', monospace; font-size: 11px;
+    color: #ccc; flex-shrink: 0; transition: color 0.12s;
+  }
+  .drawer-item:hover .drawer-item-arrow { color: var(--blue-grey); }
+
+  .drawer-empty {
+    font-family: 'Patrick Hand', cursive; font-size: 14px;
+    color: #bbb; text-align: center; padding: 30px 0;
+  }
+
+  .drawer-footer {
+    flex-shrink: 0; padding: 10px 20px;
+    border-top: 1.5px dashed #d8d0c4;
+    font-family: 'JetBrains Mono', monospace; font-size: 9px; color: #bbb;
+    text-align: center;
+  }
+</style>
+</head>
+<body>
+
+<div class="page">
+
+  <!-- TOP BAR -->
+  <div class="top-bar" data-od-id="top-bar">
+    <div class="brand">
+      <span class="brand-dot"></span>
+      LightCode
+    </div>
+    <div class="top-right">
+      <div class="runtime-badge">Local runtime ready</div>
+      <div class="settings-icon" title="设置">⚙</div>
+    </div>
+  </div>
+
+  <!-- PAGE HEADER -->
+  <div class="page-header" data-od-id="page-header">
+    <div class="page-title">继续你的工作</div>
+    <div class="page-subtitle">选择一个项目，或打开新的本地目录</div>
+  </div>
+
+  <!-- MAIN AREA -->
+  <div class="main-area" data-od-id="main-area">
+    <div class="section-label">最近项目</div>
+    <div class="project-scroll">
+
+      <div class="project-list" data-od-id="project-list">
+
+        <!-- 首条：等待审批 — 视觉突出 -->
+        <div class="project-row primary" data-od-id="project-login" tabindex="0">
+          <div class="project-info">
+            <div class="project-name">login-service</div>
+            <div class="project-path">~/workspace/login-service</div>
+            <div class="project-meta">
+              <span class="tech-tag">Python</span>
+              <span class="tech-tag">FastAPI</span>
+              <span class="project-task">登录接口输入校验</span>
+            </div>
+          </div>
+          <div class="status-badge status-waiting">等待审批</div>
+          <div class="project-time">3 分钟前</div>
+          <button class="project-action">打开工作区</button>
+        </div>
+
+        <!-- 其他项目：降低权重 -->
+        <div class="project-row secondary" data-od-id="project-dashboard" tabindex="0">
+          <div class="project-info">
+            <div class="project-name">dashboard-ui</div>
+            <div class="project-path">~/workspace/dashboard-ui</div>
+            <div class="project-meta">
+              <span class="tech-tag">Vue 3</span>
+              <span class="tech-tag">TypeScript</span>
+              <span class="tech-tag">Vite</span>
+              <span class="project-task">重构数据面板组件</span>
+            </div>
+          </div>
+          <div class="status-badge status-pass">测试通过</div>
+          <div class="project-time">1 小时前</div>
+          <button class="project-action">打开工作区</button>
+        </div>
+
+        <div class="project-row secondary fail" data-od-id="project-api" tabindex="0">
+          <div class="project-info">
+            <div class="project-name">api-gateway</div>
+            <div class="project-path">~/workspace/api-gateway</div>
+            <div class="project-meta">
+              <span class="tech-tag">Node.js</span>
+              <span class="tech-tag">Express</span>
+              <span class="project-task">添加请求限流中间件</span>
+            </div>
+          </div>
+          <div class="status-badge status-fail">上次运行失败</div>
+          <div class="project-time">昨天</div>
+          <button class="project-action">打开工作区</button>
+        </div>
+
+        <div class="project-row secondary" data-od-id="project-docs" tabindex="0">
+          <div class="project-info">
+            <div class="project-name">docs-generator</div>
+            <div class="project-path">~/workspace/docs-generator</div>
+            <div class="project-meta">
+              <span class="tech-tag">Python</span>
+              <span class="tech-tag">Markdown</span>
+              <span class="project-task">从 README 生成 API 文档</span>
+            </div>
+          </div>
+          <div class="status-badge status-idle">空闲</div>
+          <div class="project-time">3 天前</div>
+          <button class="project-action">打开工作区</button>
+        </div>
+
+        <div class="project-row secondary" data-od-id="project-data" tabindex="0">
+          <div class="project-info">
+            <div class="project-name">data-pipeline</div>
+            <div class="project-path">~/workspace/data-pipeline</div>
+            <div class="project-meta">
+              <span class="tech-tag">Python</span>
+              <span class="tech-tag">Airflow</span>
+              <span class="project-task">优化 ETL 调度逻辑</span>
+            </div>
+          </div>
+          <div class="status-badge status-pass">测试通过</div>
+          <div class="project-time">2 天前</div>
+          <button class="project-action">打开工作区</button>
+        </div>
+
+      </div>
+
+      <!-- 查看全部链接 -->
+      <div class="view-all-link" data-od-id="view-all">
+        <button class="view-all-btn" id="openDrawer">查看全部 7 个已注册工作区</button>
+      </div>
+
+      <!-- 打开本地项目 -->
+      <div class="open-local-block" data-od-id="open-local">
+        <div class="open-local-btn">
+          <span class="local-icon">📂</span>
+          <span class="local-label">打开本地项目</span>
+          <span class="local-hint">桌面版将支持系统文件夹选择</span>
+        </div>
+      </div>
+
+    </div>
+  </div>
+
+  <!-- FOOTER -->
+  <div class="footer-bar" data-od-id="footer-bar">
+    <span style="font-size:10px;color:#ccc;">🔒</span>
+    <span class="footer-note-text">会话和审批记录仅存储在本机</span>
+  </div>
+
+</div>
+
+<!-- DRAWER OVERLAY -->
+<div class="drawer-overlay" id="drawerOverlay"></div>
+
+<!-- DRAWER -->
+<div class="drawer" id="drawer" data-od-id="workspace-drawer">
+  <div class="drawer-header">
+    <div class="drawer-title-row">
+      <div class="drawer-title">全部工作区</div>
+      <button class="drawer-close" id="closeDrawer">✕</button>
+    </div>
+    <input class="drawer-search" id="drawerSearch" type="text" placeholder="搜索工作区名称或路径…">
+  </div>
+  <div class="drawer-list" id="drawerList">
+    <div class="drawer-item" data-name="login-service" data-path="~/workspace/login-service">
+      <span class="drawer-item-icon">📁</span>
+      <span class="drawer-item-name">login-service</span>
+      <span class="drawer-item-path">~/workspace/login-service</span>
+      <span class="drawer-item-arrow">→</span>
+    </div>
+    <div class="drawer-item" data-name="dashboard-ui" data-path="~/workspace/dashboard-ui">
+      <span class="drawer-item-icon">📁</span>
+      <span class="drawer-item-name">dashboard-ui</span>
+      <span class="drawer-item-path">~/workspace/dashboard-ui</span>
+      <span class="drawer-item-arrow">→</span>
+    </div>
+    <div class="drawer-item" data-name="api-gateway" data-path="~/workspace/api-gateway">
+      <span class="drawer-item-icon">📁</span>
+      <span class="drawer-item-name">api-gateway</span>
+      <span class="drawer-item-path">~/workspace/api-gateway</span>
+      <span class="drawer-item-arrow">→</span>
+    </div>
+    <div class="drawer-item" data-name="docs-generator" data-path="~/workspace/docs-generator">
+      <span class="drawer-item-icon">📁</span>
+      <span class="drawer-item-name">docs-generator</span>
+      <span class="drawer-item-path">~/workspace/docs-generator</span>
+      <span class="drawer-item-arrow">→</span>
+    </div>
+    <div class="drawer-item" data-name="cli-tools" data-path="~/workspace/cli-tools">
+      <span class="drawer-item-icon">📁</span>
+      <span class="drawer-item-name">cli-tools</span>
+      <span class="drawer-item-path">~/workspace/cli-tools</span>
+      <span class="drawer-item-arrow">→</span>
+    </div>
+    <div class="drawer-item" data-name="data-pipeline" data-path="~/workspace/data-pipeline">
+      <span class="drawer-item-icon">📁</span>
+      <span class="drawer-item-name">data-pipeline</span>
+      <span class="drawer-item-path">~/workspace/data-pipeline</span>
+      <span class="drawer-item-arrow">→</span>
+    </div>
+    <div class="drawer-item" data-name="mobile-app" data-path="~/workspace/mobile-app">
+      <span class="drawer-item-icon">📁</span>
+      <span class="drawer-item-name">mobile-app</span>
+      <span class="drawer-item-path">~/workspace/mobile-app</span>
+      <span class="drawer-item-arrow">→</span>
+    </div>
+  </div>
+  <div class="drawer-footer">共 7 个已注册工作区 · 本地存储</div>
+</div>
+
+<script>
+(function() {
+  const overlay = document.getElementById('drawerOverlay');
+  const drawer = document.getElementById('drawer');
+  const openBtn = document.getElementById('openDrawer');
+  const closeBtn = document.getElementById('closeDrawer');
+  const search = document.getElementById('drawerSearch');
+  const list = document.getElementById('drawerList');
+  const items = list.querySelectorAll('.drawer-item');
+
+  function openDrawer() {
+    overlay.classList.add('open');
+    drawer.classList.add('open');
+    setTimeout(() => search.focus(), 300);
+  }
+  function closeDrawer() {
+    overlay.classList.remove('open');
+    drawer.classList.remove('open');
+    search.value = '';
+    filterItems('');
+  }
+  function filterItems(q) {
+    const low = q.toLowerCase();
+    let visible = 0;
+    items.forEach(item => {
+      const name = item.dataset.name.toLowerCase();
+      const path = item.dataset.path.toLowerCase();
+      const show = !low || name.includes(low) || path.includes(low);
+      item.style.display = show ? '' : 'none';
+      if (show) visible++;
+    });
+    let empty = list.querySelector('.drawer-empty');
+    if (visible === 0) {
+      if (!empty) {
+        empty = document.createElement('div');
+        empty.className = 'drawer-empty';
+        empty.textContent = '没有匹配的工作区';
+        list.appendChild(empty);
+      }
+    } else if (empty) {
+      empty.remove();
+    }
+  }
+
+  openBtn.addEventListener('click', openDrawer);
+  closeBtn.addEventListener('click', closeDrawer);
+  overlay.addEventListener('click', closeDrawer);
+  search.addEventListener('input', () => filterItems(search.value));
+
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape' && drawer.classList.contains('open')) closeDrawer();
+  });
+})();
+</script>
+
+</body>
+</html>

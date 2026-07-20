@@ -1,0 +1,1033 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>LightCode — 主工作台线框图 v0.2</title>
+<link href="https://fonts.googleapis.com/css2?family=Caveat:wght@400;600;700&family=Patrick+Hand&family=Architects+Daughter&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --pencil: #2a2a2a;
+    --marker-dark: #1a1a1a;
+    --marker-accent: #d4a017;
+    --graph-line: #c8d4e0;
+    --graph-line-strong: #a0b0c0;
+    --paper: #f5f0e8;
+    --green-ink: #2d7a3a;
+    --red-ink: #b83030;
+    --blue-ink: #3a6090;
+    --orange-ink: #c87020;
+    --blue-grey: #6b7d8e;
+  }
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  html, body {
+    height: 100%;
+    overflow: hidden;
+  }
+
+  body {
+    background: var(--paper);
+    font-family: 'Architects Daughter', 'Patrick Hand', cursive;
+    font-size: 15px;
+    color: var(--pencil);
+    padding: 16px 20px;
+    display: flex;
+    flex-direction: column;
+  }
+
+  /* === WORKBENCH === */
+  .workbench {
+    flex: 1;
+    min-height: 0;
+    display: flex;
+    gap: 10px;
+  }
+
+  /* === LEFT SIDEBAR 220px === */
+  .sidebar {
+    width: 220px;
+    min-width: 220px;
+    border: 2px solid var(--pencil);
+    border-radius: 6px;
+    padding: 14px 12px;
+    background: rgba(255,255,255,0.3);
+    transform: rotate(-0.3deg);
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+    overflow-y: auto;
+  }
+
+  .sidebar-title {
+    font-family: 'Caveat', cursive;
+    font-size: 22px;
+    font-weight: 700;
+    color: var(--marker-dark);
+    margin-bottom: 2px;
+  }
+  .sidebar-sub {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 10px;
+    color: #999;
+    margin-bottom: 12px;
+    border-bottom: 1.5px dashed #ccc;
+    padding-bottom: 8px;
+  }
+
+  .sidebar-section-label {
+    font-family: 'Patrick Hand', cursive;
+    font-size: 12px;
+    color: #888;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+    margin-bottom: 6px;
+  }
+
+  /* File tree */
+  .file-tree {
+    margin-bottom: 12px;
+    border-bottom: 1.5px dashed #ccc;
+    padding-bottom: 8px;
+  }
+  .file-item {
+    display: flex;
+    align-items: center;
+    gap: 5px;
+    padding: 3px 6px;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 11px;
+    color: #555;
+    transform: rotate(-0.15deg);
+  }
+  .file-item.active {
+    color: var(--orange-ink);
+    font-weight: 500;
+  }
+  .file-icon {
+    font-size: 10px;
+    flex-shrink: 0;
+    opacity: 0.5;
+  }
+
+  /* Session list */
+  .session-list {
+    flex: 1;
+    min-height: 0;
+    overflow-y: auto;
+  }
+  .session-item {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 5px 6px;
+    margin-bottom: 3px;
+    border-radius: 4px;
+    font-family: 'Architects Daughter', cursive;
+    font-size: 12px;
+    color: var(--pencil);
+    transform: rotate(-0.2deg);
+  }
+  .session-item.active {
+    background: rgba(212,160,23,0.2);
+    border: 1.5px solid var(--orange-ink);
+  }
+  .session-dot {
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    border: 1.5px solid var(--pencil);
+    flex-shrink: 0;
+  }
+  .session-dot.running { background: var(--green-ink); border-color: var(--green-ink); }
+  .session-dot.waiting { background: var(--orange-ink); border-color: var(--orange-ink); }
+  .session-dot.done { background: #aaa; border-color: #aaa; }
+
+  .sidebar-spacer { flex: 1; }
+  .sidebar-settings {
+    font-family: 'Architects Daughter', cursive;
+    font-size: 11px;
+    color: #888;
+    padding: 6px;
+    border-top: 1.5px dashed #ccc;
+    display: flex;
+    align-items: center;
+    gap: 5px;
+  }
+  .sidebar-settings::before { content: '⚙'; font-size: 13px; }
+
+  /* === CENTER MAIN — flex:1, min-width 65% === */
+  .main-area {
+    flex: 1;
+    min-width: 0;
+    border: 2.5px solid var(--pencil);
+    border-radius: 6px;
+    display: flex;
+    flex-direction: column;
+    background: rgba(255,255,255,0.2);
+    transform: rotate(0.1deg);
+    overflow: hidden;
+    min-height: 0;
+  }
+
+  /* Task Header */
+  .task-header {
+    padding: 8px 14px 6px;
+    border-bottom: 2px solid var(--pencil);
+    background: rgba(212,160,23,0.06);
+    flex-shrink: 0;
+  }
+  .task-label {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 10px;
+    text-transform: uppercase;
+    letter-spacing: 2px;
+    color: var(--orange-ink);
+    margin-bottom: 3px;
+  }
+  .task-title {
+    font-family: 'Caveat', cursive;
+    font-size: 19px;
+    font-weight: 700;
+    color: var(--marker-dark);
+    transform: rotate(-0.3deg);
+  }
+
+  /* Agent Plan — compact, max 5 steps */
+  .agent-plan {
+    padding: 8px 14px;
+    border-bottom: 1.5px dashed #ccc;
+    flex-shrink: 0;
+  }
+  .plan-label {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 10px;
+    text-transform: uppercase;
+    letter-spacing: 2px;
+    color: var(--blue-ink);
+    margin-bottom: 5px;
+  }
+  .plan-steps {
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
+  }
+  .plan-step {
+    display: flex;
+    align-items: center;
+    gap: 5px;
+    font-family: 'Architects Daughter', cursive;
+    font-size: 12px;
+    transform: rotate(-0.15deg);
+  }
+  .step-check {
+    width: 13px;
+    height: 13px;
+    border: 1.5px solid var(--pencil);
+    border-radius: 3px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 10px;
+    flex-shrink: 0;
+    background: rgba(255,255,255,0.5);
+  }
+  .step-check.done { background: rgba(45,122,58,0.15); border-color: var(--green-ink); color: var(--green-ink); }
+  .step-check.current { background: rgba(212,160,23,0.2); border-color: var(--orange-ink); color: var(--orange-ink); }
+  .step-num {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 10px;
+    color: #aaa;
+    min-width: 12px;
+  }
+
+  /* Tool Call Log — terminal-style compact rows */
+  .tool-log {
+    flex: 1;
+    min-height: 0;
+    overflow-y: auto;
+    padding: 6px 14px;
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+  }
+  .tool-row {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 4px 8px;
+    border-radius: 3px;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 11px;
+    color: var(--pencil);
+    cursor: pointer;
+    transform: rotate(-0.1deg);
+    flex-shrink: 0;
+  }
+  .tool-row:hover {
+    background: rgba(0,0,0,0.03);
+  }
+  .tool-row.expanded {
+    background: rgba(0,0,0,0.03);
+    border-bottom-left-radius: 0;
+    border-bottom-right-radius: 0;
+  }
+  .tool-status {
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    flex-shrink: 0;
+  }
+  .tool-status.ok { background: var(--green-ink); }
+  .tool-status.pending { background: var(--orange-ink); }
+  .tool-status.fail { background: var(--red-ink); }
+  .tool-status.idle { background: #ddd; border: 1px solid #bbb; }
+  .tool-name {
+    font-weight: 500;
+    color: var(--blue-ink);
+    min-width: 90px;
+  }
+  .tool-target {
+    color: #666;
+    flex: 1;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .tool-meta {
+    color: #999;
+    font-size: 10px;
+    flex-shrink: 0;
+  }
+  .tool-expand {
+    color: #aaa;
+    font-size: 10px;
+    flex-shrink: 0;
+    width: 12px;
+    text-align: center;
+  }
+  .tool-row.expanded .tool-expand::after { content: '▾'; }
+  .tool-row:not(.expanded) .tool-expand::after { content: '▸'; }
+
+  .tool-detail {
+    padding: 6px 10px 8px 22px;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 10px;
+    line-height: 1.5;
+    color: #555;
+    background: rgba(0,0,0,0.03);
+    border-left: 2px solid #ddd;
+    margin-left: 4px;
+    margin-bottom: 2px;
+    flex-shrink: 0;
+    transform: rotate(-0.05deg);
+  }
+  .tool-row:not(.expanded) + .tool-detail {
+    display: none;
+  }
+
+  .diff-add {
+    color: var(--green-ink);
+    background: rgba(45,122,58,0.08);
+    display: block;
+    padding: 0 3px;
+    border-radius: 2px;
+  }
+  .diff-del {
+    color: var(--red-ink);
+    background: rgba(184,48,48,0.08);
+    display: block;
+    padding: 0 3px;
+    border-radius: 2px;
+    text-decoration: line-through;
+  }
+  .diff-context {
+    color: #999;
+    display: block;
+    padding: 0 3px;
+  }
+
+  /* Model Output */
+  .model-output {
+    padding: 8px 14px;
+    border-top: 1.5px dashed #ccc;
+    font-family: 'Architects Daughter', cursive;
+    font-size: 12px;
+    line-height: 1.5;
+    color: #444;
+    transform: rotate(0.1deg);
+    flex-shrink: 0;
+    max-height: 70px;
+    overflow-y: auto;
+  }
+  .model-output .label {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 10px;
+    text-transform: uppercase;
+    letter-spacing: 2px;
+    color: var(--blue-ink);
+    margin-bottom: 3px;
+  }
+
+  /* === BOTTOM COMMAND BAR === */
+  .command-bar {
+    border-top: 2.5px solid var(--pencil);
+    padding: 7px 14px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    background: rgba(212,160,23,0.04);
+    flex-shrink: 0;
+  }
+  .command-prompt {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 14px;
+    color: var(--green-ink);
+    font-weight: 500;
+  }
+  .command-input {
+    flex: 1;
+    border: 2px solid var(--pencil);
+    border-radius: 4px;
+    padding: 6px 10px;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 12px;
+    background: rgba(255,255,255,0.5);
+    color: var(--pencil);
+    transform: rotate(0.1deg);
+  }
+  .command-input::placeholder {
+    color: #bbb;
+    font-style: italic;
+  }
+  .cmd-btn {
+    font-family: 'Caveat', cursive;
+    font-size: 14px;
+    font-weight: 600;
+    padding: 5px 12px;
+    border: 2px solid var(--pencil);
+    border-radius: 4px;
+    background: none;
+    color: var(--pencil);
+    cursor: pointer;
+    transform: rotate(-0.3deg);
+    flex-shrink: 0;
+  }
+  .cmd-btn.review {
+    background: rgba(212,160,23,0.15);
+    color: var(--orange-ink);
+    border-color: var(--orange-ink);
+    font-weight: 700;
+  }
+  .cmd-btn.reject-cmd {
+    border-style: dashed;
+    border-color: var(--red-ink);
+    color: var(--red-ink);
+    font-family: 'Architects Daughter', cursive;
+    font-size: 12px;
+  }
+
+  /* === RIGHT CONTEXT DRAWER — squeezes main area, resizable === */
+  .context-drawer {
+    width: 0;
+    min-width: 0;
+    border: none;
+    border-radius: 0;
+    padding: 0;
+    background: none;
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+    transition: width 0.2s ease, min-width 0.2s ease, padding 0.2s ease, border 0.2s ease;
+    flex-shrink: 0;
+  }
+  .context-drawer.open {
+    width: 45vw;
+    min-width: 320px;
+    max-width: 55vw;
+    border: 2px solid var(--pencil);
+    border-radius: 6px;
+    padding: 10px 12px;
+    background: rgba(255,255,255,0.3);
+  }
+
+  /* Resize handle */
+  .resize-handle {
+    width: 6px;
+    cursor: col-resize;
+    flex-shrink: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    opacity: 0;
+    transition: opacity 0.15s;
+  }
+  .resize-handle.visible {
+    opacity: 1;
+  }
+  .resize-handle::after {
+    content: '';
+    width: 2px;
+    height: 40px;
+    border-radius: 1px;
+    background: #ccc;
+  }
+  .resize-handle:hover::after {
+    background: var(--orange-ink);
+  }
+
+  .drawer-title {
+    font-family: 'Caveat', cursive;
+    font-size: 18px;
+    font-weight: 700;
+    color: var(--marker-dark);
+    border-bottom: 1.5px dashed #ccc;
+    padding-bottom: 5px;
+    margin-bottom: 6px;
+  }
+  .drawer-tabs {
+    display: flex;
+    gap: 3px;
+    margin-bottom: 6px;
+  }
+  .drawer-tab {
+    font-family: 'Architects Daughter', cursive;
+    font-size: 11px;
+    padding: 2px 7px;
+    border: 1.5px solid #ccc;
+    border-radius: 3px;
+    background: none;
+    color: #888;
+    cursor: pointer;
+  }
+  .drawer-tab.active {
+    border-color: var(--orange-ink);
+    color: var(--orange-ink);
+    background: rgba(212,160,23,0.1);
+  }
+
+  .diff-preview {
+    flex: 1;
+    min-height: 0;
+    border: 1.5px solid var(--pencil);
+    border-radius: 4px;
+    padding: 8px;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 10px;
+    line-height: 1.6;
+    background: rgba(0,0,0,0.04);
+    overflow-y: auto;
+    transform: rotate(-0.1deg);
+    margin-bottom: 8px;
+  }
+
+  .diff-side-label {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 10px;
+    text-transform: uppercase;
+    letter-spacing: 1.5px;
+    color: #aaa;
+    margin-bottom: 4px;
+  }
+
+  /* Diff columns — side by side */
+  .diff-columns {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 0;
+    flex: 1;
+    min-height: 0;
+    border: 1.5px solid var(--pencil);
+    border-radius: 4px;
+    overflow: hidden;
+    margin-bottom: 8px;
+  }
+  .diff-col {
+    padding: 8px;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 10px;
+    line-height: 1.6;
+    overflow-y: auto;
+    min-height: 0;
+  }
+  .diff-col-left {
+    background: rgba(184,48,48,0.03);
+    border-right: 1.5px dashed #ccc;
+  }
+  .diff-col-right {
+    background: rgba(45,122,58,0.03);
+  }
+  .diff-line {
+    display: flex;
+    align-items: baseline;
+    line-height: 1.6;
+  }
+  .diff-line-num {
+    flex-shrink: 0;
+    width: 22px;
+    text-align: right;
+    color: #bbb;
+    margin-right: 8px;
+    user-select: none;
+    font-size: 10px;
+  }
+  .diff-line code {
+    flex: 1;
+    min-width: 0;
+    padding: 0 3px;
+    border-radius: 2px;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 10px;
+  }
+  .diff-line-del code {
+    color: var(--red-ink);
+    background: rgba(184,48,48,0.06);
+  }
+  .diff-line-ctx code {
+    color: #999;
+  }
+  .diff-line-add code {
+    color: var(--green-ink);
+    background: rgba(45,122,58,0.06);
+  }
+
+  /* Approve area — fixed at bottom of drawer */
+  .approve-area {
+    border-top: 1.5px dashed #ccc;
+    padding-top: 8px;
+    display: flex;
+    flex-direction: column;
+    gap: 5px;
+    flex-shrink: 0;
+  }
+  .approve-label {
+    font-family: 'Patrick Hand', cursive;
+    font-size: 12px;
+    color: var(--orange-ink);
+    text-align: center;
+    transform: rotate(-0.5deg);
+  }
+  .approve-row {
+    display: flex;
+    gap: 6px;
+  }
+  .approve-btn {
+    flex: 1;
+    font-family: 'Caveat', cursive;
+    font-size: 16px;
+    font-weight: 700;
+    padding: 7px 10px;
+    border: 2.5px solid var(--green-ink);
+    border-radius: 5px;
+    background: rgba(45,122,58,0.12);
+    color: var(--green-ink);
+    cursor: pointer;
+    text-align: center;
+    transform: rotate(-0.4deg);
+  }
+  .reject-btn {
+    flex: 1;
+    font-family: 'Architects Daughter', cursive;
+    font-size: 12px;
+    padding: 7px 10px;
+    border: 1.5px dashed var(--red-ink);
+    border-radius: 4px;
+    background: none;
+    color: var(--red-ink);
+    cursor: pointer;
+    text-align: center;
+  }
+
+  /* Hatched fills */
+  .hatched {
+    background-image: repeating-linear-gradient(
+      45deg,
+      transparent,
+      transparent 4px,
+      rgba(0,0,0,0.06) 4px,
+      rgba(0,0,0,0.06) 5px
+    );
+  }
+
+  /* Scrollbar */
+  ::-webkit-scrollbar { width: 4px; }
+  ::-webkit-scrollbar-track { background: transparent; }
+  ::-webkit-scrollbar-thumb { background: #ccc; border-radius: 3px; }
+
+  /* Drawer panels */
+  .drawer-panel {
+    display: none;
+    flex: 1;
+    min-height: 0;
+    flex-direction: column;
+  }
+  .drawer-panel.active {
+    display: flex;
+  }
+  .file-preview {
+    flex: 1;
+    min-height: 0;
+    border: 1.5px solid var(--pencil);
+    border-radius: 4px;
+    padding: 8px;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 10px;
+    line-height: 1.6;
+    background: rgba(0,0,0,0.04);
+    overflow-y: auto;
+    transform: rotate(-0.1deg);
+  }
+  .test-output {
+    flex: 1;
+    min-height: 0;
+    border: 1.5px solid var(--pencil);
+    border-radius: 4px;
+    padding: 8px;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 10px;
+    line-height: 1.8;
+    background: rgba(0,0,0,0.04);
+    overflow-y: auto;
+  }
+  .test-line {
+    white-space: pre;
+  }
+
+  /* Drawer close button */
+  .drawer-close {
+    position: absolute;
+    top: 8px;
+    right: 10px;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 12px;
+    color: #aaa;
+    background: none;
+    border: none;
+    cursor: pointer;
+    padding: 2px 5px;
+    line-height: 1;
+  }
+  .drawer-close:hover { color: var(--red-ink); }
+</style>
+</head>
+<body>
+
+  <div class="workbench">
+
+    <!-- LEFT SIDEBAR: 220px — project name, file tree, sessions -->
+    <div class="sidebar" data-od-id="sidebar">
+      <div class="sidebar-title">LightCode</div>
+      <div class="sidebar-sub">~/workspace/login-project</div>
+
+      <!-- File Tree -->
+      <div class="file-tree">
+        <div class="sidebar-section-label">文件</div>
+        <div class="file-item"><span class="file-icon">📄</span> login.py</div>
+        <div class="file-item"><span class="file-icon">📄</span> test_login.py</div>
+        <div class="file-item"><span class="file-icon">📁</span> utils/</div>
+        <div class="file-item"><span class="file-icon">📄</span> config.yaml</div>
+        <div class="file-item"><span class="file-icon">📄</span> requirements.txt</div>
+      </div>
+
+      <!-- Session History -->
+      <div class="sidebar-section-label">会话</div>
+      <div class="session-list">
+        <div class="session-item active">
+          <div class="session-dot waiting"></div>
+          <span>登录接口校验</span>
+        </div>
+        <div class="session-item">
+          <div class="session-dot running"></div>
+          <span>重构 utils.py</span>
+        </div>
+        <div class="session-item">
+          <div class="session-dot done"></div>
+          <span>修复分页 bug</span>
+        </div>
+        <div class="session-item">
+          <div class="session-dot done"></div>
+          <span>添加日志模块</span>
+        </div>
+        <div class="session-item">
+          <div class="session-dot done"></div>
+          <span>数据库迁移脚本</span>
+        </div>
+      </div>
+
+      <div class="sidebar-spacer"></div>
+      <div class="sidebar-settings">设置</div>
+    </div>
+
+    <!-- CENTER MAIN: flex:1 -->
+    <div class="main-area" data-od-id="main-area">
+
+      <!-- Task Header -->
+      <div class="task-header">
+        <div class="task-label">● 当前任务 · 等待审批</div>
+        <div class="task-title">为 login.py 的登录接口增加输入校验，并运行相关测试</div>
+      </div>
+
+      <!-- Agent Plan — compact -->
+      <div class="agent-plan" data-od-id="agent-plan">
+        <div class="plan-label">Agent 计划</div>
+        <div class="plan-steps">
+          <div class="plan-step">
+            <div class="step-check done">✓</div>
+            <span class="step-num">1</span>
+            <span>读取 login.py 源码</span>
+          </div>
+          <div class="plan-step">
+            <div class="step-check done">✓</div>
+            <span class="step-num">2</span>
+            <span>分析现有登录接口</span>
+          </div>
+          <div class="plan-step">
+            <div class="step-check current">◉</div>
+            <span class="step-num">3</span>
+            <span>生成输入校验 Diff · <strong style="color:var(--orange-ink)">待审批</strong></span>
+          </div>
+          <div class="plan-step">
+            <div class="step-check"></div>
+            <span class="step-num">4</span>
+            <span>写入文件</span>
+          </div>
+          <div class="plan-step">
+            <div class="step-check"></div>
+            <span class="step-num">5</span>
+            <span>运行相关测试</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- Tool Call Log — terminal-style rows -->
+      <div class="tool-log" data-od-id="tool-log">
+
+        <!-- read_file — expanded -->
+        <div class="tool-row expanded" data-od-id="tool-read-file" onclick="this.classList.toggle('expanded')">
+          <div class="tool-status ok"></div>
+          <span class="tool-name">read_file</span>
+          <span class="tool-target">login.py</span>
+          <span class="tool-meta">42ms</span>
+          <span class="tool-expand"></span>
+        </div>
+        <div class="tool-detail">
+<span style="color:#888">1</span>  <span style="color:#3a6090">def</span> <span style="color:#2d7a3a">login</span>(username, password):
+<span style="color:#888">2</span>      <span style="color:#3a6090">if not</span> username <span style="color:#3a6090">or not</span> password:
+<span style="color:#888">3</span>          <span style="color:#3a6090">return</span> {<span style="color:#b83030">"error"</span>: <span style="color:#b83030">"Missing credentials"</span>}
+<span style="color:#888">4</span>      user = db.query(username)
+<span style="color:#888">5</span>      <span style="color:#3a6090">if not</span> user <span style="color:#3a6090">or</span> user.password != password:
+<span style="color:#888">6</span>          <span style="color:#3a6090">return</span> {<span style="color:#b83030">"error"</span>: <span style="color:#b83030">"Invalid credentials"</span>}
+<span style="color:#888">7</span>      <span style="color:#3a6090">return</span> {<span style="color:#2d7a3a">"token"</span>: generate_token(user)}
+        </div>
+
+        <!-- search_files — collapsed -->
+        <div class="tool-row" data-od-id="tool-search-files" onclick="this.classList.toggle('expanded')">
+          <div class="tool-status ok"></div>
+          <span class="tool-name">search_files</span>
+          <span class="tool-target">test_login.py · 3 matches</span>
+          <span class="tool-meta">38ms</span>
+          <span class="tool-expand"></span>
+        </div>
+        <div class="tool-detail">
+找到 3 处引用 login() 的测试用例：
+• test_login_empty_credentials (L12)
+• test_login_valid_user (L20)
+• test_login_wrong_password (L28)
+        </div>
+
+        <!-- generate_diff — expanded, pending -->
+        <div class="tool-row expanded" data-od-id="tool-generate-diff" onclick="this.classList.toggle('expanded')">
+          <div class="tool-status pending"></div>
+          <span class="tool-name">generate_diff</span>
+          <span class="tool-target">login.py  <span style="color:var(--green-ink)">+6</span> <span style="color:var(--red-ink)">-2</span>  <span style="color:var(--orange-ink)">等待审批</span></span>
+          <span class="tool-meta">~120ms</span>
+          <span class="tool-expand"></span>
+        </div>
+        <div class="tool-detail">
+<span class="diff-del">- def login(username, password):</span>
+<span class="diff-add">+ def login(username: str, password: str) -> dict:</span>
+<span class="diff-del">-     if not username or not password:</span>
+<span class="diff-add">+     if not isinstance(username, str) or len(username) > 64:</span>
+<span class="diff-add">+         return {"error": "Invalid username"}</span>
+<span class="diff-add">+     if not isinstance(password, str) or len(password) < 8:</span>
+<span class="diff-add">+         return {"error": "Password too short"}</span>
+<span class="diff-add">+     username = username.strip().lower()</span>
+<span class="diff-context">      user = db.query(username)</span>
+        </div>
+
+        <!-- run_test — idle, waiting -->
+        <div class="tool-row" data-od-id="tool-run-test">
+          <div class="tool-status idle"></div>
+          <span class="tool-name">run_test</span>
+          <span class="tool-target" style="color:#bbb">test_login.py — 等待写入后执行</span>
+          <span class="tool-meta" style="color:#ccc">—</span>
+          <span class="tool-expand"></span>
+        </div>
+
+      </div>
+
+      <!-- Model Output -->
+      <div class="model-output" data-od-id="model-output">
+        <div class="label">Agent 输出</div>
+        已读取 <code style="font-family:'JetBrains Mono',monospace;font-size:9px;background:rgba(0,0,0,0.06);padding:1px 3px;border-radius:2px;">login.py</code> 并分析登录接口。当前实现缺少类型检查、长度校验和输入清洗。Diff 已生成，等待你审批后写入文件并运行测试。
+      </div>
+
+      <!-- Bottom Command Bar — pending approval state -->
+      <div class="command-bar" data-od-id="command-bar">
+        <span class="command-prompt" style="color:var(--orange-ink)">●</span>
+        <span style="font-family:'JetBrains Mono',monospace;font-size:11px;color:var(--orange-ink);flex:1;">Diff 等待审批 · login.py +6 -2</span>
+        <button class="cmd-btn review" data-od-id="btn-review">审查修改</button>
+        <button class="cmd-btn reject-cmd" data-od-id="btn-reject-cmd">拒绝并输入反馈</button>
+      </div>
+    </div>
+
+    <!-- RESIZE HANDLE -->
+    <div class="resize-handle" data-od-id="resize-handle"></div>
+
+    <!-- RIGHT CONTEXT DRAWER — collapsed by default, opens for diff -->
+    <div class="context-drawer" data-od-id="context-drawer">
+      <div class="drawer-title" style="position:relative">代码审查<button class="drawer-close" data-od-id="drawer-close">✕</button></div>
+
+      <div class="drawer-tabs" data-od-id="drawer-tabs">
+        <button class="drawer-tab active" data-tab="diff">Diff</button>
+        <button class="drawer-tab" data-tab="file">文件</button>
+        <button class="drawer-tab" data-tab="test">测试</button>
+      </div>
+
+      <!-- Tab: Diff -->
+      <div class="drawer-panel active" data-panel="diff">
+        <div class="diff-side-label">login.py · 左右对比</div>
+        <div class="diff-columns" data-od-id="diff-columns">
+          <div class="diff-col diff-col-left">
+            <div class="diff-line diff-line-ctx"><span class="diff-line-num">1</span><code>def login(username, password):</code></div>
+            <div class="diff-line diff-line-del"><span class="diff-line-num">2</span><code>    if not username or not password:</code></div>
+            <div class="diff-line diff-line-ctx"><span class="diff-line-num">3</span><code>        return {"error": "Missing credentials"}</code></div>
+            <div class="diff-line diff-line-ctx"><span class="diff-line-num">4</span><code>    user = db.query(username)</code></div>
+            <div class="diff-line diff-line-ctx"><span class="diff-line-num">5</span><code>    if not user or user.password != password:</code></div>
+            <div class="diff-line diff-line-ctx"><span class="diff-line-num">6</span><code>        return {"error": "Invalid credentials"}</code></div>
+            <div class="diff-line diff-line-ctx"><span class="diff-line-num">7</span><code>    return {"token": generate_token(user)}</code></div>
+          </div>
+          <div class="diff-col diff-col-right">
+            <div class="diff-line diff-line-add"><span class="diff-line-num">1</span><code>def login(username: str, password: str) -> dict:</code></div>
+            <div class="diff-line diff-line-add"><span class="diff-line-num">2</span><code>    if not isinstance(username, str) or len(username) > 64:</code></div>
+            <div class="diff-line diff-line-add"><span class="diff-line-num">3</span><code>        return {"error": "Invalid username"}</code></div>
+            <div class="diff-line diff-line-add"><span class="diff-line-num">4</span><code>    if not isinstance(password, str) or len(password) < 8:</code></div>
+            <div class="diff-line diff-line-add"><span class="diff-line-num">5</span><code>        return {"error": "Password too short"}</code></div>
+            <div class="diff-line diff-line-add"><span class="diff-line-num">6</span><code>    username = username.strip().lower()</code></div>
+            <div class="diff-line diff-line-ctx"><span class="diff-line-num">7</span><code>    user = db.query(username)</code></div>
+            <div class="diff-line diff-line-ctx"><span class="diff-line-num">8</span><code>    if not user or user.password != password:</code></div>
+            <div class="diff-line diff-line-ctx"><span class="diff-line-num">9</span><code>        return {"error": "Invalid credentials"}</code></div>
+            <div class="diff-line diff-line-ctx"><span class="diff-line-num">10</span><code>    return {"token": generate_token(user)}</code></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Tab: File -->
+      <div class="drawer-panel" data-panel="file">
+        <div class="diff-side-label">login.py · 完整文件</div>
+        <div class="file-preview">
+<span class="diff-line-num">1</span>  <span style="color:#3a6090">import</span> hashlib
+<span class="diff-line-num">2</span>  <span style="color:#3a6090">import</span> uuid
+<span class="diff-line-num">3</span>
+<span class="diff-line-num">4</span>  <span style="color:#3a6090">def</span> <span style="color:#2d7a3a">generate_token</span>(user):
+<span class="diff-line-num">5</span>      <span style="color:#3a6090">return</span> hashlib.sha256(str(user.id).encode()).hexdigest()[:32]
+<span class="diff-line-num">6</span>
+<span class="diff-line-num">7</span>  <span style="color:#3a6090">def</span> <span style="color:#2d7a3a">login</span>(username, password):
+<span class="diff-line-num">8</span>      <span style="color:#3a6090">if not</span> username <span style="color:#3a6090">or not</span> password:
+<span class="diff-line-num">9</span>          <span style="color:#3a6090">return</span> {<span style="color:#b83030">"error"</span>: <span style="color:#b83030">"Missing credentials"</span>}
+<span class="diff-line-num">10</span>     user = db.query(username)
+<span class="diff-line-num">11</span>     <span style="color:#3a6090">if not</span> user <span style="color:#3a6090">or</span> user.password != password:
+<span class="diff-line-num">12</span>         <span style="color:#3a6090">return</span> {<span style="color:#b83030">"error"</span>: <span style="color:#b83030">"Invalid credentials"</span>}
+<span class="diff-line-num">13</span>     <span style="color:#3a6090">return</span> {<span style="color:#2d7a3a">"token"</span>: generate_token(user)}
+        </div>
+      </div>
+
+      <!-- Tab: Test -->
+      <div class="drawer-panel" data-panel="test">
+        <div class="diff-side-label">test_login.py · 测试输出</div>
+        <div class="test-output">
+          <div class="test-line" style="color:var(--orange-ink)">等待批准修改后运行</div>
+          <div class="test-line" style="color:#666">$ pytest test_login.py -v</div>
+        </div>
+      </div>
+
+      <!-- Approve area — fixed at bottom -->
+      <div class="approve-area" data-od-id="approve-area">
+        <div class="approve-label">⚠ 需要审批后才能写入文件</div>
+        <div class="approve-row">
+          <button class="approve-btn" data-od-id="btn-approve">✓ 批准修改</button>
+          <button class="reject-btn" data-od-id="btn-reject">✗ 拒绝 · 附带反馈</button>
+        </div>
+      </div>
+    </div>
+
+  </div><!-- /workbench -->
+
+  <script>
+    const drawer = document.querySelector('[data-od-id="context-drawer"]');
+    const btnReview = document.querySelector('[data-od-id="btn-review"]');
+    const btnClose = document.querySelector('[data-od-id="drawer-close"]');
+    const tabs = document.querySelectorAll('.drawer-tab');
+    const panels = document.querySelectorAll('.drawer-panel');
+    const handle = document.querySelector('[data-od-id="resize-handle"]');
+
+    function openDrawer(tabName) {
+      drawer.classList.add('open');
+      handle.classList.add('visible');
+      switchTab(tabName || 'diff');
+    }
+    function closeDrawer() {
+      drawer.classList.remove('open');
+      drawer.style.width = '';
+      drawer.style.minWidth = '';
+      drawer.style.maxWidth = '';
+      handle.classList.remove('visible');
+    }
+    function switchTab(name) {
+      tabs.forEach(t => t.classList.toggle('active', t.dataset.tab === name));
+      panels.forEach(p => p.classList.toggle('active', p.dataset.panel === name));
+    }
+
+    btnReview.addEventListener('click', () => {
+      if (drawer.classList.contains('open')) { closeDrawer(); }
+      else { openDrawer('diff'); }
+    });
+    btnClose.addEventListener('click', closeDrawer);
+    tabs.forEach(t => t.addEventListener('click', () => switchTab(t.dataset.tab)));
+
+    /* Resize handle drag */
+    let isDragging = false;
+    handle.addEventListener('mousedown', (e) => {
+      isDragging = true;
+      document.body.style.cursor = 'col-resize';
+      document.body.style.userSelect = 'none';
+      e.preventDefault();
+    });
+    document.addEventListener('mousemove', (e) => {
+      if (!isDragging) return;
+      const workbench = document.querySelector('.workbench');
+      const rect = workbench.getBoundingClientRect();
+      const sidebarW = document.querySelector('.sidebar').offsetWidth;
+      const gap = 10;
+      const handleW = 6;
+      const available = rect.width - sidebarW - gap - handleW;
+      const fromRight = rect.right - e.clientX;
+      const pct = Math.min(Math.max(fromRight / rect.width, 0.2), 0.55);
+      drawer.style.width = (pct * 100) + 'vw';
+      drawer.style.minWidth = '280px';
+      drawer.style.maxWidth = '55vw';
+      drawer.style.transition = 'none';
+    });
+    document.addEventListener('mouseup', () => {
+      if (isDragging) {
+        isDragging = false;
+        document.body.style.cursor = '';
+        document.body.style.userSelect = '';
+        drawer.style.transition = '';
+      }
+    });
+  </script>
+
+</body>
+</html>
