@@ -204,7 +204,6 @@ function statusLabel(status: string): string {
 .project-row.primary {
   border: 2.5px solid #c87020;
   background: rgba(212,160,23,.06);
-  transform: rotate(-.2deg);
   padding: 16px 18px;
 }
 .project-row.primary .project-name { font-size: 23px; }

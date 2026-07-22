@@ -336,7 +336,7 @@ const selectedEntry = computed(() => {
 .task-entry { display: flex; gap: 14px; padding: 10px 0; position: relative; cursor: pointer; }
 .task-entry:hover { background: rgba(0,0,0,.015); }
 .task-entry.active-entry { background: rgba(0,0,0,.03); }
-.task-entry.primary { border: 2.5px solid #c87020; border-radius: 6px; background: rgba(212,160,23,.04); padding: 12px 16px; transform: rotate(-.15deg); margin-bottom: 4px; }
+.task-entry.primary { border: 2.5px solid #c87020; border-radius: 6px; background: rgba(212,160,23,.04); padding: 12px 16px; margin-bottom: 4px; }
 .task-entry.secondary { border: 1.5px solid #e0d8cc; border-radius: 5px; background: rgba(255,255,255,.15); padding: 10px 14px; margin-bottom: 4px; }
 .task-entry.secondary.fail-entry { border-color: rgba(184,48,48,.25); background: rgba(184,48,48,.02); }
 .task-entry.secondary.cancelled-entry { border-style: dashed; border-color: #d8d0c4; opacity: .7; }
