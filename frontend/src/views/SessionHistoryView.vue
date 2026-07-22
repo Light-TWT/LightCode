@@ -97,7 +97,7 @@ const selectedEntry = computed(() => {
       <div class="brand"><span class="brand-dot" aria-hidden="true" />LightCode</div>
       <div class="top-right">
         <div class="runtime-badge">Local runtime ready</div>
-        <span class="settings-icon" title="设置">⚙</span>
+        <span class="settings-icon" title="设置" @click="router.push('/settings')">⚙</span>
       </div>
     </header>
 

@@ -4,13 +4,26 @@ import { createMemoryHistory, createRouter } from 'vue-router'
 import { beforeEach, describe, expect, it } from 'vitest'
 import AgentWorkspaceView from './AgentWorkspaceView.vue'
 
+function createTestRouter() {
+  return createRouter({
+    history: createMemoryHistory(),
+    routes: [
+      { path: '/workspace/:id', component: AgentWorkspaceView },
+      { path: '/workspace/:id/history', name: 'session-history', component: AgentWorkspaceView },
+    ],
+  })
+}
+
 describe('AgentWorkspaceView', () => {
-  beforeEach(() => {
+  beforeEach(async () => {
     setActivePinia(createPinia())
   })
 
   it('opens the full diff only in the review drawer', async () => {
-    const wrapper = mount(AgentWorkspaceView)
+    const router = createTestRouter()
+    await router.push('/workspace/workspace-login-service')
+    await router.isReady()
+    const wrapper = mount(AgentWorkspaceView, { global: { plugins: [router] } })
     await flushPromises()
 
     expect(wrapper.find('[data-testid="review-drawer"]').exists()).toBe(false)
@@ -22,7 +35,10 @@ describe('AgentWorkspaceView', () => {
   })
 
   it('expands a tool result and displays verification after approval', async () => {
-    const wrapper = mount(AgentWorkspaceView)
+    const router = createTestRouter()
+    await router.push('/workspace/workspace-login-service')
+    await router.isReady()
+    const wrapper = mount(AgentWorkspaceView, { global: { plugins: [router] } })
     await flushPromises()
 
     await wrapper.get('[data-testid="tool-read-login"]').trigger('click')
@@ -36,13 +52,7 @@ describe('AgentWorkspaceView', () => {
   })
 
   it('opens the current workspace task history from the sidebar', async () => {
-    const router = createRouter({
-      history: createMemoryHistory(),
-      routes: [
-        { path: '/workspace/:id', component: AgentWorkspaceView },
-        { path: '/workspace/:id/history', name: 'session-history', component: AgentWorkspaceView },
-      ],
-    })
+    const router = createTestRouter()
     await router.push('/workspace/workspace-login-service')
     await router.isReady()
 

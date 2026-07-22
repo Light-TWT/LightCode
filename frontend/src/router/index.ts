@@ -1,6 +1,7 @@
 import { createRouter, createWebHistory } from 'vue-router'
 import AgentWorkspaceView from '@/views/AgentWorkspaceView.vue'
 import SessionHistoryView from '@/views/SessionHistoryView.vue'
+import SettingsView from '@/views/SettingsView.vue'
 import WorkspaceHomeView from '@/views/WorkspaceHomeView.vue'
 
 export const router = createRouter({
@@ -9,5 +10,6 @@ export const router = createRouter({
     { path: '/', name: 'home', component: WorkspaceHomeView },
     { path: '/workspace/:id', name: 'agent-workspace', component: AgentWorkspaceView },
     { path: '/workspace/:id/history', name: 'session-history', component: SessionHistoryView },
+    { path: '/settings', name: 'settings', component: SettingsView },
   ],
 })
