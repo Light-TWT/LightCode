@@ -97,12 +97,12 @@ const selectedEntry = computed(() => {
       <div class="brand"><span class="brand-dot" aria-hidden="true" />LightCode</div>
       <div class="top-right">
         <div class="runtime-badge">Local runtime ready</div>
-        <span class="settings-icon" title="设置" @click="router.push('/settings')">⚙</span>
+        <span class="settings-icon" title="设置" data-testid="settings-link" @click="router.push('/settings')">⚙</span>
       </div>
     </header>
 
     <div class="project-context">
-      <span class="back-link" @click="goToWorkspace"><span class="arrow" aria-hidden="true">←</span> 返回工作区</span>
+      <span class="back-link" data-testid="back-to-workspace" @click="goToWorkspace"><span class="arrow" aria-hidden="true">←</span> 返回工作区</span>
       <span class="project-name-inline">{{ workspaceId === 'workspace-login-service' ? 'login-service' : workspaceId }}</span>
       <span class="project-path-inline">{{ workspaceId === 'workspace-login-service' ? '~/workspace/login-service' : '' }}</span>
       <span class="ctx-spacer" />

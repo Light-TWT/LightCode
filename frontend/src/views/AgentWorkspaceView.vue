@@ -65,7 +65,7 @@ async function approve() {
   <main class="workspace-shell" :class="{ resizing: isResizing }">
     <aside class="sidebar" aria-label="工作区导航">
       <div class="sidebar-back">
-        <button class="back-btn" type="button" @click="goHome">← 返回工作区列表</button>
+        <button class="back-btn" type="button" data-testid="back-home-btn" @click="goHome">← 返回工作区列表</button>
       </div>
       <div class="wordmark">LightCode</div>
       <div class="workspace-path">{{ store.workspace?.rootPath }}</div>
@@ -84,7 +84,7 @@ async function approve() {
         </button>
       </section>
       <button data-testid="task-history-link" class="settings-link history-link" type="button" @click="goToHistory">📋 历史记录</button>
-      <button class="settings-link" type="button" @click="goToSettings">设置</button>
+      <button class="settings-link" type="button" data-testid="settings-btn" @click="goToSettings">设置</button>
     </aside>
 
     <section v-if="task" class="execution-panel" aria-label="Agent Workspace">
