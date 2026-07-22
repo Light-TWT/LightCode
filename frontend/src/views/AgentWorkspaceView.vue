@@ -51,6 +51,10 @@ async function goToHistory() {
   await router.push(`/workspace/${route.params.id}/history`)
 }
 
+async function goToSettings() {
+  await router.push('/settings')
+}
+
 async function approve() {
   await store.approveCurrentChangeSet()
   drawerTab.value = 'test'
@@ -80,7 +84,7 @@ async function approve() {
         </button>
       </section>
       <button data-testid="task-history-link" class="settings-link history-link" type="button" @click="goToHistory">📋 历史记录</button>
-      <button class="settings-link" type="button">设置</button>
+      <button class="settings-link" type="button" @click="goToSettings">设置</button>
     </aside>
 
     <section v-if="task" class="execution-panel" aria-label="Agent Workspace">
