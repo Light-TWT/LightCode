@@ -1,4 +1,4 @@
-import type { Session, Task, Workspace } from '@/types/agent'
+import type { Session, Task, Workspace, WorkspaceEntry } from '@/types/agent'
 
 export const workspaceFixture: Workspace = {
   id: 'workspace-login-service',
@@ -19,6 +19,16 @@ export const sessionsFixture: Session[] = [
   { id: 'session-pagination', title: '修复分页 bug', status: 'completed' },
   { id: 'session-logging', title: '添加日志模块', status: 'completed' },
   { id: 'session-migration', title: '数据库迁移脚本', status: 'completed' },
+]
+
+export const workspaceEntriesFixture: WorkspaceEntry[] = [
+  { id: 'workspace-login-service', name: 'login-service', rootPath: '~/workspace/login-service', status: 'waiting', tags: ['Python', 'FastAPI'], lastTask: '登录接口输入校验', timeAgo: '3 分钟前' },
+  { id: 'workspace-dashboard', name: 'dashboard-ui', rootPath: '~/workspace/dashboard-ui', status: 'pass', tags: ['Vue 3', 'TypeScript', 'Vite'], lastTask: '重构数据面板组件', timeAgo: '1 小时前' },
+  { id: 'workspace-api', name: 'api-gateway', rootPath: '~/workspace/api-gateway', status: 'fail', tags: ['Node.js', 'Express'], lastTask: '添加请求限流中间件', timeAgo: '昨天' },
+  { id: 'workspace-docs', name: 'docs-generator', rootPath: '~/workspace/docs-generator', status: 'idle', tags: ['Python', 'Markdown'], lastTask: '从 README 生成 API 文档', timeAgo: '3 天前' },
+  { id: 'workspace-data', name: 'data-pipeline', rootPath: '~/workspace/data-pipeline', status: 'pass', tags: ['Python', 'Airflow'], lastTask: '优化 ETL 调度逻辑', timeAgo: '2 天前' },
+  { id: 'workspace-cli', name: 'cli-tools', rootPath: '~/workspace/cli-tools', status: 'idle', tags: ['Go'], lastTask: '添加 JSON 格式化子命令', timeAgo: '5 天前' },
+  { id: 'workspace-mobile', name: 'mobile-app', rootPath: '~/workspace/mobile-app', status: 'idle', tags: ['React Native'], lastTask: '升级导航库版本', timeAgo: '1 周前' },
 ]
 
 export const taskFixture: Task = {

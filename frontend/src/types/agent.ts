@@ -64,3 +64,15 @@ export interface Task {
   changeSet: ChangeSet
   verification: VerificationOutput
 }
+
+export type WorkspaceStatus = 'waiting' | 'pass' | 'fail' | 'idle'
+
+export interface WorkspaceEntry {
+  id: string
+  name: string
+  rootPath: string
+  status: WorkspaceStatus
+  tags: string[]
+  lastTask: string
+  timeAgo: string
+}
