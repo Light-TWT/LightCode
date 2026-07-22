@@ -21,4 +21,32 @@ describe('mockTaskService', () => {
     expect(approvedTask.changeSet.status).toBe('approved')
     expect(approvedTask.verification.status).toBe('passed')
   })
+
+  it('returns task history entries for a workspace', async () => {
+    const entries = await mockTaskService.getTaskHistory('workspace-login-service')
+
+    expect(entries.length).toBe(8)
+    expect(entries[0].status).toBe('waiting')
+    expect(entries.filter(e => e.status === 'done')).toHaveLength(4)
+    expect(entries.filter(e => e.status === 'fail')).toHaveLength(2)
+    expect(entries.filter(e => e.status === 'cancelled')).toHaveLength(1)
+  })
+
+  it('returns full task detail for a given task id', async () => {
+    const detail = await mockTaskService.getTaskDetail('history-task-3')
+
+    expect(detail.status).toBe('fail')
+    expect(detail.title).toContain('rate limiting')
+    expect(detail.failReason).toBeDefined()
+    expect(detail.plan.length).toBeGreaterThanOrEqual(4)
+    expect(detail.toolCalls.length).toBeGreaterThanOrEqual(5)
+  })
+
+  it('returns waiting-task detail with review redirect info', async () => {
+    const detail = await mockTaskService.getTaskDetail('history-task-1')
+
+    expect(detail.status).toBe('waiting')
+    expect(detail.approval.status).toBe('none')
+    expect(detail.plan.some(s => s.state === 'waiting')).toBe(true)
+  })
 })

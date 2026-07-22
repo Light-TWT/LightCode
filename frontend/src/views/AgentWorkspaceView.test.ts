@@ -1,5 +1,6 @@
 import { flushPromises, mount } from '@vue/test-utils'
 import { createPinia, setActivePinia } from 'pinia'
+import { createMemoryHistory, createRouter } from 'vue-router'
 import { beforeEach, describe, expect, it } from 'vitest'
 import AgentWorkspaceView from './AgentWorkspaceView.vue'
 
@@ -32,5 +33,27 @@ describe('AgentWorkspaceView', () => {
     await flushPromises()
 
     expect(wrapper.text()).toContain('3 passed in 0.12s')
+  })
+
+  it('opens the current workspace task history from the sidebar', async () => {
+    const router = createRouter({
+      history: createMemoryHistory(),
+      routes: [
+        { path: '/workspace/:id', component: AgentWorkspaceView },
+        { path: '/workspace/:id/history', name: 'session-history', component: AgentWorkspaceView },
+      ],
+    })
+    await router.push('/workspace/workspace-login-service')
+    await router.isReady()
+
+    const wrapper = mount(AgentWorkspaceView, {
+      global: { plugins: [router] },
+    })
+    await flushPromises()
+
+    await wrapper.get('[data-testid="task-history-link"]').trigger('click')
+    await flushPromises()
+
+    expect(router.currentRoute.value.fullPath).toBe('/workspace/workspace-login-service/history')
   })
 })

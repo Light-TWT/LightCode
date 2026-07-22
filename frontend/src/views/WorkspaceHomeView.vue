@@ -333,6 +333,7 @@ function statusLabel(status: string): string {
 }
 .drawer.open { transform: translateX(0); }
 .drawer-header {
+  display: block;
   padding: 18px 20px 12px;
   border-bottom: 1.5px solid #2a2a2a;
   flex-shrink: 0;
@@ -349,6 +350,7 @@ function statusLabel(status: string): string {
   font-family: 'JetBrains Mono', monospace; font-size: 18px;
   color: #999; cursor: pointer; padding: 2px 6px; line-height: 1;
   border: 1.5px solid #d8d0c4; border-radius: 4px; background: none;
+  transition: color .12s, border-color .12s;
 }
 .drawer-close:hover { color: #2a2a2a; border-color: #2a2a2a; }
 .drawer-search {
@@ -356,7 +358,7 @@ function statusLabel(status: string): string {
   font-family: 'JetBrains Mono', monospace; font-size: 11px;
   color: #2a2a2a; background: rgba(255,255,255,.5);
   border: 1.5px solid #d8d0c4; border-radius: 4px;
-  outline: none;
+  outline: none; transition: border-color .15s;
 }
 .drawer-search:focus { border-color: #6b7d8e; }
 .drawer-search::placeholder { color: #bbb; }
@@ -386,7 +388,7 @@ function statusLabel(status: string): string {
 }
 .drawer-item-arrow {
   font-family: 'JetBrains Mono', monospace; font-size: 11px;
-  color: #ccc; flex-shrink: 0;
+  color: #ccc; flex-shrink: 0; transition: color .12s;
 }
 .drawer-item:hover .drawer-item-arrow { color: #6b7d8e; }
 .drawer-empty {

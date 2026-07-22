@@ -87,11 +87,11 @@ button { font: inherit; }
 /* Review drawer */
 .review-drawer { min-width: 320px; max-width: 55vw; padding: 10px 12px; display: flex; flex-direction: column; overflow: hidden; border: 2px solid #2a2a2a; border-radius: 6px; background: rgba(255,255,255,.3); }
 
-/* Drawer header */
-.drawer-header { display: flex; justify-content: space-between; align-items: center; padding-bottom: 6px; border-bottom: 1.5px dashed #ccc; margin-bottom: 6px; }
-.drawer-header h2 { margin: 0; font: 700 18px Caveat, cursive; color: #1a1a1a; }
-.drawer-header button { border: 0; background: transparent; color: #aaa; cursor: pointer; font: 22px 'JetBrains Mono', monospace; padding: 2px 5px; line-height: 1; }
-.drawer-header button:hover { color: #b83030; }
+/* Drawer header (review drawer only) */
+.review-drawer .drawer-header { display: flex; justify-content: space-between; align-items: center; padding-bottom: 6px; border-bottom: 1.5px dashed #ccc; margin-bottom: 6px; }
+.review-drawer .drawer-header h2 { margin: 0; font: 700 18px Caveat, cursive; color: #1a1a1a; }
+.review-drawer .drawer-header button { border: 0; background: transparent; color: #aaa; cursor: pointer; font: 22px 'JetBrains Mono', monospace; padding: 2px 5px; line-height: 1; }
+.review-drawer .drawer-header button:hover { color: #b83030; }
 
 /* Drawer tabs */
 .drawer-tabs { display: flex; gap: 3px; margin-bottom: 6px; }

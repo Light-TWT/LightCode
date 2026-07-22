@@ -1,7 +1,10 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
 import { useAgentStore } from '@/stores/agent.store'
 
+const route = useRoute()
+const router = useRouter()
 const store = useAgentStore()
 const drawerOpen = ref(false)
 const drawerTab = ref<'diff' | 'file' | 'test'>('diff')
@@ -40,6 +43,10 @@ function startResize(event: MouseEvent) {
   event.preventDefault()
 }
 
+async function goToHistory() {
+  await router.push(`/workspace/${route.params.id}/history`)
+}
+
 async function approve() {
   await store.approveCurrentChangeSet()
   drawerTab.value = 'test'
@@ -65,6 +72,7 @@ async function approve() {
           <span class="session-dot" :class="session.status" aria-hidden="true" />{{ session.title }}
         </button>
       </section>
+      <button data-testid="task-history-link" class="settings-link history-link" type="button" @click="goToHistory">📋 历史记录</button>
       <button class="settings-link" type="button">设置</button>
     </aside>
 

@@ -76,3 +76,79 @@ export interface WorkspaceEntry {
   lastTask: string
   timeAgo: string
 }
+
+export type HistoryTaskStatus = 'waiting' | 'done' | 'fail' | 'cancelled'
+export type PlanStepResult = 'done' | 'fail' | 'waiting' | 'pending'
+
+export interface HistoryFileSummary {
+  name: string
+  additions: number
+  deletions: number
+}
+
+export interface HistoryTestSummary {
+  badge: 'pass' | 'fail' | 'none'
+  text: string
+}
+
+export interface HistoryTaskEntry {
+  id: string
+  status: HistoryTaskStatus
+  title: string
+  summary: string
+  time: string
+  duration: string
+  toolCount: number
+  files: HistoryFileSummary[]
+  testResult: HistoryTestSummary
+}
+
+export interface HistoryPlanStep {
+  label: string
+  state: PlanStepResult
+}
+
+export interface HistoryToolCall {
+  icon: string
+  name: string
+  args: string
+  ok: boolean
+}
+
+export interface HistoryFileChange {
+  name: string
+  additions: number
+  deletions: number
+  diff: string
+}
+
+export interface HistoryApproval {
+  status: 'approved' | 'rejected' | 'none'
+  text: string
+  time: string
+}
+
+export interface HistoryTestResult {
+  command: string
+  result: 'pass' | 'fail' | 'none'
+  detail: string
+}
+
+export interface HistoryTaskDetail {
+  id: string
+  status: HistoryTaskStatus
+  title: string
+  time: string
+  duration: string
+  toolCount: number
+  summary: string
+  plan: HistoryPlanStep[]
+  toolCalls: HistoryToolCall[]
+  files: HistoryFileChange[]
+  approval: HistoryApproval
+  test: HistoryTestResult
+  failReason?: string
+  failDetail?: string
+  rejectedCmd?: string
+  cancelInfo?: { stage: string; detail: string }
+}
