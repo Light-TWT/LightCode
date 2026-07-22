@@ -324,7 +324,11 @@ const selectedEntry = computed(() => {
 
 .workbench { flex: 1; min-height: 0; display: flex; gap: 0; }
 .task-list-panel { flex: 1; min-width: 0; display: flex; flex-direction: column; overflow: hidden; }
-.main-scroll { flex: 1; min-height: 0; overflow-y: auto; padding-right: 4px; }
+.main-scroll { flex: 1; min-height: 0; overflow-y: auto; padding-right: 4px; scrollbar-width: thin; scrollbar-color: #c5b9a8 rgba(0,0,0,.03); }
+.main-scroll::-webkit-scrollbar { width: 5px; }
+.main-scroll::-webkit-scrollbar-track { background: rgba(0,0,0,.03); border-radius: 4px; }
+.main-scroll::-webkit-scrollbar-thumb { background: #c5b9a8; border-radius: 4px; border: 1px solid rgba(0,0,0,.06); }
+.main-scroll::-webkit-scrollbar-thumb:hover { background: #a99e8d; }
 
 .timeline { display: flex; flex-direction: column; gap: 0; position: relative; }
 .timeline::before { content: ''; position: absolute; left: 11px; top: 0; bottom: 0; width: 2px; background: repeating-linear-gradient(to bottom, #d8d0c4 0px, #d8d0c4 4px, transparent 4px, transparent 8px); }
@@ -397,7 +401,9 @@ const selectedEntry = computed(() => {
 .detail-close { font-family: 'JetBrains Mono', monospace; font-size: 16px; color: #999; cursor: pointer; padding: 3px 5px; line-height: 1; border: 1.5px solid #d8d0c4; border-radius: 4px; background: none; flex-shrink: 0; }
 .detail-close:hover { color: #2a2a2a; border-color: #bbb; background: rgba(0,0,0,.03); }
 
-.detail-scroll { flex: 1; overflow-y: auto; padding-top: 12px; }
+.detail-scroll { flex: 1; overflow-y: auto; padding-top: 12px; scrollbar-width: thin; scrollbar-color: #c5b9a8 transparent; }
+.detail-scroll::-webkit-scrollbar { width: 4px; }
+.detail-scroll::-webkit-scrollbar-thumb { background: #c5b9a8; border-radius: 4px; }
 .detail-section { margin-bottom: 14px; }
 .detail-section-label { font-family: 'JetBrains Mono', monospace; font-size: 9px; text-transform: uppercase; letter-spacing: 1.5px; color: #6b7d8e; margin-bottom: 6px; padding-bottom: 4px; border-bottom: 1px dashed #e0d8cc; }
 .detail-summary { font-family: 'Architects Daughter', cursive; font-size: 12px; color: #444; line-height: 1.6; }

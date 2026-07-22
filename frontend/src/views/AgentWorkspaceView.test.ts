@@ -56,4 +56,26 @@ describe('AgentWorkspaceView', () => {
 
     expect(router.currentRoute.value.fullPath).toBe('/workspace/workspace-login-service/history')
   })
+
+  it('navigates back to workspace home from the sidebar', async () => {
+    const router = createRouter({
+      history: createMemoryHistory(),
+      routes: [
+        { path: '/', component: AgentWorkspaceView },
+        { path: '/workspace/:id', component: AgentWorkspaceView },
+      ],
+    })
+    await router.push('/workspace/workspace-login-service')
+    await router.isReady()
+
+    const wrapper = mount(AgentWorkspaceView, {
+      global: { plugins: [router] },
+    })
+    await flushPromises()
+
+    await wrapper.get('button.back-btn').trigger('click')
+    await flushPromises()
+
+    expect(router.currentRoute.value.fullPath).toBe('/')
+  })
 })

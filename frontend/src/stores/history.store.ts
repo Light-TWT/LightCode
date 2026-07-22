@@ -32,12 +32,12 @@ export const useHistoryStore = defineStore('history', {
       return result
     },
     filterCounts(state) {
-      const total = state.entries.length
+      const all = state.entries.length
       const waiting = state.entries.filter(e => e.status === 'waiting').length
       const done = state.entries.filter(e => e.status === 'done').length
       const fail = state.entries.filter(e => e.status === 'fail').length
       const cancelled = state.entries.filter(e => e.status === 'cancelled').length
-      return { total, waiting, done, fail, cancelled }
+      return { all, waiting, done, fail, cancelled }
     },
   },
   actions: {

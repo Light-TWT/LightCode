@@ -43,6 +43,10 @@ function startResize(event: MouseEvent) {
   event.preventDefault()
 }
 
+async function goHome() {
+  await router.push('/')
+}
+
 async function goToHistory() {
   await router.push(`/workspace/${route.params.id}/history`)
 }
@@ -56,6 +60,9 @@ async function approve() {
 <template>
   <main class="workspace-shell" :class="{ resizing: isResizing }">
     <aside class="sidebar" aria-label="工作区导航">
+      <div class="sidebar-back">
+        <button class="back-btn" type="button" @click="goHome">← 返回工作区列表</button>
+      </div>
       <div class="wordmark">LightCode</div>
       <div class="workspace-path">{{ store.workspace?.rootPath }}</div>
 
