@@ -133,8 +133,18 @@ class RuntimeService:
         ).fetchone()
         if row is None:
             raise HTTPException(status_code=404, detail=f"Task not found: {task_id}")
+        base = {
+            "id": row["id"],
+            "status": row["status"],
+            "title": row["title"],
+            "time": row["time"],
+            "duration": row["duration"],
+            "toolCount": row["tool_count"],
+            "summary": row["summary"],
+        }
         detail_data = json.loads(row["detail_json"]) if row["detail_json"] else {}
-        return HistoryTaskDetailResponse(**detail_data)
+        merged = {**base, **detail_data}
+        return HistoryTaskDetailResponse(**merged)
 
     def list_task_events(self, task_id: str) -> list[TaskEventResponse]:
         rows = self._db.execute(

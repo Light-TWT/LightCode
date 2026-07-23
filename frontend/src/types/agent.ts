@@ -48,7 +48,7 @@ export interface ChangeSet {
 }
 
 export interface VerificationOutput {
-  status: 'pending' | 'passed'
+  status: 'pending' | 'running' | 'passed' | 'failed'
   command: string
   lines: string[]
 }

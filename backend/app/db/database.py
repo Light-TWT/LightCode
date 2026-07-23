@@ -123,7 +123,95 @@ def seed_database(connection: sqlite3.Connection) -> None:
         ("task-login-validation", "session-login-validation", "workspace-login-service", "为 login.py 的登录接口增加输入校验，并运行相关测试", "awaiting_approval", plan_json, tool_calls_json, "已读取 login.py 并分析登录接口。当前实现缺少类型检查、长度校验和输入清洗。Diff 已生成，等待你审批后写入文件并运行测试。", changeset_status, "pending", "$ pytest test_login.py -v", verification_lines_json),
     )
 
-    history_seed_tasks = [
+    history_detail_1 = json.dumps({
+        "plan": [{"label": "读取 login.py 源码", "state": "done"}, {"label": "分析现有登录接口", "state": "done"}, {"label": "生成输入校验 Diff", "state": "waiting"}, {"label": "写入文件", "state": "pending"}, {"label": "运行相关测试", "state": "pending"}],
+        "toolCalls": [{"icon": "📖", "name": "read_file", "args": "login.py", "ok": True}, {"icon": "📖", "name": "read_file", "args": "test_login.py", "ok": True}, {"icon": "🔍", "name": "search_files", "args": "test_login.py · 3 matches", "ok": True}, {"icon": "📝", "name": "generate_diff", "args": "login.py", "ok": True}],
+        "files": [{"name": "login.py", "additions": 6, "deletions": 2, "diff": "- def login(username, password):\n+ def login(username: str, password: str) -> dict:\n+     if not isinstance(username, str) or len(username) > 64:\n+         return {\"error\": \"Invalid username\"}\n+     username = username.strip().lower()"}],
+        "approval": {"status": "none", "text": "等待审批", "time": "—"},
+        "test": {"command": "pytest test_login.py -v", "result": "none", "detail": "等待批准修改后运行"},
+    })
+    history_detail_2 = json.dumps({
+        "plan": [{"label": "分析 utils.py 中所有日期格式化调用", "state": "done"}, {"label": "设计统一的 format_date() 接口", "state": "done"}, {"label": "重构并更新调用方", "state": "done"}, {"label": "编写并运行测试", "state": "done"}],
+        "toolCalls": [{"icon": "📖", "name": "read_file", "args": "utils.py", "ok": True}, {"icon": "📖", "name": "read_file", "args": "login.py", "ok": True}, {"icon": "📖", "name": "read_file", "args": "test_utils.py", "ok": True}, {"icon": "🔍", "name": "search_files", "args": "date_format|strftime", "ok": True}, {"icon": "📝", "name": "generate_diff", "args": "utils.py", "ok": True}, {"icon": "📝", "name": "generate_diff", "args": "login.py", "ok": True}, {"icon": "📝", "name": "generate_diff", "args": "test_utils.py", "ok": True}, {"icon": "✍️", "name": "write_file", "args": "utils.py", "ok": True}, {"icon": "✍️", "name": "write_file", "args": "login.py", "ok": True}, {"icon": "✍️", "name": "write_file", "args": "test_utils.py", "ok": True}, {"icon": "🧪", "name": "run_test", "args": "test_utils.py", "ok": True}, {"icon": "📊", "name": "summarize", "args": "task complete", "ok": True}],
+        "files": [{"name": "utils.py", "additions": 18, "deletions": 32, "diff": "- def parse_date(s):\n-     return datetime.strptime(s, \"%Y-%m-%d\")\n- def format_iso(dt):\n-     return dt.isoformat()\n+ def format_date(dt, mode=\"iso\"):\n+     if mode == \"iso\":\n+         return dt.isoformat()\n+     return dt.strftime(\"%Y年%m月%d日\")"}, {"name": "login.py", "additions": 2, "deletions": 4, "diff": "- from utils import parse_date, format_iso\n+ from utils import format_date"}, {"name": "test_utils.py", "additions": 14, "deletions": 0, "diff": "+ def test_format_date_iso():\n+     assert format_date(dt, \"iso\") == \"2026-07-20T00:00:00\"\n+ def test_format_date_local():\n+     assert format_date(dt, \"local\") == \"2026年07月20日\""}],
+        "approval": {"status": "approved", "text": "已批准写入", "time": "今天 13:16"},
+        "test": {"command": "pytest test_utils.py -v", "result": "pass", "detail": "6 passed · 0 failed · 0.4s"},
+    })
+    history_detail_3 = json.dumps({
+        "plan": [{"label": "读取 login.py 和 requirements.txt", "state": "done"}, {"label": "搜索现有限流实现", "state": "done"}, {"label": "生成 rate limiting Diff", "state": "done"}, {"label": "安装 slowapi 依赖", "state": "fail"}, {"label": "运行测试验证", "state": "pending"}],
+        "toolCalls": [{"icon": "📖", "name": "read_file", "args": "login.py", "ok": True}, {"icon": "📖", "name": "read_file", "args": "requirements.txt", "ok": True}, {"icon": "🔍", "name": "search_files", "args": "rate.limit|throttle", "ok": True}, {"icon": "📝", "name": "generate_diff", "args": "login.py", "ok": True}, {"icon": "🧪", "name": "run_test", "args": "test_login.py", "ok": False}, {"icon": "⚙️", "name": "exec", "args": "pip install slowapi", "ok": False}],
+        "files": [{"name": "login.py", "additions": 8, "deletions": 0, "diff": "+ from slowapi import Limiter\n+ from slowapi.util import get_remote_address\n+ limiter = Limiter(key_func=get_remote_address)\n+ @app.route(\"/login\", methods=[\"POST\"])\n+ @limiter.limit(\"5/minute\")"}],
+        "approval": {"status": "none", "text": "未进入审批", "time": "—"},
+        "test": {"command": "pytest test_login.py -v", "result": "fail", "detail": "ImportError: No module named 'slowapi'"},
+        "failReason": "依赖缺失",
+        "failDetail": "slowapi 未安装，沙箱安全策略禁止 pip install。Agent 未写入任何文件。",
+        "rejectedCmd": "pip install slowapi",
+    })
+    history_detail_4 = json.dumps({
+        "plan": [{"label": "读取用户列表分页逻辑", "state": "done"}, {"label": "定位 offset 计算 bug", "state": "done"}, {"label": "修复并补充边界测试", "state": "done"}],
+        "toolCalls": [{"icon": "📖", "name": "read_file", "args": "login.py", "ok": True}, {"icon": "📖", "name": "read_file", "args": "test_login.py", "ok": True}, {"icon": "🔍", "name": "search_files", "args": "offset|pagination", "ok": True}, {"icon": "📝", "name": "generate_diff", "args": "login.py", "ok": True}, {"icon": "📝", "name": "generate_diff", "args": "test_login.py", "ok": True}, {"icon": "✍️", "name": "write_file", "args": "login.py", "ok": True}, {"icon": "✍️", "name": "write_file", "args": "test_login.py", "ok": True}, {"icon": "🧪", "name": "run_test", "args": "test_login.py", "ok": True}, {"icon": "📊", "name": "summarize", "args": "task complete", "ok": True}],
+        "files": [{"name": "login.py", "additions": 1, "deletions": 1, "diff": "- offset = page\n+ offset = (page - 1) * per_page"}, {"name": "test_login.py", "additions": 8, "deletions": 0, "diff": "+ def test_pagination_first_page():\n+     resp = client.get(\"/users?page=1&per_page=10\")\n+     assert len(resp.json()[\"items\"]) == 10\n+ def test_pagination_empty():\n+     resp = client.get(\"/users?page=999\")\n+     assert resp.json()[\"items\"] == []"}],
+        "approval": {"status": "approved", "text": "已批准写入", "time": "昨天 16:18"},
+        "test": {"command": "pytest test_login.py -v", "result": "pass", "detail": "5 passed · 0 failed · 0.3s"},
+    })
+    history_detail_5 = json.dumps({
+        "plan": [{"label": "设计 JSON 日志格式", "state": "done"}, {"label": "创建 logger.py 模块", "state": "done"}, {"label": "集成到 login.py 并测试", "state": "done"}],
+        "toolCalls": [{"icon": "📖", "name": "read_file", "args": "login.py", "ok": True}, {"icon": "📖", "name": "read_file", "args": "config.yaml", "ok": True}, {"icon": "📝", "name": "generate_diff", "args": "logger.py", "ok": True}, {"icon": "📝", "name": "generate_diff", "args": "login.py", "ok": True}, {"icon": "✍️", "name": "write_file", "args": "logger.py", "ok": True}, {"icon": "✍️", "name": "write_file", "args": "login.py", "ok": True}, {"icon": "🧪", "name": "run_test", "args": "test_logger.py", "ok": True}],
+        "files": [{"name": "logger.py", "additions": 28, "deletions": 0, "diff": "+ import logging, json, uuid\n+ class JSONFormatter(logging.Formatter):\n+     def format(self, record):\n+         return json.dumps({\"timestamp\": self.formatTime(record), \"level\": record.levelname, \"request_id\": getattr(record, \"request_id\", \"-\"), \"message\": record.getMessage()})"}, {"name": "login.py", "additions": 3, "deletions": 0, "diff": "+ from logger import get_logger\n+ logger = get_logger(__name__)"}],
+        "approval": {"status": "approved", "text": "已批准写入", "time": "昨天 14:03"},
+        "test": {"command": "pytest test_logger.py -v", "result": "pass", "detail": "3 passed · 0 failed · 0.2s"},
+    })
+    history_detail_6 = json.dumps({
+        "plan": [{"label": "读取 SQLAlchemy model 定义", "state": "done"}, {"label": "检查 Alembic 配置", "state": "done"}, {"label": "读取数据库连接配置", "state": "fail"}, {"label": "生成 migration 文件", "state": "pending"}],
+        "toolCalls": [{"icon": "📖", "name": "read_file", "args": "models.py", "ok": True}, {"icon": "📖", "name": "read_file", "args": "alembic.ini", "ok": True}, {"icon": "🔍", "name": "search_files", "args": "DATABASE_URL|sqlalchemy", "ok": True}, {"icon": "⚙️", "name": "exec", "args": "alembic revision --autogenerate", "ok": False}, {"icon": "⚙️", "name": "exec", "args": "echo $DATABASE_URL", "ok": False}],
+        "files": [{"name": "migrations/001.py", "additions": 0, "deletions": 0, "diff": "# 未生成 — 迁移失败"}],
+        "approval": {"status": "none", "text": "未进入审批", "time": "—"},
+        "test": {"command": "pytest", "result": "none", "detail": "迁移未生成，跳过测试"},
+        "failReason": "连接缺失",
+        "failDetail": "DATABASE_URL 环境变量未配置，Alembic 无法连接数据库。Agent 未写入任何迁移文件。",
+        "rejectedCmd": "alembic revision --autogenerate -m \"init\"",
+    })
+    history_detail_7 = json.dumps({
+        "plan": [{"label": "创建目录结构", "state": "done"}, {"label": "编写 config.yaml", "state": "done"}, {"label": "创建 main.py 入口", "state": "done"}],
+        "toolCalls": [{"icon": "✍️", "name": "write_file", "args": "config.yaml", "ok": True}, {"icon": "✍️", "name": "write_file", "args": "main.py", "ok": True}, {"icon": "✍️", "name": "write_file", "args": "requirements.txt", "ok": True}, {"icon": "⚙️", "name": "exec", "args": "mkdir -p app tests", "ok": True}, {"icon": "🧪", "name": "run_test", "args": "test_main.py", "ok": True}],
+        "files": [{"name": "config.yaml", "additions": 15, "deletions": 0, "diff": "+ app:\n+   name: login-service\n+   port: 8000\n+   debug: true"}, {"name": "main.py", "additions": 22, "deletions": 0, "diff": "+ from fastapi import FastAPI\n+ app = FastAPI()\n+ @app.get(\"/health\")\n+ async def health():\n+     return {\"status\": \"ok\"}"}, {"name": "requirements.txt", "additions": 6, "deletions": 0, "diff": "+ fastapi\n+ uvicorn\n+ pydantic\n+ sqlalchemy\n+ alembic\n+ pytest"}],
+        "approval": {"status": "approved", "text": "首次创建，无需审批", "time": "7 月 17 日"},
+        "test": {"command": "pytest test_main.py -v", "result": "pass", "detail": "2 passed · 0 failed · 0.1s"},
+    })
+    history_detail_8 = json.dumps({
+        "plan": [{"label": "调研 OAuth2 provider 集成方式", "state": "done"}, {"label": "读取现有登录接口", "state": "done"}, {"label": "设计 OAuth2 回调流程", "state": "pending"}, {"label": "生成 Diff", "state": "pending"}],
+        "toolCalls": [{"icon": "🔍", "name": "search_files", "args": "oauth|authlib", "ok": True}, {"icon": "📖", "name": "read_file", "args": "login.py", "ok": True}],
+        "files": [],
+        "approval": {"status": "none", "text": "未进入审批", "time": "—"},
+        "test": {"command": "—", "result": "none", "detail": "任务已取消"},
+        "cancelInfo": {"stage": "需求分析完成后", "detail": "Agent 刚完成 OAuth2 provider 调研，正准备生成 Diff 时被用户终止。"},
+    })
+
+    history_details = [
+        history_detail_1, history_detail_2, history_detail_3, history_detail_4,
+        history_detail_5, history_detail_6, history_detail_7, history_detail_8,
+    ]
+    history_files = [
+        json.dumps([{"name": "login.py", "additions": 6, "deletions": 2}]),
+        json.dumps([{"name": "utils.py", "additions": 18, "deletions": 32}, {"name": "login.py", "additions": 2, "deletions": 4}, {"name": "test_utils.py", "additions": 14, "deletions": 0}]),
+        json.dumps([{"name": "login.py", "additions": 8, "deletions": 0}]),
+        json.dumps([{"name": "login.py", "additions": 1, "deletions": 1}, {"name": "test_login.py", "additions": 8, "deletions": 0}]),
+        json.dumps([{"name": "logger.py", "additions": 28, "deletions": 0}, {"name": "login.py", "additions": 3, "deletions": 0}]),
+        json.dumps([{"name": "migrations/001.py", "additions": 0, "deletions": 0}]),
+        json.dumps([{"name": "config.yaml", "additions": 15, "deletions": 0}, {"name": "main.py", "additions": 22, "deletions": 0}, {"name": "requirements.txt", "additions": 6, "deletions": 0}]),
+        json.dumps([]),
+    ]
+    history_test_results = [
+        json.dumps({"badge": "none", "text": "未运行"}),
+        json.dumps({"badge": "pass", "text": "6 passed"}),
+        json.dumps({"badge": "fail", "text": "1 failed"}),
+        json.dumps({"badge": "pass", "text": "5 passed"}),
+        json.dumps({"badge": "pass", "text": "3 passed"}),
+        json.dumps({"badge": "none", "text": "未运行"}),
+        json.dumps({"badge": "pass", "text": "2 passed"}),
+        json.dumps({"badge": "none", "text": "未运行"}),
+    ]
+    history_base_rows = [
         ("history-task-1", "workspace-login-service", "waiting", "为 login.py 的登录接口增加输入校验，并运行相关测试", "已读取 login.py，分析现有登录接口。当前实现缺少类型检查、长度校验和输入清洗。Diff 已生成，等待你审批后写入文件并运行测试。", "今天 14:32", "3 分钟前", 4),
         ("history-task-2", "workspace-login-service", "done", "重构 utils.py 中的日期格式化函数", "将分散的日期格式化逻辑统一为 format_date() 工具函数，支持 ISO 和本地化两种模式。已更新 3 处调用方。", "今天 13:18", "5 分钟", 12),
         ("history-task-3", "workspace-login-service", "fail", "为 login.py 添加 rate limiting 中间件", "尝试引入 slowapi 库实现请求限流，但 requirements.txt 中缺少依赖且 pip install 在沙箱中被拒绝。任务终止。", "今天 11:45", "2 分钟", 6),
@@ -133,13 +221,10 @@ def seed_database(connection: sqlite3.Connection) -> None:
         ("history-task-7", "workspace-login-service", "done", "初始化项目结构和 config.yaml", "创建基础目录结构、配置文件和入口脚本。设置 FastAPI 应用骨架。", "7 月 17 日", "2 分钟", 5),
         ("history-task-8", "workspace-login-service", "cancelled", "添加 OAuth2 第三方登录", "用户主动取消。Agent 仅完成了需求分析，未进入实现阶段。", "7 月 17 日", "1 分钟", 2),
     ]
-    for task in history_seed_tasks:
-        files_json = "[]"
-        test_result_json = json.dumps({"badge": "none", "text": "未运行"})
-        detail_json = "{}"
+    for i, task in enumerate(history_base_rows):
         connection.execute(
             "INSERT OR IGNORE INTO task_history (id, workspace_id, status, title, summary, time, duration, tool_count, files_json, test_result_json, detail_json) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-            (*task, files_json, test_result_json, detail_json),
+            (*task, history_files[i], history_test_results[i], history_details[i]),
         )
 
     events_seed = [

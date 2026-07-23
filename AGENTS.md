@@ -64,8 +64,14 @@ scripts/        开发与验证脚本
 
 ```text
 前端: 37 测试通过 (9 文件), vue-tsc + vite build 通过
-后端: 11 测试通过 (4 文件), uvicorn 启动无报错
+后端: 16 测试通过 (7 文件), uvicorn 启动无报错
 Phase 0.5 任务: 1-5 已完成, 6 (localhost 验证) 待完成
+
+## 问题修复记录
+
+- 2026-07-23: 修复历史任务 detail_json 空对象导致 Pydantic ValidationError。`get_task_detail()` 改为合并行字段 + detail_json 额外字段。为 8 条历史任务填充真实的 plan/toolCalls/files/approval/test 及 failReason/failDetail/rejectedCmd/rejectedCmd/cancelInfo。
+- 2026-07-23: SSE 接入 agent.store.ts — API 模式下调用 subscribeTaskEvents 监听 changeset.approved/verification.started/verification.completed 更新任务状态，工作区切换或组件卸载时关闭 EventSource。
+- 2026-07-23: Vite 代理配置 — `server.proxy['/api'] -> http://127.0.0.1:8000`。
 ```
 
 ## 安全

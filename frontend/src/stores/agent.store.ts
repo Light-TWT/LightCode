@@ -1,4 +1,5 @@
 import { defineStore } from 'pinia'
+import { subscribeTaskEvents } from '@/services/event.service'
 import { taskService } from '@/services/task.service'
 import { workspaceService } from '@/services/workspace.service'
 import type { Session, Task, Workspace } from '@/types/agent'
@@ -10,10 +11,12 @@ export const useAgentStore = defineStore('agent', {
     task: null as Task | null,
     activeSessionId: 'session-login-validation',
     loading: false,
+    _unsubscribeEvents: null as (() => void) | null,
   }),
   actions: {
     async load(workspaceId: string) {
       this.loading = true
+      this._cleanupEvents()
       try {
         const [workspace, sessions, task] = await Promise.all([
           workspaceService.getWorkspace(workspaceId),
@@ -23,6 +26,7 @@ export const useAgentStore = defineStore('agent', {
         this.workspace = workspace
         this.sessions = sessions
         this.task = task
+        this._subscribeTaskEvents(task.id)
       } finally {
         this.loading = false
       }
@@ -30,6 +34,41 @@ export const useAgentStore = defineStore('agent', {
     async approveCurrentChangeSet() {
       if (!this.task) return
       this.task = await taskService.approveChangeSet(this.task.id)
+    },
+    _subscribeTaskEvents(taskId: string) {
+      const isApiMode = import.meta.env.VITE_LIGHTCODE_RUNTIME === 'api'
+      if (!isApiMode) return
+      this._unsubscribeEvents = subscribeTaskEvents(
+        taskId,
+        (event) => {
+          if (this.task === null) return
+          if (event.eventType === 'changeset.approved') {
+            this.task = { ...this.task, changeSet: { ...this.task.changeSet, status: 'approved' } }
+          } else if (event.eventType === 'verification.started') {
+            const cmd = (event.payload as Record<string, unknown>).command as string
+            this.task = { ...this.task, verification: { ...this.task.verification, status: 'running', command: cmd } }
+          } else if (event.eventType === 'verification.completed') {
+            const result = (event.payload as Record<string, unknown>).result as string
+            const detail = (event.payload as Record<string, unknown>).detail as string
+            this.task = {
+              ...this.task,
+              state: 'completed',
+              verification: {
+                ...this.task.verification,
+                status: result === 'passed' ? 'passed' : 'failed',
+                lines: [detail],
+              },
+            }
+          }
+        },
+        () => {},
+      )
+    },
+    _cleanupEvents() {
+      if (this._unsubscribeEvents) {
+        this._unsubscribeEvents()
+        this._unsubscribeEvents = null
+      }
     },
   },
 })
