@@ -72,6 +72,7 @@ Phase 0.5 任务: 1-5 已完成, 6 (localhost 验证) 待完成
 - 2026-07-23: 修复历史任务 detail_json 空对象导致 Pydantic ValidationError。`get_task_detail()` 改为合并行字段 + detail_json 额外字段。为 8 条历史任务填充真实的 plan/toolCalls/files/approval/test 及 failReason/failDetail/rejectedCmd/rejectedCmd/cancelInfo。
 - 2026-07-23: SSE 接入 agent.store.ts — API 模式下调用 subscribeTaskEvents 监听 changeset.approved/verification.started/verification.completed 更新任务状态，工作区切换或组件卸载时关闭 EventSource。
 - 2026-07-23: Vite 代理配置 — `server.proxy['/api'] -> http://127.0.0.1:8000`。
+- 2026-07-23: 修复 `uvicorn app.main:app` 启动时报 `ModuleNotFoundError: No module named 'app.module_one'` — 根因是 site-packages 中存在另一个同名的 `app` Flask 包。`main.py` 顶部加 `sys.path.insert(0, ...)` 确保本地 `backend/` 优先于 site-packages 解析。
 ```
 
 ## 安全
