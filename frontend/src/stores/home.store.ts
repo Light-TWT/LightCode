@@ -1,5 +1,5 @@
 import { defineStore } from 'pinia'
-import { mockWorkspaceService } from '@/services/workspace.service'
+import { workspaceService } from '@/services/workspace.service'
 import type { WorkspaceEntry } from '@/types/agent'
 
 export const useHomeStore = defineStore('home', {
@@ -24,8 +24,8 @@ export const useHomeStore = defineStore('home', {
       this.loading = true
       try {
         const [recent, all] = await Promise.all([
-          mockWorkspaceService.getRecentWorkspaces(),
-          mockWorkspaceService.getAllWorkspaces(),
+          workspaceService.getRecentWorkspaces(),
+          workspaceService.getAllWorkspaces(),
         ])
         this.recentWorkspaces = recent
         this.allWorkspaces = all

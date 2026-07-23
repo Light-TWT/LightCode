@@ -1,6 +1,6 @@
 import { defineStore } from 'pinia'
-import { mockTaskService } from '@/services/task.service'
-import { mockWorkspaceService } from '@/services/workspace.service'
+import { taskService } from '@/services/task.service'
+import { workspaceService } from '@/services/workspace.service'
 import type { Session, Task, Workspace } from '@/types/agent'
 
 export const useAgentStore = defineStore('agent', {
@@ -12,13 +12,13 @@ export const useAgentStore = defineStore('agent', {
     loading: false,
   }),
   actions: {
-    async load() {
+    async load(workspaceId: string) {
       this.loading = true
       try {
         const [workspace, sessions, task] = await Promise.all([
-          mockWorkspaceService.getWorkspace(),
-          mockWorkspaceService.getSessions(),
-          mockTaskService.getCurrentTask(this.activeSessionId),
+          workspaceService.getWorkspace(workspaceId),
+          workspaceService.getSessions(workspaceId),
+          taskService.getCurrentTask(this.activeSessionId),
         ])
         this.workspace = workspace
         this.sessions = sessions
@@ -29,7 +29,7 @@ export const useAgentStore = defineStore('agent', {
     },
     async approveCurrentChangeSet() {
       if (!this.task) return
-      this.task = await mockTaskService.approveChangeSet(this.task.id)
+      this.task = await taskService.approveChangeSet(this.task.id)
     },
   },
 })

@@ -1,5 +1,5 @@
 import { defineStore } from 'pinia'
-import { mockTaskService } from '@/services/task.service'
+import { taskService } from '@/services/task.service'
 import type { HistoryTaskDetail, HistoryTaskEntry } from '@/types/agent'
 
 export type FilterType = 'all' | 'waiting' | 'done' | 'fail' | 'cancelled'
@@ -44,7 +44,7 @@ export const useHistoryStore = defineStore('history', {
     async load(workspaceId: string) {
       this.loading = true
       try {
-        this.entries = await mockTaskService.getTaskHistory(workspaceId)
+        this.entries = await taskService.getTaskHistory(workspaceId)
       } finally {
         this.loading = false
       }
@@ -52,7 +52,7 @@ export const useHistoryStore = defineStore('history', {
     async openDetail(taskId: string) {
       this.detailLoading = true
       try {
-        this.detail = await mockTaskService.getTaskDetail(taskId)
+        this.detail = await taskService.getTaskDetail(taskId)
         this.detailOpen = true
       } finally {
         this.detailLoading = false

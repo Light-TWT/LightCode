@@ -15,7 +15,7 @@ const isResizing = ref(false)
 const task = computed(() => store.task)
 const isPending = computed(() => task.value?.changeSet.status === 'pending')
 
-onMounted(() => store.load())
+onMounted(() => store.load(route.params.id as string))
 
 function toggleTool(id: string) {
   expandedToolIds.value = expandedToolIds.value.includes(id)

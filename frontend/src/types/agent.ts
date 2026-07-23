@@ -134,6 +134,13 @@ export interface HistoryTestResult {
   detail: string
 }
 
+export interface TaskEvent {
+  sequence: number
+  eventType: string
+  payload: Record<string, unknown>
+  createdAt: string
+}
+
 export interface HistoryTaskDetail {
   id: string
   status: HistoryTaskStatus

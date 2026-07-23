@@ -1,4 +1,5 @@
 import { taskDetailFixtures, taskFixture, taskHistoryEntriesFixture } from '@/fixtures/agent.fixture'
+import { requestJson } from '@/services/http'
 import type { HistoryTaskDetail, HistoryTaskEntry, Task } from '@/types/agent'
 
 function cloneTask(): Task {
@@ -41,6 +42,7 @@ export const mockTaskService: TaskService = {
     if (workspaceId !== 'workspace-login-service') {
       throw new Error(`No mock history for workspace ${workspaceId}`)
     }
+
     return structuredClone(taskHistoryEntriesFixture)
   },
 
@@ -49,6 +51,26 @@ export const mockTaskService: TaskService = {
     if (!detail) {
       throw new Error(`Unknown task detail ${taskId}`)
     }
+
     return structuredClone(detail)
   },
 }
+
+export const httpTaskService: TaskService = {
+  async getCurrentTask(sessionId) {
+    return requestJson<Task>(`/sessions/${sessionId}/tasks/current`)
+  },
+  async approveChangeSet(taskId) {
+    return requestJson<Task>(`/tasks/${taskId}/changeset/approve`, { method: 'POST' })
+  },
+  async getTaskHistory(workspaceId) {
+    return requestJson<HistoryTaskEntry[]>(`/workspaces/${workspaceId}/tasks/history`)
+  },
+  async getTaskDetail(taskId) {
+    return requestJson<HistoryTaskDetail>(`/tasks/${taskId}`)
+  },
+}
+
+export const taskService = import.meta.env.VITE_LIGHTCODE_RUNTIME === 'api'
+  ? httpTaskService
+  : mockTaskService
