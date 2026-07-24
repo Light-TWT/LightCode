@@ -64,7 +64,8 @@ CREATE TABLE IF NOT EXISTS task_events (
 
 def initialize_database(database_path: Optional[Path] = None) -> sqlite3.Connection:
     if database_path is None:
-        database_path = Path("backend/data/lightcode.db")
+        # 回退路径同样基于本文件位置解析为绝对路径，避免依赖启动目录。
+        database_path = Path(__file__).resolve().parent.parent.parent / "data" / "lightcode.db"
     database_path.parent.mkdir(parents=True, exist_ok=True)
 
     connection = sqlite3.connect(str(database_path), check_same_thread=False)

@@ -65,10 +65,12 @@ scripts/        开发与验证脚本
 ```text
 前端: 37 测试通过 (9 文件), vue-tsc + vite build 通过
 后端: 16 测试通过 (7 文件), uvicorn 启动无报错
-Phase 0.5 任务: 1-5 已完成, 6 (localhost 验证) 待完成
+Phase 0.5 收尾: DB 路径绝对化 + Git 跟踪移除已完成; API 模式持久化验证通过 (临时 DB 审批持久化, 新库回到 awaiting_approval)
 
 ## 问题修复记录
 
+- 2026-07-24: 修复 SQLite 默认路径为相对路径导致从 backend/ 启动落到 backend/backend/data/lightcode.db 且被 Git 跟踪。`main.py` lifespan 与 `database.py` 无参回退均改为基于文件位置的绝对路径 (<repo>/backend/data/lightcode.db)；env 覆盖 LIGHTCODE_DATABASE_PATH 的相对路径解析到 backend/ 目录。已从 Git 索引移除该 DB 并在 .gitignore 忽略 backend/data/*.db 与 backend/backend/data/*.db。
+- 2026-07-24: 重写 backend/README.md，补充 Phase 0.5 启动方式、LIGHTCODE_DATABASE_PATH 临时数据库用法与 Mock Runtime 边界。
 - 2026-07-23: 修复历史任务 detail_json 空对象导致 Pydantic ValidationError。`get_task_detail()` 改为合并行字段 + detail_json 额外字段。为 8 条历史任务填充真实的 plan/toolCalls/files/approval/test 及 failReason/failDetail/rejectedCmd/rejectedCmd/cancelInfo。
 - 2026-07-23: SSE 接入 agent.store.ts — API 模式下调用 subscribeTaskEvents 监听 changeset.approved/verification.started/verification.completed 更新任务状态，工作区切换或组件卸载时关闭 EventSource。
 - 2026-07-23: Vite 代理配置 — `server.proxy['/api'] -> http://127.0.0.1:8000`。
