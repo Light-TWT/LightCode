@@ -1,6 +1,14 @@
-# Phase 0.5 运行时基础实现计划
+# Phase 0.5 运行时基础实施记录
 
-> **给智能体工作者：** 必需的子技能：使用 superpowers:subagent-driven-development（推荐）或 superpowers:executing-plans 来逐个任务执行本计划。步骤使用复选框 (`- [ ]`) 语法进行跟踪。
+> **状态：已完成（2026-07-24）**。本文件保留原始任务分解、契约决策和验证路径，复选框用于记录实现完成情况；实际代码结构、运行边界和当前命令以 `AGENTS.md`、`backend/README.md`、`frontend/README.md` 为准。
+
+## 完成摘要
+
+- FastAPI、SQLite、确定性 Mock Runtime、REST API、SSE 事件回放与前端 HTTP/EventSource 服务适配器均已实现。
+- 后端当前为 16 个 pytest 用例，前端当前为 37 个 Vitest 用例；前端 `vue-tsc -b && vite build` 已通过。
+- SQLite 默认路径已改为基于文件位置的绝对路径；`LIGHTCODE_DATABASE_PATH` 支持临时隔离数据库，审批状态在同一数据库重启后保持。
+- 实际代码将种子逻辑保留在 `backend/app/db/database.py`，SSE 路由保留在 `backend/app/api/routes.py`；未单独创建计划草案中的 `db/seed.py` 或 `api/sse.py`。
+- 本阶段仍严格禁止真实工作区访问、源码写入、Shell、模型、密钥、Electron、网络下载、依赖安装和 Git 写操作。
 
 **目标：** 用本地 FastAPI 和 SQLite Mock 运行时替换 LightCode 仅前端夹具，在无需访问真实项目目录或模型提供商的情况下，为现有的工作区、任务、历史、审批和有序事件合约提供服务。
 
@@ -115,14 +123,14 @@ frontend/src/
 - 新建：`backend/tests/test_health.py`
 - 修改：`AGENTS.md`
 
-- [ ] **步骤 1：先更新项目规则到 Phase 0.5**
+- [x] **步骤 1：先更新项目规则到 Phase 0.5**
 
 在写入任何后端文件之前，将 `AGENTS.md` 从 Phase 0 仅前端限制更新为
 Phase 0.5 运行时基础限制。明确允许 FastAPI、SQLite、确定性 Mock 运行时、
 REST 和 SSE；继续禁止真实文件系统访问、shell 执行、模型提供商、密钥处理和
 Electron 工作。
 
-- [ ] **步骤 2：编写 health endpoint 测试**
+- [x] **步骤 2：编写 health endpoint 测试**
 
 ```python
 from fastapi.testclient import TestClient
@@ -135,13 +143,13 @@ def test_health_reports_local_runtime(client: TestClient) -> None:
     assert response.json() == {"status": "ok", "runtime": "mock"}
 ```
 
-- [ ] **步骤 3：运行 health 测试，验证失败**
+- [x] **步骤 3：运行 health 测试，验证失败**
 
 运行：`python -m pytest tests/test_health.py -q`
 
 预期：FAIL 因为 `app.main` 不存在。
 
-- [ ] **步骤 4：添加后端依赖元数据**
+- [x] **步骤 4：添加后端依赖元数据**
 
 ```toml
 [project]
@@ -158,7 +166,7 @@ pythonpath = ["."]
 testpaths = ["tests"]
 ```
 
-- [ ] **步骤 5：添加 FastAPI 应用和测试 fixture**
+- [x] **步骤 5：添加 FastAPI 应用和测试 fixture**
 
 ```python
 # backend/app/main.py
@@ -193,13 +201,13 @@ def client() -> TestClient:
     return TestClient(app)
 ```
 
-- [ ] **步骤 6：运行聚焦测试**
+- [x] **步骤 6：运行聚焦测试**
 
 运行：`python -m pytest tests/test_health.py -q`
 
 预期：`1 passed`。
 
-- [ ] **步骤 7：提交引导代码**
+- [x] **步骤 7：提交引导代码**
 
 ```bash
 git add AGENTS.md backend
@@ -214,7 +222,7 @@ git commit -m "feat: bootstrap local mock runtime"
 - 修改：`backend/app/main.py`
 - 新建：`backend/tests/test_database.py`
 
-- [ ] **步骤 1：编写 schema 和种子隔离测试**
+- [x] **步骤 1：编写 schema 和种子隔离测试**
 
 ```python
 from app.db.database import initialize_database
@@ -241,13 +249,13 @@ def test_initialize_database_is_idempotent(tmp_path) -> None:
     assert count == 7
 ```
 
-- [ ] **步骤 2：运行数据库测试，验证失败**
+- [x] **步骤 2：运行数据库测试，验证失败**
 
 运行：`python -m pytest tests/test_database.py -q`
 
 预期：FAIL 因为 `initialize_database` 不存在。
 
-- [ ] **步骤 3：实现标准库 sqlite 初始化器**
+- [x] **步骤 3：实现标准库 sqlite 初始化器**
 
 `initialize_database(path: Path) -> sqlite3.Connection` 必须：
 
@@ -258,17 +266,17 @@ def test_initialize_database_is_idempotent(tmp_path) -> None:
 
 `seed_database(connection)` 必须使用 `INSERT OR IGNORE`，并精确播种 `frontend/src/fixtures/agent.fixture.ts` 中已代表的七个工作区条目以及任务/历史 fixture 语义。
 
-- [ ] **步骤 4：在启动时初始化应用数据库**
+- [x] **步骤 4：在启动时初始化应用数据库**
 
 使用 FastAPI lifespan 函数。默认数据库路径为 `backend/data/lightcode.db`，允许 `LIGHTCODE_DATABASE_PATH` 进行测试和本地覆盖，在需要时创建父级 data 目录，并在 `app.state` 中存储连接工厂而非全局请求连接。
 
-- [ ] **步骤 5：运行聚焦的后端测试**
+- [x] **步骤 5：运行聚焦的后端测试**
 
 运行：`python -m pytest tests/test_database.py tests/test_health.py -q`
 
 预期：`3 passed`。
 
-- [ ] **步骤 6：提交 schema 和种子数据**
+- [x] **步骤 6：提交 schema 和种子数据**
 
 ```bash
 git add backend
@@ -284,7 +292,7 @@ git commit -m "feat: add seeded sqlite mock runtime"
 - 修改：`backend/app/main.py`
 - 新建：`backend/tests/test_workspace_api.py`
 
-- [ ] **步骤 1：编写 API 合约测试**
+- [x] **步骤 1：编写 API 合约测试**
 
 ```python
 def test_recent_workspaces_return_camel_case_entries(client) -> None:
@@ -315,17 +323,17 @@ def test_workspace_sessions_match_frontend_contract(client) -> None:
     }
 ```
 
-- [ ] **步骤 2：运行 workspace API 测试，验证失败**
+- [x] **步骤 2：运行 workspace API 测试，验证失败**
 
 运行：`python -m pytest tests/test_workspace_api.py -q`
 
 预期：FAIL 因为路由未注册，返回 HTTP 404。
 
-- [ ] **步骤 3：定义严格的 Pydantic 响应模型**
+- [x] **步骤 3：定义严格的 Pydantic 响应模型**
 
 定义 `WorkspaceEntryResponse`、`WorkspaceResponse` 和 `SessionResponse`，使用与 `frontend/src/types/agent.ts` 中 `WorkspaceEntry`、`Workspace` 和 `Session` 完全匹配的 camelCase 字段。在每个模型上设置 `extra="forbid"`。
 
-- [ ] **步骤 4：实现只读 workspace 服务方法**
+- [x] **步骤 4：实现只读 workspace 服务方法**
 
 实现：
 
@@ -338,7 +346,7 @@ list_workspace_sessions(workspace_id: str) -> list[SessionResponse]
 
 仅使用参数化 SQLite 查询。用 `json.loads` 转换存储的 JSON。对未知工作区抛出 `HTTPException(status_code=404, detail=f"Workspace not found: {id}")`。
 
-- [ ] **步骤 5：注册四个 workspace 路由**
+- [x] **步骤 5：注册四个 workspace 路由**
 
 ```python
 router = APIRouter(prefix="/api/v1")
@@ -363,13 +371,13 @@ def workspace_sessions(
     return RuntimeService.from_request(request).list_workspace_sessions(workspace_id)
 ```
 
-- [ ] **步骤 6：运行聚焦测试**
+- [x] **步骤 6：运行聚焦测试**
 
 运行：`python -m pytest tests/test_workspace_api.py -q`
 
 预期：`3 passed`。
 
-- [ ] **步骤 7：提交 workspace 合约**
+- [x] **步骤 7：提交 workspace 合约**
 
 ```bash
 git add backend
@@ -385,7 +393,7 @@ git commit -m "feat: expose workspace runtime contract"
 - 新建：`backend/tests/test_task_api.py`
 - 新建：`backend/tests/test_event_stream.py`
 
-- [ ] **步骤 1：编写 task 和 approval 测试**
+- [x] **步骤 1：编写 task 和 approval 测试**
 
 ```python
 def test_current_task_is_pending_before_approval(client) -> None:
@@ -414,7 +422,7 @@ def test_unknown_task_returns_not_found(client) -> None:
     assert response.json() == {"detail": "Task not found: missing"}
 ```
 
-- [ ] **步骤 2：编写 SSE 排序测试**
+- [x] **步骤 2：编写 SSE 排序测试**
 
 ```python
 def test_task_events_are_replayed_in_sequence(client) -> None:
@@ -427,13 +435,13 @@ def test_task_events_are_replayed_in_sequence(client) -> None:
     assert "event: stream.end" in response.text
 ```
 
-- [ ] **步骤 3：运行 task 测试，验证失败**
+- [x] **步骤 3：运行 task 测试，验证失败**
 
 运行：`python -m pytest tests/test_task_api.py tests/test_event_stream.py -q`
 
 预期：FAIL 因为 task 路由不存在，返回 HTTP 404。
 
-- [ ] **步骤 4：定义与现有前端类型匹配的响应 schema**
+- [x] **步骤 4：定义与现有前端类型匹配的响应 schema**
 
 为以下内容定义 Pydantic 响应模型：
 
@@ -450,7 +458,7 @@ TaskEventResponse(sequence, type, payload, createdAt)
 
 `TaskResponse` 必须使用 `state`、`plan`、`toolCalls`、`modelOutput`、`changeSet` 和 `verification` 字段名。`HistoryTaskDetailResponse` 必须包含 `failReason`、`failDetail`、`rejectedCmd` 和 `cancelInfo` 作为可空字段，以便前端无需类型转换即可渲染失败和取消详情。
 
-- [ ] **步骤 5：实现确定性 task 操作**
+- [x] **步骤 5：实现确定性 task 操作**
 
 实现：
 
@@ -476,7 +484,7 @@ list_task_events(task_id: str) -> list[TaskEventResponse]
 {"detail":"Change set is not pending"}
 ```
 
-- [ ] **步骤 6：实现路由和 SSE 格式化**
+- [x] **步骤 6：实现路由和 SSE 格式化**
 
 为当前任务、任务历史、任务详情和审批添加 REST 路由。使用 `StreamingResponse` 添加流路由：
 
@@ -488,13 +496,13 @@ def encode_sse(event: TaskEventResponse) -> str:
 
 重放事件后，生成 `event: stream.end\ndata: {}\n\n` 并关闭。
 
-- [ ] **步骤 7：运行聚焦的 task 测试**
+- [x] **步骤 7：运行聚焦的 task 测试**
 
 运行：`python -m pytest tests/test_task_api.py tests/test_event_stream.py -q`
 
 预期：`4 passed`。
 
-- [ ] **步骤 8：提交 task 和 event 合约**
+- [x] **步骤 8：提交 task 和 event 合约**
 
 ```bash
 git add backend
@@ -514,7 +522,7 @@ git commit -m "feat: add task approval and event contracts"
 - 新建：`frontend/src/services/http.test.ts`
 - 新建：`frontend/src/services/event.service.test.ts`
 
-- [ ] **步骤 1：编写前端适配器测试**
+- [x] **步骤 1：编写前端适配器测试**
 
 ```ts
 import { describe, expect, it, vi } from 'vitest'
@@ -534,13 +542,13 @@ describe('requestJson', () => {
 })
 ```
 
-- [ ] **步骤 2：运行适配器测试，验证失败**
+- [x] **步骤 2：运行适配器测试，验证失败**
 
 运行：`npm run test -- src/services/http.test.ts src/services/event.service.test.ts`
 
 预期：FAIL 因为适配器模块不存在。
 
-- [ ] **步骤 3：添加运行时配置和 JSON 辅助函数**
+- [x] **步骤 3：添加运行时配置和 JSON 辅助函数**
 
 ```ts
 // frontend/src/config/runtime.ts
@@ -560,7 +568,7 @@ export async function requestJson<T>(path: string, init?: RequestInit): Promise<
 }
 ```
 
-- [ ] **步骤 4：将 Mock 和 HTTP 实现保持在同一接口之后**
+- [x] **步骤 4：将 Mock 和 HTTP 实现保持在同一接口之后**
 
 将现有导出对象重命名为 `mockWorkspaceService` 和 `mockTaskService`。添加实现相同接口的 `httpWorkspaceService` 和 `httpTaskService`。首先将 workspace 接口改为使用当前路由标识而非隐式单例：
 
@@ -583,7 +591,7 @@ export const workspaceService = import.meta.env.VITE_LIGHTCODE_RUNTIME === 'api'
 
 对 `taskService` 使用相同的选择模式。默认保持 Mock，直到后端开发命令被记录并运行。
 
-- [ ] **步骤 5：添加带显式清理的 EventSource 适配器**
+- [x] **步骤 5：添加带显式清理的 EventSource 适配器**
 
 ```ts
 export function subscribeTaskEvents(
@@ -599,17 +607,17 @@ export function subscribeTaskEvents(
 }
 ```
 
-- [ ] **步骤 6：更新 stores，导入所选服务**
+- [x] **步骤 6：更新 stores，导入所选服务**
 
 将 Pinia stores 中 `mockTaskService` 和 `mockWorkspaceService` 的直接导入替换为所选 `taskService` 和 `workspaceService`。更新 Agent Store 的 `load(workspaceId: string)` action，除了传递路由参数外，不改变视图层行为。Agent Store 仅在 API 模式下订阅，并在新的 load 或 store 销毁时进行清理。
 
-- [ ] **步骤 7：运行聚焦的前端测试**
+- [x] **步骤 7：运行聚焦的前端测试**
 
 运行：`npm run test -- src/services/http.test.ts src/services/event.service.test.ts src/services/task.service.test.ts src/services/workspace.service.test.ts`
 
 预期：所有选中的测试通过。
 
-- [ ] **步骤 8：提交前端适配器**
+- [x] **步骤 8：提交前端适配器**
 
 ```bash
 git add frontend
@@ -625,7 +633,7 @@ git commit -m "feat: add runtime service adapters"
 - 新建：`backend/tests/test_contract_shapes.py`
 - 修改：`README.md`
 
-- [ ] **步骤 1：编写后端合约形状测试**
+- [x] **步骤 1：编写后端合约形状测试**
 
 ```python
 def test_current_task_contract_uses_frontend_field_names(client) -> None:
@@ -639,13 +647,13 @@ def test_current_task_contract_uses_frontend_field_names(client) -> None:
     }
 ```
 
-- [ ] **步骤 2：运行合约测试，验证字段别名漂移时失败**
+- [x] **步骤 2：运行合约测试，验证字段别名漂移时失败**
 
 运行：`python -m pytest tests/test_contract_shapes.py -q`
 
 预期：Task 4 之后 PASS；否则在继续之前修正响应模型。
 
-- [ ] **步骤 3：添加 Vite 开发代理**
+- [x] **步骤 3：添加 Vite 开发代理**
 
 ```ts
 server: {
@@ -657,7 +665,7 @@ server: {
 
 当 `VITE_LIGHTCODE_RUNTIME=api` 时，设置 `VITE_LIGHTCODE_API_BASE_URL=/api/v1`，使浏览器请求和 SSE 在开发中使用 Vite 代理。保留直接 URL 回退用于独立 API 测试。
 
-- [ ] **步骤 4：文档化确定性的本地启动方式**
+- [x] **步骤 4：文档化确定性的本地启动方式**
 
 后端：
 
@@ -680,7 +688,7 @@ $env:VITE_LIGHTCODE_API_BASE_URL = '/api/v1'
 npm run dev
 ```
 
-- [ ] **步骤 5：运行完整验证**
+- [x] **步骤 5：运行完整验证**
 
 运行：
 
@@ -694,7 +702,7 @@ npm run build
 
 预期：所有后端测试通过，所有前端测试通过，前端生产构建成功且无警告。
 
-- [ ] **步骤 6：执行手动集成验证**
+- [x] **步骤 6：执行手动集成验证**
 
 1. 以 API 模式启动后端和前端。
 2. 打开 Workspace Home，确认最近工作区从 `/api/v1` 加载。
@@ -704,7 +712,7 @@ npm run build
 6. 打开 Session History，确认它从 `/api/v1` 加载历史记录和详情记录。
 7. 确认没有端点了打开文件、写入源文件、执行命令、读取提供商密钥或从浏览器接受工作区路径。
 
-- [ ] **步骤 7：提交运行时集成**
+- [x] **步骤 7：提交运行时集成**
 
 ```bash
 git add README.md backend frontend

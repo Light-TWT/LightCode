@@ -1,52 +1,54 @@
-# LightCode 后端（阶段 0.5：本地运行时基础）
+# LightCode 后端（Phase 0.5：本地运行时基础）
 
 ## 概述
 
-基于 FastAPI + SQLite 的**确定性 Mock Runtime**。此阶段不接入真实模型提供商、真实文件系统、
-Shell 执行、密钥存储或网络下载。所有数据由 `app/db/database.py` 中的 `seed_database()` 确定性生成，
-仅用于前端演示与验证。
+`backend/` 是基于 FastAPI 与 SQLite 的**确定性 Mock Runtime**。它为前端提供工作区、会话、任务、历史、审批和有序事件的 REST/SSE 合约；所有数据由 `app/db/database.py` 的 `seed_database()` 确定性生成，仅用于界面演示、服务适配与合约验证。
 
-## 目录结构
+当前后端不访问真实项目目录、不写源码、不执行命令、不调用模型、不接收或存储密钥。Phase 1 开始前，这些能力不得被模拟为已实现。
 
-- `app/main.py` — FastAPI 入口与 lifespan（初始化 SQLite 连接，绑定到 `app.state.db`）
-- `app/db/database.py` — 建表、种子数据、连接管理
-- `app/api/routes.py` — REST 路由（camelCase JSON，与前端合约一致）
-- `app/api/sse.py` — SSE 事件回放（仅回放 SQLite 中已持久化的有序事件）
-- `tests/` — pytest 用例（通过 `conftest.py` 用 `tmp_path` 隔离数据库）
+## 结构
 
-## 启动方式
+```text
+app/
+  main.py                 FastAPI 入口、CORS 与 SQLite 生命周期
+  api/routes.py           REST 与 SSE 路由
+  db/database.py          SQLite schema、初始化与确定性种子
+  schemas/contracts.py    camelCase Pydantic 请求/响应合约
+  services/runtime.py     查询、审批状态迁移与事件读取
+tests/                    pytest 用例；每个用例使用隔离临时数据库
+pyproject.toml            Python 依赖与 pytest 配置
+```
 
-### 依赖
+SSE 实现在 `app/api/routes.py`：它仅回放 SQLite 中已持久化且按 sequence 排序的事件，发送 `stream.end` 后关闭；它不是持续模型流。
 
-需要 Python >= 3.11。推荐在隔离环境中安装：
+## 依赖与启动
+
+需要 Python 3.11 或更高版本。推荐使用隔离环境：
 
 ```bash
 python -m venv .venv
 source .venv/bin/activate        # Windows: .venv\Scripts\activate
-pip install -e ".[dev]"
+python -m pip install -e ".[dev]"
 ```
 
-### 运行（开发）
-
-从 `backend/` 目录启动（`app` 包的发现依赖此目录在 `sys.path` 上）；
-**数据库路径本身不依赖当前工作目录**：
+从 `backend/` 目录启动开发服务：
 
 ```bash
-cd backend
 uvicorn app.main:app --reload --port 8000
 ```
 
-> 注意：`main.py` 顶部 `sys.path.insert(0, ...)` 确保本地 `backend/` 优先于 site-packages 中
-> 同名的 `app` 包解析，避免 `ModuleNotFoundError: No module named 'app.module_one'`。
+`main.py` 会将本地 `backend/` 置于 Python 导入路径前部，避免系统环境中同名 `app` 包影响 `uvicorn app.main:app`。
 
-前端通过 Vite 代理 `/api` → `http://127.0.0.1:8000` 访问后端。
+前端 API 模式可通过 Vite `/api` 代理访问 `http://127.0.0.1:8000`，也可使用直接 API 基址 `http://127.0.0.1:8000/api/v1`。
 
-## 临时数据库（LIGHTCODE_DATABASE_PATH）
+## 临时数据库
 
-运行时数据库属于**运行状态**，包含审批后的任务状态，不应进入源码历史。
-默认路径为 `<repo>/backend/data/lightcode.db`，由 `backend/app/main.py` 基于自身文件位置解析为绝对路径。
+运行时数据库包含审批后的 Mock 任务状态，不应进入源码历史。
 
-可用环境变量覆盖，指向临时数据库以隔离演示或验证：
+- 默认路径：`<repo>/backend/data/lightcode.db`。
+- 由 `backend/app/main.py` 基于自身位置解析为绝对路径。
+- 可使用 `LIGHTCODE_DATABASE_PATH` 指向隔离的临时数据库。
+- 相对的 `LIGHTCODE_DATABASE_PATH` 以 `backend/` 为基准解析，而不是当前工作目录。
 
 ```bash
 # Unix / Git Bash
@@ -56,28 +58,52 @@ LIGHTCODE_DATABASE_PATH=/tmp/lightcode-demo.db uvicorn app.main:app --port 8000
 $env:LIGHTCODE_DATABASE_PATH="C:\tmp\lightcode-demo.db"; uvicorn app.main:app --port 8000
 ```
 
-- 相对路径会解析到 `backend/` 目录下，而非当前工作目录。
-- 测试套件在 `conftest.py` 中自动将 `LIGHTCODE_DATABASE_PATH` 指向 `tmp_path`，因此各测试用例互不污染。
-- `backend/data/*.db` 与 `backend/backend/data/*.db`（含 `-shm`/`-wal`）已在根 `.gitignore` 中忽略。
+测试 fixture 会把 `LIGHTCODE_DATABASE_PATH` 指向 `tmp_path`，避免用例互相污染。根 `.gitignore` 忽略 `backend/data/*.db` 和历史错误路径 `backend/backend/data/*.db` 及其 `-shm`/`-wal` 文件。
 
-## Mock Runtime 边界（阶段 0.5）
+## Phase 0.5 合约与边界
 
-后端仅暴露确定性 Mock 数据与审批状态迁移。明确**不**做以下事项：
+当前 REST 路由：
 
-- 不接入真实模型提供商，也不模拟持续模型流（SSE 仅回放已持久化事件）。
-- 不访问真实项目文件、不执行源码写入、不执行终端命令。
-- 不接收、存储或记录任何 API Key / 密钥 / token（不进入 SQLite、事件、前端状态、日志或截图）。
-- 不实现 Electron、Git 写操作、网络下载或依赖安装能力。
+```text
+GET  /health
+GET  /api/v1/workspaces/recent
+GET  /api/v1/workspaces
+GET  /api/v1/workspaces/{workspaceId}
+GET  /api/v1/workspaces/{workspaceId}/sessions
+GET  /api/v1/sessions/{sessionId}/tasks/current
+POST /api/v1/tasks/{taskId}/changeset/approve
+GET  /api/v1/workspaces/{workspaceId}/tasks/history
+GET  /api/v1/tasks/{taskId}
+GET  /api/v1/tasks/{taskId}/events
+```
+
+所有 JSON 使用 camelCase，并与 `frontend/src/types/agent.ts` 对齐。审批是当前唯一状态修改操作：它更新确定性 Mock 状态，并追加 `changeset.approved`、`verification.started`、`verification.completed` 事件；不会写入真实文件或执行真实验证。
+
+明确禁止：
+
+- 真实模型提供商与持续模型流；
+- 真实工作区注册、读取或写入；
+- Shell、`subprocess`、依赖安装、网络下载与 Git 写操作；
+- API Key、密码、token 或其他密钥的接收、持久化、事件记录、前端传播、日志或截图；
+- Electron。
 
 ## 验证
 
-```bash
-# 后端测试（使用隔离的临时数据库）
-python -m pytest -q
+从 `backend/` 目录运行：
 
-# 前端测试与构建
+```bash
+python -m pytest -q
+```
+
+当前基线为 16 个后端测试通过。全量验证还应从 `frontend/` 运行：
+
+```bash
 npm run test
 npm run build
 ```
 
-验证通过后：审批状态在同一数据库刷新后持久化；使用**新数据库**启动时回到 `awaiting_approval` 等初始种子状态。
+同一 SQLite 数据库重启后，审批后的 Mock 状态会保留；使用新的数据库启动则回到 `awaiting_approval` 等确定性种子状态。
+
+## Phase 1 衔接
+
+Phase 1 将以服务端静态注册的授权工作区、路径守卫、只读工具、确定性 ChangeSet、版本绑定审批、单文件原子写入与内建验证替换当前 Mock 审批行为。实施前必须遵守 `../docs/phase1-safety-contract.md` 与 `../docs/workspace-registration.md`；在这些约束实现并测试前，当前端点不得扩展为真实文件能力。

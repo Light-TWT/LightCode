@@ -49,10 +49,19 @@ scripts/        开发与验证脚本
 
 ## 运行时规则
 
-- 按 `docs/superpowers/plans/2026-07-23-phase-0-5-runtime-foundation.md` 的任务顺序实现，并遵循先写失败测试、再写最小实现、再运行聚焦验证的节奏。
+### Phase 0.5 已完成范围
+
 - FastAPI 仅暴露确定性 Mock 数据和审批状态迁移；不得宣称或模拟真实项目文件访问、源码写入、终端执行或模型调用。
 - SSE 只回放 SQLite 中已持久化的有序事件；不得伪造持续模型流。
 - 提供商 API Key 不得进入 SQLite、事件、前端状态、日志或截图。
+- Phase 0.5 的任务分解与实现记录见 `docs/superpowers/plans/2026-07-23-phase-0-5-runtime-foundation.md`；当前实现以源码和 README 为准。
+
+### Phase 1 实施前置规则
+
+- 实施前必须先阅读 `docs/phase1-safety-contract.md` 与 `docs/workspace-registration.md`，再更新代码或 API 合约。
+- 真实工作区根路径仅来自服务端启动静态配置；浏览器只能提交 `workspaceId`，不能提交本地路径、文件路径、补丁、文件内容或命令。
+- Phase 1 仅允许受控只读工具、服务端确定性 ChangeSet、显式版本绑定审批、单个既有 UTF-8 文本文件的原子替换和内建完整性验证。
+- Phase 1 继续禁止真实模型、Electron、Shell/外部命令、依赖安装、网络下载、Git 写操作和密钥处理。
 
 ## 验证
 
@@ -66,17 +75,17 @@ scripts/        开发与验证脚本
 前端: 37 测试通过 (9 文件), vue-tsc + vite build 通过
 后端: 16 测试通过 (7 文件), uvicorn 启动无报错
 Phase 0.5 收尾: DB 路径绝对化 + Git 跟踪移除已完成; API 模式持久化验证通过 (临时 DB 审批持久化, 新库回到 awaiting_approval)
+```
 
 ## 问题修复记录
 
-- 2026-07-24: 修复 SQLite 默认路径为相对路径导致从 backend/ 启动落到 backend/backend/data/lightcode.db 且被 Git 跟踪。`main.py` lifespan 与 `database.py` 无参回退均改为基于文件位置的绝对路径 (<repo>/backend/data/lightcode.db)；env 覆盖 LIGHTCODE_DATABASE_PATH 的相对路径解析到 backend/ 目录。已从 Git 索引移除该 DB 并在 .gitignore 忽略 backend/data/*.db 与 backend/backend/data/*.db。
-- 2026-07-24: 重写 backend/README.md，补充 Phase 0.5 启动方式、LIGHTCODE_DATABASE_PATH 临时数据库用法与 Mock Runtime 边界。
-- 2026-07-23: 修复历史任务 detail_json 空对象导致 Pydantic ValidationError。`get_task_detail()` 改为合并行字段 + detail_json 额外字段。为 8 条历史任务填充真实的 plan/toolCalls/files/approval/test 及 failReason/failDetail/rejectedCmd/rejectedCmd/cancelInfo。
-- 2026-07-23: SSE 接入 agent.store.ts — API 模式下调用 subscribeTaskEvents 监听 changeset.approved/verification.started/verification.completed 更新任务状态，工作区切换或组件卸载时关闭 EventSource。
-- 2026-07-23: Vite 代理配置 — `server.proxy['/api'] -> http://127.0.0.1:8000`。
-- 2026-07-23: 修复 `uvicorn app.main:app` 启动时报 `ModuleNotFoundError: No module named 'app.module_one'` — 根因是 site-packages 中存在另一个同名的 `app` Flask 包。`main.py` 顶部加 `sys.path.insert(0, ...)` 确保本地 `backend/` 优先于 site-packages 解析。
-```
+- 2026-07-24: 修复 SQLite 默认路径为相对路径导致从 backend/ 启动落到 backend/backend/data/lightcode.db 且被 Git 跟踪。`main.py` lifespan 与 `database.py` 无参回退均改为基于文件位置的绝对路径 (`<repo>/backend/data/lightcode.db`)；env 覆盖 `LIGHTCODE_DATABASE_PATH` 的相对路径解析到 backend/ 目录。已从 Git 索引移除该 DB 并在 `.gitignore` 忽略 `backend/data/*.db` 与 `backend/backend/data/*.db`。
+- 2026-07-24: 重写 backend README，补充 Phase 0.5 启动方式、`LIGHTCODE_DATABASE_PATH` 临时数据库用法与 Mock Runtime 边界。
+- 2026-07-23: 修复历史任务 `detail_json` 空对象导致的 Pydantic ValidationError。`get_task_detail()` 改为合并行字段与 `detail_json` 额外字段；为 8 条历史任务填充 plan、toolCalls、files、approval、test 及失败/取消字段。
+- 2026-07-23: SSE 接入 `agent.store.ts`。API 模式下监听 `changeset.approved`、`verification.started`、`verification.completed`；切换工作区或组件卸载时关闭 EventSource。
+- 2026-07-23: 配置 Vite 代理：`server.proxy['/api'] -> http://127.0.0.1:8000`。
+- 2026-07-23: 修复 `uvicorn app.main:app` 的同名 `app` 包解析冲突；`main.py` 顶部将本地 `backend/` 插入 `sys.path` 首位。
 
 ## 安全
 
-未来的运行时必须强制执行工作区隔离、显式差异审批、命令策略和密钥脱敏。在阶段 0.5 中不得伪造文件系统访问或安全声明。
+未来运行时必须执行工作区隔离、显式差异审批、命令策略和密钥脱敏。Phase 0.5 不得伪造文件系统访问或安全声明；Phase 1 的真实文件能力必须严格遵守 `docs/phase1-safety-contract.md`。
