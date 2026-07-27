@@ -58,7 +58,8 @@ CREATE TABLE IF NOT EXISTS changesets (
     after_json TEXT NOT NULL DEFAULT '[]',
     base_text TEXT NOT NULL DEFAULT '',
     proposed_text TEXT NOT NULL DEFAULT '',
-    created_at TEXT NOT NULL DEFAULT ''
+    created_at TEXT NOT NULL DEFAULT '',
+    expires_at TEXT NOT NULL DEFAULT ''
 );
 
 -- Phase 1: version-bound approval records with idempotency.
@@ -116,14 +117,19 @@ def run_migrations(connection: sqlite3.Connection) -> None:
     which satisfies the "Mock 隔离" safety invariant.
     """
     task_columns = _column_names(connection, "tasks")
+    changeset_columns = _column_names(connection, "changesets")
+    # (column_name, target_table, ddl) — keyed by the table that owns the column
+    # so the existence check queries the correct table.
     migrations = {
-        "kind": "ALTER TABLE tasks ADD COLUMN kind TEXT NOT NULL DEFAULT 'mock'",
-        "target_file": "ALTER TABLE tasks ADD COLUMN target_file TEXT NOT NULL DEFAULT ''",
-        "changeset_id": "ALTER TABLE tasks ADD COLUMN changeset_id TEXT NOT NULL DEFAULT ''",
-        "verification_detail": "ALTER TABLE tasks ADD COLUMN verification_detail TEXT NOT NULL DEFAULT ''",
+        "kind": ("tasks", "ALTER TABLE tasks ADD COLUMN kind TEXT NOT NULL DEFAULT 'mock'"),
+        "target_file": ("tasks", "ALTER TABLE tasks ADD COLUMN target_file TEXT NOT NULL DEFAULT ''"),
+        "changeset_id": ("tasks", "ALTER TABLE tasks ADD COLUMN changeset_id TEXT NOT NULL DEFAULT ''"),
+        "verification_detail": ("tasks", "ALTER TABLE tasks ADD COLUMN verification_detail TEXT NOT NULL DEFAULT ''"),
+        "expires_at": ("changesets", "ALTER TABLE changesets ADD COLUMN expires_at TEXT NOT NULL DEFAULT ''"),
     }
-    for column, statement in migrations.items():
-        if column not in task_columns:
+    for column, (table, statement) in migrations.items():
+        existing = task_columns if table == "tasks" else changeset_columns
+        if column not in existing:
             connection.execute(statement)
 
 

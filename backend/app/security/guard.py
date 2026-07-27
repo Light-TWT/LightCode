@@ -15,10 +15,8 @@ from app.schemas.errors import (
     WORKSPACE_NOT_REGISTERED,
 )
 from app.security.fs import canonical_resolve, is_link_or_reparse, validate_relative_input
+from app.security.policy import MAX_FILE_BYTES, SECRET_GLOB, is_allowed_extension
 from app.workspaces.registry import RegistryWorkspace, WorkspaceRegistry
-
-MAX_FILE_BYTES = 1_000_000
-SECRET_GLOB = ("*.pem", "*.key", "id_rsa*", "credentials*", "secrets*")
 
 
 def _is_secret(name: str) -> bool:
@@ -83,6 +81,8 @@ class WorkspaceGuard:
             raise Phase1Error(SECRET_FILE_DENIED, "secret file access is denied")
         if path.stat().st_size > MAX_FILE_BYTES:
             raise Phase1Error(FILE_SIZE_DENIED, "file exceeds size limit")
+        if not is_allowed_extension(path):
+            raise Phase1Error(FILE_TYPE_DENIED, "file type not allowed by policy")
 
     def read_text(self, workspace_id: str, relative: str) -> str:
         path = self.resolve(workspace_id, relative)
@@ -122,6 +122,10 @@ class WorkspaceGuard:
         results = []
         for path in root.rglob("*"):
             if not path.is_file() or is_link_or_reparse(path) or _is_secret(path.name):
+                continue
+            if path.stat().st_size > MAX_FILE_BYTES:
+                continue
+            if not is_allowed_extension(path):
                 continue
             try:
                 text = path.read_text(encoding="utf-8")

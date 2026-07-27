@@ -154,19 +154,26 @@ class RuntimeService:
         return HistoryTaskDetailResponse(**merged)
 
     def list_task_events(self, task_id: str) -> list[TaskEventResponse]:
+        return self.list_task_events_after(task_id, after_sequence=0)
+
+    def list_task_events_after(
+        self, task_id: str, after_sequence: int
+    ) -> list[TaskEventResponse]:
         rows = self._db.execute(
-            "SELECT sequence, event_type, payload_json, created_at FROM task_events WHERE task_id = ? ORDER BY sequence ASC",
-            (task_id,),
+            "SELECT sequence, event_type, payload_json, created_at FROM task_events "
+            "WHERE task_id = ? AND sequence > ? ORDER BY sequence ASC",
+            (task_id, after_sequence),
         ).fetchall()
-        return [
-            TaskEventResponse(
-                sequence=row["sequence"],
-                eventType=row["event_type"],
-                payload=json.loads(row["payload_json"]),
-                createdAt=row["created_at"],
-            )
-            for row in rows
-        ]
+        return [self._row_to_event(row) for row in rows]
+
+    @staticmethod
+    def _row_to_event(row: sqlite3.Row) -> TaskEventResponse:
+        return TaskEventResponse(
+            sequence=row["sequence"],
+            eventType=row["event_type"],
+            payload=json.loads(row["payload_json"]),
+            createdAt=row["created_at"],
+        )
 
     # --- Internal ---
 

@@ -14,6 +14,7 @@ from app.api.routes import router as api_router
 from app.db.database import initialize_database
 from app.schemas.errors import Phase1Error
 from app.security.guard import WorkspaceGuard
+from app.services.phase1 import Phase1Service
 from app.workspaces.registry import WorkspaceRegistry
 
 
@@ -40,6 +41,12 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     registry = WorkspaceRegistry.load(config_path)
     app.state.registry = registry
     app.state.guard = WorkspaceGuard(registry)
+
+    # Startup crash recovery: reconcile any real task left mid-apply by a
+    # previously crashed process (contract §失败和恢复承诺).
+    recovery = Phase1Service(connection, registry, app.state.guard).recover_incomplete_tasks()
+    if any(v for v in recovery.values()):
+        print(f"[lightcode] startup recovery: {recovery}")
 
     yield
     connection.close()

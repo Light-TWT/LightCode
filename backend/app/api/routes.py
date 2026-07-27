@@ -1,3 +1,5 @@
+import time
+
 from fastapi import APIRouter, Request
 from fastapi.responses import StreamingResponse
 
@@ -18,6 +20,44 @@ from app.services.phase1 import Phase1Service
 from app.services.runtime import RuntimeService
 
 router = APIRouter(prefix="/api/v1")
+
+# SSE resume behaviour. After replaying persisted events, a `tail=true` stream
+# keeps polling for new events up to this timeout so the browser can resume
+# after a dropped connection (contract §API、事件与错误码: SSE 仅传递已持久化
+# 事实事件，且支持基于 sequence / Last-Event-ID 的续传).
+SSE_TAIL_TIMEOUT_SECONDS = 30
+SSE_POLL_INTERVAL_SECONDS = 0.5
+
+
+def _event_to_sse(event: TaskEventResponse) -> str:
+    """Serialize a task event as an SSE frame with an `id` for Last-Event-ID."""
+    data = event.model_dump_json(by_alias=True)
+    return f"id: {event.sequence}\nevent: task.event\ndata: {data}\n\n"
+
+
+def _build_event_stream(service: RuntimeService, task_id: str, after_sequence: int, tail: bool):
+    pending = service.list_task_events_after(task_id, after_sequence)
+    for event in pending:
+        yield _event_to_sse(event)
+        after_sequence = event.sequence
+    if not tail:
+        yield "event: stream.end\ndata: {}\n\n"
+        return
+    deadline = time.monotonic() + SSE_TAIL_TIMEOUT_SECONDS
+    while time.monotonic() < deadline:
+        for event in service.list_task_events_after(task_id, after_sequence):
+            yield _event_to_sse(event)
+            after_sequence = event.sequence
+        time.sleep(SSE_POLL_INTERVAL_SECONDS)
+    yield "event: stream.end\ndata: {}\n\n"
+
+
+def _resolve_after_sequence(request: Request, after_sequence: int) -> int:
+    """Honour a browser-sent Last-Event-ID for SSE resume."""
+    last_event_id = request.headers.get("last-event-id")
+    if last_event_id and last_event_id.isdigit():
+        return max(after_sequence, int(last_event_id))
+    return after_sequence
 
 
 @router.get("/workspaces/recent", response_model=list[WorkspaceEntryResponse])
@@ -61,17 +101,20 @@ def task_detail(task_id: str, request: Request) -> HistoryTaskDetailResponse:
 
 
 @router.get("/tasks/{task_id}/events")
-def task_events(task_id: str, request: Request) -> StreamingResponse:
+def task_events(
+    task_id: str,
+    request: Request,
+    after_sequence: int = 0,
+    tail: bool = False,
+) -> StreamingResponse:
+    """Replay persisted task events; supports resume via `?afterSequence=` or
+    the `Last-Event-ID` header, and optional tailing for live catch-up."""
     service = RuntimeService.from_request(request)
-
-    def event_stream():
-        events = service.list_task_events(task_id)
-        for event in events:
-            data = event.model_dump_json(by_alias=True)
-            yield f"event: task.event\ndata: {data}\n\n"
-        yield "event: stream.end\ndata: {}\n\n"
-
-    return StreamingResponse(event_stream(), media_type="text/event-stream")
+    after = _resolve_after_sequence(request, after_sequence)
+    return StreamingResponse(
+        _build_event_stream(service, task_id, after, tail),
+        media_type="text/event-stream",
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -122,3 +165,21 @@ def submit_real_task_approval(
     task_id: str, payload: ApprovalRequest, request: Request
 ) -> RealTaskResponse:
     return Phase1Service.from_request(request).submit_approval(task_id, payload)
+
+
+@router.get("/real-tasks/{task_id}/events")
+def real_task_events(
+    task_id: str,
+    request: Request,
+    after_sequence: int = 0,
+    tail: bool = False,
+) -> StreamingResponse:
+    """Real-task event stream (resume-capable). Reuses the same persisted
+    `task_events` table as the generic endpoint; the browser connects by the
+    real task id and resumes via `?afterSequence=` or `Last-Event-ID`."""
+    service = RuntimeService.from_request(request)
+    after = _resolve_after_sequence(request, after_sequence)
+    return StreamingResponse(
+        _build_event_stream(service, task_id, after, tail),
+        media_type="text/event-stream",
+    )

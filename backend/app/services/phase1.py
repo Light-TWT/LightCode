@@ -16,7 +16,7 @@ from __future__ import annotations
 import json
 import sqlite3
 import uuid
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 from fastapi import Request
 
@@ -32,8 +32,10 @@ from app.schemas.contracts import (
 from app.schemas.errors import (
     APPLY_OUTCOME_UNKNOWN,
     APPROVAL_ALREADY_PROCESSED,
+    CHANGESET_EXPIRED,
     CHANGESET_NOT_ACTIVE,
     CHANGESET_REVISION_MISMATCH,
+    FILE_TYPE_DENIED,
     INVALID_STATE_TRANSITION,
     STALE_BASE,
     USER_REJECTED,
@@ -48,11 +50,16 @@ from app.services.atomic_write import (
 )
 from app.services.changeset import generate_change_set
 from app.security.guard import WorkspaceGuard
+from app.security.policy import CHANGESET_TTL_SECONDS, MAX_DIFF_LINES
 from app.workspaces.registry import WorkspaceRegistry
 
 
 def _now() -> str:
     return datetime.now(timezone.utc).isoformat()
+
+
+def _now_dt() -> datetime:
+    return datetime.now(timezone.utc)
 
 
 class Phase1Service:
@@ -109,6 +116,11 @@ class Phase1Service:
         session_id = f"real-session-{task_id}"
         change_set_id = f"cs-{uuid.uuid4().hex[:12]}"
         now = _now()
+        expires_at = ""
+        if CHANGESET_TTL_SECONDS > 0:
+            expires_at = (
+                datetime.fromisoformat(now) + timedelta(seconds=CHANGESET_TTL_SECONDS)
+            ).isoformat()
 
         # reading_workspace: read the server-configured target file via the guard.
         base_text = self._guard.read_text(workspace_id, ws.target_file)
@@ -124,6 +136,13 @@ class Phase1Service:
             )
         except ValueError as exc:
             raise Phase1Error(INVALID_STATE_TRANSITION, str(exc)) from exc
+
+        # File policy: reject ChangeSets whose diff exceeds the line limit
+        # (contract §文件拒绝). The limit is a policy constant, not client input.
+        if generated.additions + generated.deletions > MAX_DIFF_LINES:
+            raise Phase1Error(
+                FILE_TYPE_DENIED, "change set exceeds the maximum diff line limit"
+            )
 
         plan = [
             {"id": "plan", "label": "规划变更", "status": "completed"},
@@ -162,8 +181,8 @@ class Phase1Service:
                    (id, task_id, workspace_id, revision, logical_relative_path,
                     base_sha256, proposed_sha256, diff_hash, policy_version, status,
                     additions, deletions, before_json, after_json,
-                    base_text, proposed_text, created_at)
-                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                    base_text, proposed_text, created_at, expires_at)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
                 (
                     change_set_id,
                     task_id,
@@ -182,6 +201,7 @@ class Phase1Service:
                     generated.base_text,
                     generated.proposed_text,
                     now,
+                    expires_at,
                 ),
             )
             self._db.execute(
@@ -296,6 +316,15 @@ class Phase1Service:
             raise Phase1Error(CHANGESET_REVISION_MISMATCH, "revision mismatch")
         if cs["diff_hash"] != approval.diffHash:
             raise Phase1Error(CHANGESET_REVISION_MISMATCH, "diff hash mismatch")
+        # Validity window (contract §审批与写入协议 step 1 "校验...有效期").
+        if cs["expires_at"]:
+            expires_dt = datetime.fromisoformat(cs["expires_at"])
+            if expires_dt.tzinfo is None:
+                expires_dt = expires_dt.replace(tzinfo=timezone.utc)
+            if _now_dt() > expires_dt:
+                raise Phase1Error(
+                    CHANGESET_EXPIRED, "change set has expired; create a fresh task"
+                )
 
         ws = self._guard.workspace(task["workspace_id"])
         now = _now()
@@ -517,6 +546,64 @@ class Phase1Service:
             raise Phase1Error(CHANGESET_NOT_ACTIVE, "change set not found")
         return row
 
+    # --- Startup crash recovery (contract §失败和恢复承诺) ---
+
+    def _safe_sha256(self, path: Path) -> str | None:
+        """Hash the on-disk target file, or None if it is missing/unreadable."""
+        try:
+            return sha256_text(path.read_text(encoding="utf-8", newline=""))
+        except (OSError, UnicodeDecodeError):
+            return None
+
+    def recover_incomplete_tasks(self) -> dict[str, int]:
+        """Reconcile real tasks left in `applying_change` by a crashed process.
+
+        For each stuck task, compare the on-disk target hash with the persisted
+        ChangeSet to decide the outcome:
+          - equals proposed_sha256 -> apply succeeded; mark `completed`.
+          - equals base_sha256     -> nothing was written; reset to
+            `awaiting_approval` for safe re-approval.
+          - otherwise              -> unknown; block further auto-write with
+            `APPLY_OUTCOME_UNKNOWN` (requires manual inspection).
+        """
+        rows = self._db.execute(
+            "SELECT * FROM tasks WHERE kind = 'real' AND state = 'applying_change'"
+        ).fetchall()
+        summary = {"completed": 0, "reset": 0, "unknown": 0}
+        for task in rows:
+            cs = self._load_change_set(task["changeset_id"])
+            target = self._guard.resolve(task["workspace_id"], task["target_file"])
+            current_hash = self._safe_sha256(target)
+            now = _now()
+            if current_hash == cs["proposed_sha256"]:
+                # Write landed but the terminal state was not persisted. The
+                # built-in hash verification is implicitly satisfied.
+                self._complete(task, cs["id"])
+                summary["completed"] += 1
+            elif current_hash == cs["base_sha256"]:
+                # Nothing was written; safe to return to awaiting_approval.
+                with self._db:
+                    self._db.execute(
+                        "UPDATE tasks SET state = 'awaiting_approval' WHERE id = ?",
+                        (task["id"],),
+                    )
+                    self._append_events(
+                        task["id"],
+                        [("task.recovered", {"reason": "baseline intact; reset for re-approval"})],
+                        now,
+                    )
+                summary["reset"] += 1
+            else:
+                # Diverged from both known states: outcome is unknown.
+                self._fail(
+                    task,
+                    cs["id"],
+                    APPLY_OUTCOME_UNKNOWN,
+                    "process crashed during apply; on-disk hash is unknown",
+                )
+                summary["unknown"] += 1
+        return summary
+
     def _row_to_real_task(self, task: sqlite3.Row) -> RealTaskResponse:
         change_set = None
         if task["changeset_id"]:
@@ -537,6 +624,7 @@ class Phase1Service:
                     deletions=cs["deletions"],
                     before=json.loads(cs["before_json"]),
                     after=json.loads(cs["after_json"]),
+                    expiresAt=cs["expires_at"] if "expires_at" in cs.keys() else None,
                 )
 
         plan = json.loads(task["plan_json"]) if task["plan_json"] else []

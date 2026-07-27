@@ -192,6 +192,7 @@ class RealChangeSetResponse(BaseModel, extra="forbid", populate_by_name=True):
     deletions: int
     before: list[str]
     after: list[str]
+    expiresAt: Optional[str] = Field(None, alias="expiresAt")
 
 
 class ApprovalRequest(BaseModel, extra="forbid"):
