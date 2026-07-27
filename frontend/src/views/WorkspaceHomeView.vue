@@ -29,6 +29,7 @@ const drawerVisible = computed(() => store.drawerOpen)
       </div>
       <div class="top-right">
         <div class="runtime-badge">Local runtime ready</div>
+        <button class="real-entry-btn" type="button" data-testid="real-workspaces-link" @click="router.push('/real')">真实工作区</button>
         <span class="settings-icon" title="设置" data-testid="settings-link" @click="router.push('/settings')">⚙</span>
       </div>
     </header>
@@ -154,6 +155,12 @@ function statusLabel(status: string): string {
   content: ''; width: 5px; height: 5px; border-radius: 50%;
   background: #2d7a3a;
 }
+.real-entry-btn {
+  font-family: 'Architects Daughter', cursive; font-size: 12px;
+  color: #c87020; border: 1.5px solid #c87020; border-radius: 4px;
+  padding: 3px 10px; background: rgba(212,160,23,.08); cursor: pointer;
+}
+.real-entry-btn:hover { background: rgba(212,160,23,.16); }
 .settings-icon {
   font-family: 'JetBrains Mono', monospace; font-size: 16px;
   color: #999; cursor: pointer; padding: 4px; line-height: 1;

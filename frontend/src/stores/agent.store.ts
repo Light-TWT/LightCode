@@ -35,6 +35,15 @@ export const useAgentStore = defineStore('agent', {
       if (!this.task) return
       this.task = await taskService.approveChangeSet(this.task.id)
     },
+    /**
+     * 拒绝当前变更集。Phase 0.5 legacy Mock 流程没有拒绝端点，
+     * 这里仅在前端标记为 rejected（演示用途，刷新后恢复）。
+     * Phase 1 真实任务的拒绝走 real.store 的 submitDecision('reject')。
+     */
+    rejectCurrentChangeSet() {
+      if (!this.task) return
+      this.task = { ...this.task, changeSet: { ...this.task.changeSet, status: 'rejected' } }
+    },
     _subscribeTaskEvents(taskId: string) {
       const isApiMode = import.meta.env.VITE_LIGHTCODE_RUNTIME === 'api'
       if (!isApiMode) return

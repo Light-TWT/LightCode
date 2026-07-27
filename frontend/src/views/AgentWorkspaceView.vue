@@ -14,6 +14,7 @@ const isResizing = ref(false)
 
 const task = computed(() => store.task)
 const isPending = computed(() => task.value?.changeSet.status === 'pending')
+const isRejected = computed(() => task.value?.changeSet.status === 'rejected')
 
 onMounted(() => store.load(route.params.id as string))
 
@@ -59,6 +60,11 @@ async function approve() {
   await store.approveCurrentChangeSet()
   drawerTab.value = 'test'
 }
+
+function reject() {
+  store.rejectCurrentChangeSet()
+  drawerOpen.value = false
+}
 </script>
 
 <template>
@@ -89,7 +95,7 @@ async function approve() {
 
     <section v-if="task" class="execution-panel" aria-label="Agent Workspace">
       <header class="task-header">
-        <p class="eyebrow">● 当前任务 · {{ isPending ? '等待审批' : '验证已完成' }}</p>
+        <p class="eyebrow">● 当前任务 · {{ isPending ? '等待审批' : isRejected ? '已拒绝' : '验证已完成' }}</p>
         <h1>{{ task.title }}</h1>
       </header>
 
@@ -128,7 +134,11 @@ async function approve() {
           <span class="pending-marker">●</span>
           <span>Diff 等待审批 · {{ task.changeSet.filePath }} +{{ task.changeSet.additions }} -{{ task.changeSet.deletions }}</span>
           <button aria-label="审查修改" class="review-button" type="button" @click="drawerOpen ? (drawerOpen = false) : openDrawer()">审查修改</button>
-          <button class="reject-button" type="button">拒绝并输入反馈</button>
+          <button class="reject-button" type="button" data-testid="reject-btn" @click="reject">拒绝修改</button>
+        </template>
+        <template v-else-if="isRejected">
+          <span class="rejected-marker">●</span>
+          <span>已拒绝 · 变更未写入文件</span>
         </template>
         <template v-else>
           <span class="passed-marker">●</span>
@@ -172,7 +182,7 @@ async function approve() {
         <p>需要审批后才能写入文件</p>
         <div>
           <button aria-label="批准修改" class="approve-button" type="button" @click="approve">批准修改</button>
-          <button class="reject-button" type="button">拒绝 · 附带反馈</button>
+          <button class="reject-button" type="button" data-testid="drawer-reject-btn" @click="reject">拒绝修改</button>
         </div>
       </footer>
     </aside>

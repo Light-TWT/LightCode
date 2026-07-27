@@ -141,6 +141,102 @@ export interface TaskEvent {
   createdAt: string
 }
 
+// ---------------------------------------------------------------------------
+// Phase 1: 真实安全变更闭环（字段与 backend/app/schemas/contracts.py 一一对齐）
+// ---------------------------------------------------------------------------
+
+/** 真实任务状态机（backend/app/services/phase1.py 中 tasks.state 的取值） */
+export type RealTaskState =
+  | 'awaiting_approval'
+  | 'applying_change'
+  | 'completed'
+  | 'failed'
+  | 'cancelled'
+
+/** 变更集状态（backend changesets.status: active -> applied/rejected/failed） */
+export type RealChangeSetStatus = 'active' | 'applied' | 'rejected' | 'failed'
+
+/** 审批决定（backend 仅识别 approve；其余值一律走拒绝路径） */
+export type ApprovalDecision = 'approve' | 'reject'
+
+/** GET /registered-workspaces —— 公共视图，绝不包含真实根路径 */
+export interface RegisteredWorkspace {
+  id: string
+  displayName: string
+  enabled: boolean
+  capabilities: string[]
+  policyVersion: string
+}
+
+/** GET /registered-workspaces/{id}/files 的目录条目 */
+export interface RegisteredFileEntry {
+  name: string
+  kind: 'file' | 'dir' | 'link' | 'secret'
+  /** 相对于当前列举目录（非工作区根）的路径 */
+  relativePath: string
+}
+
+/** GET /registered-workspaces/{id}/file 的响应 */
+export interface RegisteredFileContent {
+  relativePath: string
+  content: string
+}
+
+/** GET /registered-workspaces/{id}/search 的命中条目 */
+export interface WorkspaceSearchHit {
+  name: string
+  relativePath: string
+}
+
+/** RealChangeSetResponse 对应结构 */
+export interface RealChangeSet {
+  changeSetId: string
+  revision: number
+  diffHash: string
+  baseSha256: string
+  proposedSha256: string
+  logicalRelativePath: string
+  status: RealChangeSetStatus
+  policyVersion: string
+  additions: number
+  deletions: number
+  before: string[]
+  after: string[]
+  expiresAt?: string | null
+}
+
+/** POST /real-tasks 请求体（CreateRealTaskRequest） */
+export interface CreateRealTaskInput {
+  workspaceId: string
+  title: string
+  templateId?: string
+}
+
+/** POST /real-tasks/{id}/approval 请求体（ApprovalRequest，extra=forbid） */
+export interface ApprovalInput {
+  decision: ApprovalDecision
+  changeSetId: string
+  revision: number
+  diffHash: string
+  idempotencyKey: string
+}
+
+/** RealTaskResponse 对应结构 */
+export interface RealTask {
+  id: string
+  workspaceId: string
+  sessionId: string
+  kind: string
+  state: RealTaskState
+  title: string
+  targetFile?: string | null
+  changeSet?: RealChangeSet | null
+  plan: PlanStep[]
+  toolCalls: ToolCall[]
+  verification: VerificationOutput
+  createdAt: string
+}
+
 export interface HistoryTaskDetail {
   id: string
   status: HistoryTaskStatus

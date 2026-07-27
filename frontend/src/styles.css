@@ -76,6 +76,7 @@ button { font: inherit; }
 .command-bar > span:nth-child(2) { flex: 1; font-family: 'JetBrains Mono', monospace; font-size: 11px; color: #c87020; }
 .pending-marker { color: #c87020; font-family: 'JetBrains Mono', monospace; font-size: 14px; font-weight: 500; }
 .passed-marker { color: #2d7a3a; }
+.rejected-marker { color: #b83030; font-family: 'JetBrains Mono', monospace; font-size: 14px; font-weight: 500; }
 .review-button, .reject-button, .approve-button { border-radius: 4px; cursor: pointer; }
 .review-button { font-family: 'Caveat', cursive; font-size: 14px; font-weight: 700; padding: 5px 12px; border: 2px solid #c87020; color: #c87020; background: rgba(212,160,23,.15); transform: rotate(-.3deg); flex-shrink: 0; }
 .reject-button { padding: 5px 12px; border: 1.5px dashed #b83030; color: #b83030; background: transparent; font-family: 'Architects Daughter', cursive; font-size: 12px; }

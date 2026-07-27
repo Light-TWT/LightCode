@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { ref } from 'vue'
 import { useRouter } from 'vue-router'
+import { isApiMode } from '@/config/runtime'
 
 const router = useRouter()
 const activePage = ref('general')
@@ -48,9 +49,9 @@ function goBack() {
             </div>
             <div class="info-row">
               <span class="info-label">开发阶段</span>
-              <span class="info-value" style="color:#888;">前端 Mock 原型</span>
+              <span class="info-value" style="color:#888;" data-testid="runtime-mode">{{ isApiMode ? '本地 API Runtime（Phase 1）' : '前端 Mock 原型' }}</span>
             </div>
-            <div class="info-note">当前为前端 Mock 原型，后续将接入本地 FastAPI Runtime 作为真实执行引擎。所有配置和数据仅保存在本机。</div>
+            <div class="info-note">{{ isApiMode ? '当前已接入本地 FastAPI Runtime，真实文件变更需经显式审批后原子写入。' : '当前为前端 Mock 原型，后续将接入本地 FastAPI Runtime 作为真实执行引擎。' }}所有配置和数据仅保存在本机。</div>
           </div>
         </div>
 
@@ -58,13 +59,22 @@ function goBack() {
           <div class="detail-header">
             <div class="detail-title">模型</div>
           </div>
-          <div class="mode-block active-mode">
+          <div class="mode-block" :class="isApiMode ? 'disabled-mode' : 'active-mode'">
             <div class="mode-label-row">
               <div class="mode-dot" />
               <span class="mode-name">Mock Mode</span>
-              <span class="mode-badge badge-active">当前启用</span>
+              <span v-if="!isApiMode" class="mode-badge badge-active">当前启用</span>
             </div>
             <div class="mode-desc">不调用外部模型，所有响应由内置 Mock 引擎生成，用于本地流程演示。</div>
+          </div>
+          <div class="mode-block" :class="isApiMode ? 'active-mode' : 'disabled-mode'">
+            <div class="mode-label-row">
+              <div class="mode-dot" />
+              <span class="mode-name">Local FastAPI Runtime</span>
+              <span v-if="isApiMode" class="mode-badge badge-active">当前启用</span>
+              <span v-else class="mode-badge badge-coming">VITE_LIGHTCODE_RUNTIME=api 启用</span>
+            </div>
+            <div class="mode-desc">接入本地 FastAPI 后端：注册工作区只读浏览、服务端生成变更集、显式审批后原子写入（Phase 1）。</div>
           </div>
           <div class="mode-block disabled-mode">
             <div class="mode-label-row">

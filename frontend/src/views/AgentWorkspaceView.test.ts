@@ -51,6 +51,20 @@ describe('AgentWorkspaceView', () => {
     expect(wrapper.text()).toContain('3 passed in 0.12s')
   })
 
+  it('rejects the pending changeset and shows rejected state', async () => {
+    const router = createTestRouter()
+    await router.push('/workspace/workspace-login-service')
+    await router.isReady()
+    const wrapper = mount(AgentWorkspaceView, { global: { plugins: [router] } })
+    await flushPromises()
+
+    await wrapper.get('[data-testid="reject-btn"]').trigger('click')
+    await flushPromises()
+
+    expect(wrapper.text()).toContain('已拒绝 · 变更未写入文件')
+    expect(wrapper.find('[data-testid="reject-btn"]').exists()).toBe(false)
+  })
+
   it('opens the current workspace task history from the sidebar', async () => {
     const router = createTestRouter()
     await router.push('/workspace/workspace-login-service')
