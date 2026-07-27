@@ -1,0 +1,13 @@
+{
+  "_comment": "Phase 1 静态工作区注册模板。复制本文件为 backend/workspaces.json（该文件已被 .gitignore 忽略，绝不提交），并把每个 rootPath 替换为本机真实绝对路径。仅 rootPath 是机器特定、必须修改；其余字段可按需调整。rootPath 不得是符号链接/目录联结/reparse point，且必须真实存在。Windows 使用正斜杠或双反斜杠，例如 C:/Users/you/projects/demo-workspace。",
+  "workspaces": [
+    {
+      "id": "demo-workspace",
+      "displayName": "Demo Workspace",
+      "rootPath": "C:/Users/you/projects/demo-workspace",
+      "enabled": true,
+      "policy": "phase1-single-text-file",
+      "targetFile": "notes.txt"
+    }
+  ]
+}

@@ -141,6 +141,10 @@ def initialize_database(database_path: Optional[Path] = None) -> sqlite3.Connect
 
     connection = sqlite3.connect(str(database_path), check_same_thread=False)
     connection.row_factory = sqlite3.Row
+    # WAL 提升并发读吞吐并降低写锁等待；busy_timeout 避免多连接短竞态下抛
+    # "database is locked"。两者均为对既有 schema/迁移语义透明的引擎级调优。
+    connection.execute("PRAGMA journal_mode=WAL")
+    connection.execute("PRAGMA busy_timeout=5000")
     connection.executescript(SCHEMA_SQL)
     run_migrations(connection)
     seed_database(connection)

@@ -74,6 +74,7 @@ Phase 1 真实工作区只来自服务端启动静态配置，浏览器不得提
 - 也可用环境变量 `LIGHTCODE_WORKSPACES_CONFIG` 指向任意 JSON 配置文件。
 - 该配置文件**已 gitignore，绝不提交**（防止泄露本机目录结构）。
 - 配置文件缺失时服务正常启动，但真实工作区数量为零（仅 Mock 能力可用）。
+- 仓库内置 `backend/workspaces.example.json` 模板：复制为 `backend/workspaces.json` 后，将每条 `rootPath` 改为本机真实绝对路径即可（其余字段按需调整；`rootPath` 不得是符号链接/联结且必须真实存在）。
 - 配置形态与启动校验规则见 `../docs/workspace-registration.md`。
 
 ```bash

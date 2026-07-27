@@ -92,7 +92,18 @@ Phase 1 (仅后端): T1-T7 + T9 完成; API 模式 HTTP 全闭环验证 16/16 �
 - 2026-07-23: 修复历史任务 `detail_json` 空对象导致的 Pydantic ValidationError。`get_task_detail()` 改为合并行字段与 `detail_json` 额外字段；为 8 条历史任务填充 plan、toolCalls、files、approval、test 及失败/取消字段。
 - 2026-07-23: SSE 接入 `agent.store.ts`。API 模式下监听 `changeset.approved`、`verification.started`、`verification.completed`；切换工作区或组件卸载时关闭 EventSource。
 - 2026-07-23: 配置 Vite 代理：`server.proxy['/api'] -> http://127.0.0.1:8000`。
+- 2026-07-27: 模块 0（高危缺陷修复）。`security/guard.py::_resolve_under` 修正 symlink/junction 检查顺序——原实现先 `resolve()` 再对**已解析路径**调 `is_link_or_reparse`，链接被跟随因而检查失效；改为在 `resolve()` 之前逐父段（含工作区根）检查 reparse point。`services/runtime.py::approve_changeset` 增加 `kind != 'mock'` 显式过滤，真实任务经 legacy Mock 审批端点返回 405。新增 monkeypatch 逻辑级测试覆盖中间段/父目录/根链接三种绕过场景（沙箱 `os.symlink` 静默降级，真实文件系统用例改为不可检测时 skip）。
+- 2026-07-27: 模块 1（契约能力补全）。`changesets` 增 `expires_at` 列，`create_real_task` 按 `CHANGESET_TTL_SECONDS`（策略常量，默认 3600s）写入，`submit_approval` 过期返回 `CHANGESET_EXPIRED` 且不写文件。新建 `security/policy.py` 为唯一策略来源（迁入 `MAX_FILE_BYTES`/`SECRET_GLOB`，新增 `ALLOWED_EXTENSIONS` 扩展名白名单 + `MAX_DIFF_LINES` + `is_allowed_extension()`）；`guard.py` 加扩展名拒绝与 `search_files` 大小/扩展名跳过；`phase1.py` 校验 diff 行数超限。`phase1.py::recover_incomplete_tasks()` 启动扫描 `applying_change` 真实任务并按当前文件哈希判定 completed/reset/unknown（`APPLY_OUTCOME_UNKNOWN` 阻断自动续写），`main.py` lifespan 调用。`runtime.py` + `routes.py` 升级 SSE 支持 `?after_sequence=` + `Last-Event-ID` 续传 + `tail` 轮询，每帧带 `id:`；新增 `/real-tasks/{id}/events`。
+- 2026-07-27: 模块 2（配置与文档对齐）。新增 `backend/workspaces.example.json` 模板（机器特定 `rootPath` 由使用者复制为 `workspaces.json` 后填真实绝对路径，后者已被 .gitignore 忽略）；`db/database.py::initialize_database` 启用 WAL + `busy_timeout=5000` 提升并发读与降低写锁竞态。WP1 简化偏差（无迁移目录、无 `apply_attempts` 表）明文记录于"Phase 1 计划偏差与决策"小节。
 - 2026-07-23: 修复 `uvicorn app.main:app` 的同名 `app` 包解析冲突；`main.py` 顶部将本地 `backend/` 插入 `sys.path` 首位。
+
+## Phase 1 计划偏差与决策
+
+以下决策偏离原始 Phase 1 计划（WP1 工作包）但经评估对 MVP 安全等价或更强，明文记录以避免后续误判为遗漏：
+
+- **不使用独立迁移目录**：原 WP1 计划设想版本化 migration 目录。实际采用 `db/database.py` 内联 `SCHEMA_SQL` + 幂等 `run_migrations`（`ALTER TABLE ADD COLUMN ... DEFAULT`）回补旧库列。`changesets` 的 `expires_at` 列已在 `run_migrations` 中按目标表检查，避免重复加列报 `duplicate column`。理由：MVP 阶段 schema 演进可控，内联方案确定性更强、无需 Alembic 类外部依赖。
+- **不实现 `apply_attempts` 独立表**：原 WP1 计划设想独立的尝试计数表。实际幂等性与重试边界由 `approvals` 表的 `UNIQUE(idempotency_key)` 约束 + 6 步审批协议的 `revision`/`diffHash` 绑定共同保证；每次审批尝试已落 `approvals` 行（含 `decision`/`outcome`/`detail`），无需另计数表。理由：现有结构已覆盖"重复提交不重复写"与"失败可查"，独立计数表在 MVP 规模下不增加安全价值。
+- **WAL + busy_timeout**：`initialize_database` 连接后立即 `PRAGMA journal_mode=WAL` 与 `PRAGMA busy_timeout=5000`，属对 schema/迁移语义透明的引擎级调优，不进计划原稿但作为显式决策记录。
 
 ## 安全
 
