@@ -33,7 +33,7 @@ tests/                    pytest 用例；每个用例使用隔离临时数据�
 pyproject.toml            Python 依赖与 pytest 配置
 ```
 
-SSE 实现在 `app/api/routes.py`：它仅回放 SQLite 中已持久化且按 `sequence` 排序的事件，发送 `stream.end` 后关闭；它不是持续模型流。Phase 1 真实任务事件复用既有的 `task_events` 表与同一 SSE 端点。
+SSE 实现在 `app/api/routes.py`：它仅回放 SQLite 中已持久化且按 `sequence` 排序的事件，不是持续模型流。每帧携带 `id:`（即 `sequence`），支持 `?after_sequence=<n>` 显式续传与浏览器自动重连的 `Last-Event-ID`；`?tail=true` 时回放后保持连接轮询新事件（默认 30s 窗口），否则发送 `stream.end` 后关闭。Phase 1 真实任务事件复用既有的 `task_events` 表，并有独立端点 `GET /api/v1/real-tasks/{taskId}/events`。
 
 ## 依赖与启动
 
@@ -53,7 +53,14 @@ uvicorn app.main:app --reload --port 8000
 
 `main.py` 会将本地 `backend/` 置于 Python 导入路径前部，避免系统环境中同名 `app` 包影响 `uvicorn app.main:app`。
 
-前端 API 模式可通过 Vite `/api` 代理访问 `http://127.0.0.1:8000`，也可使用直接 API 基址 `http://127.0.0.1:8000/api/v1`。
+前端 API 模式可通过 Vite `/api` 代理访问 `http://127.0.0.1:8000`，也可使用直接 API 基址 `http://127.0.0.1:8000/api/v1`。以 API 模式启动前端（连通 Phase 1 真实端点与 `/real` 页面）：
+
+```bash
+# 从 frontend/ 目录
+VITE_LIGHTCODE_RUNTIME=api npm run dev
+```
+
+不设置该变量时前端使用内置 Mock 服务，不访问后端。
 
 ## 配置与数据
 
@@ -111,9 +118,10 @@ GET  /api/v1/registered-workspaces/{workspaceId}/search?query=<text>
 POST /api/v1/real-tasks
 GET  /api/v1/real-tasks/{taskId}
 POST /api/v1/real-tasks/{taskId}/approval
+GET  /api/v1/real-tasks/{taskId}/events
 ```
 
-真实端点复用 `GET /api/v1/tasks/{taskId}/events` 进行 SSE 回放。公共 DTO、SSE、日志与错误信息均不含真实根路径；审批请求仅接受 `decision`/`changeSetId`/`revision`/`diffHash`/`idempotencyKey`，且 Pydantic `extra="forbid"` 拒绝任何 `rootPath`/`filePath`/patch/command。稳定错误码见 `app/schemas/errors.py`。
+真实任务 SSE 端点支持 `?after_sequence=`、`Last-Event-ID` 续传与 `?tail=true` 轮询。公共 DTO、SSE、日志与错误信息均不含真实根路径；审批请求仅接受 `decision`/`changeSetId`/`revision`/`diffHash`/`idempotencyKey`，且 Pydantic `extra="forbid"` 拒绝任何 `rootPath`/`filePath`/patch/command。稳定错误码见 `app/schemas/errors.py`。
 
 ## 禁止清单（全局）
 
@@ -133,7 +141,7 @@ Phase 1 允许的受控真实读取与单文件原子写入，必须在 `../docs
 python -m pytest -q
 ```
 
-当前基线为 **78 个后端测试通过（2 个因 symlink 环境跳过）**。全量验证还应从 `frontend/` 运行：
+当前基线为 **94 个后端测试通过 + 2 个跳过**（跳过项为沙箱环境 `os.symlink` 静默降级导致不可检测，对应逻辑已由 monkeypatch 测试覆盖）。全量验证还应从 `frontend/` 运行：
 
 ```bash
 npm run test

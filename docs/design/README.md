@@ -23,7 +23,7 @@
 ## 阶段对应关系
 
 - **Phase 0.5**：原型通过确定性 Mock Runtime、REST 与 SQLite 事件回放获得数据；不得将原型内的读写文件、命令或模型交互视为真实执行。
-- **Phase 1**：真实安全变更能力必须在服务端实现，并将状态、ChangeSet、审批和内建验证结果映射到既有视觉结构。完整规则见 `../phase1-safety-contract.md`。
+- **Phase 1**：真实安全变更能力必须在服务端实现，并将状态、ChangeSet、审批和内建验证结果映射到既有视觉结构。完整规则见 `../phase1-safety-contract.md`。前端已连通全部 Phase 1 真实端点（2026-07-27）：`/real` 注册工作区列表、`/real/:id` 文件树/预览/搜索/建任务、`/real/:id/task/:taskId` 计划/差异/审批/SSE 事件；仅在 `VITE_LIGHTCODE_RUNTIME=api` 时启用真实数据，Mock 模式下这些页面使用 fixture。
 - **Phase 3**：Electron 才可提供原生文件夹选择；在此之前浏览器不能提交任意本地路径。
 
 当原型与架构文档不一致时，以 `../architecture/lightcode-local-first-agent-design.md` 决定行为和安全边界，以原型决定视觉语言。

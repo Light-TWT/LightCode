@@ -27,7 +27,7 @@ src/
   services/     Mock、HTTP 与 EventSource 服务适配器
   stores/       Pinia 状态管理
   types/        前后端共享的 TypeScript 合约
-  views/        Workspace Home、Agent Workspace、History、Settings 页面
+  views/        Workspace Home、Agent Workspace、History、Settings 与 Phase 1 真实闭环（Real Workspace List/View、Real Task）页面
 ```
 
 `docs/design/` 中的 HTML 是批准的视觉和交互参考，不得整体复制到 `src/`。完整 Diff 只应显示在 Agent Workspace 的右侧审查抽屉；中心执行流只显示文件和增删行摘要。
@@ -68,8 +68,8 @@ npm run typecheck
 npm run build
 ```
 
-当前基线为 37 个前端测试通过，`vue-tsc -b && vite build` 通过。修改服务合约、store 或视图后，应先运行对应聚焦测试，再运行完整测试和构建。
+当前基线为 60 个前端测试通过（12 文件），`vue-tsc -b && vite build` 通过。修改服务合约、store 或视图后，应先运行对应聚焦测试，再运行完整测试和构建。
 
-## Phase 1 前端边界
+## Phase 1 前端边界（已完成 T8）
 
-Phase 1 将扩展任务状态、ChangeSet 审查和安全错误展示，但必须保留 `TaskService`、`WorkspaceService` 与 SSE 适配器边界：View 和 Pinia store 不直接调用 `fetch`、`EventSource`，不接收真实根路径、补丁正文或命令。详细规则见 `../docs/phase1-safety-contract.md`。
+Phase 1 已扩展任务状态、ChangeSet 审查与安全错误展示，并新增真实工作区闭环（`RegisteredWorkspaceService`、`RealTaskService`）。仍必须保留 `TaskService`、`WorkspaceService`、`RegisteredWorkspaceService`、`RealTaskService` 与 SSE 适配器边界：View 和 Pinia store 不直接调用 `fetch`、`EventSource`，不接收真实根路径、补丁正文或命令。详细规则见 `../docs/phase1-safety-contract.md`。

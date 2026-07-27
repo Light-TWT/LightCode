@@ -4,15 +4,15 @@ LightCode 是一个独立实现的、本地优先、可视化的编码智能体�
 
 ## 当前状态
 
-项目已完成 **Phase 0.5：本地运行时基础** 与 **Phase 1：安全变更 MVP（后端）**：
+项目已完成 **Phase 0.5：本地运行时基础** 与 **Phase 1：安全变更 MVP（后端 T1-T7/T9 + 前端 T8 均已闭环）**：
 
-- 前端：Vue 3、TypeScript、Vite、Vue Router、Pinia，以及 Mock/HTTP/SSE 服务适配边界（Phase 1 前端集成尚未开始）。
+- 前端：Vue 3、TypeScript、Vite、Vue Router、Pinia，以及 Mock/HTTP/SSE 服务适配边界；Phase 1 真实闭环（注册工作区浏览、文件预览、内容搜索、真实任务创建/审批/SSE）已接入 Vue 视图。
 - 后端：FastAPI、SQLite，以及两套隔离的闭环——
   - **Phase 0.5 Mock Runtime**：确定性种子数据、审批状态迁移、SQLite 持久化事件的 SSE 回放（仅供演示）。
   - **Phase 1 真实安全变更闭环**：服务端静态注册授权工作区、受控只读工具、服务端生成的确定性 ChangeSet、版本绑定审批、单个既有 UTF-8 文本文件的原子替换，以及不启动外部进程的内建完整性验证。安全不变量见 `docs/phase1-safety-contract.md`。
-- 当前验证基线：前端 37 个测试通过，后端 78 个测试通过（2 个因 symlink 环境跳过），前端 `vue-tsc + vite build` 通过；Phase 1 API 模式 HTTP 全闭环验证 16/16 通过。
+- 当前验证基线：前端 60 个测试通过（12 文件），后端 94 个测试通过（2 个因 symlink 环境跳过），前端 `vue-tsc -b + vite build` 通过；Phase 1 API 模式 HTTP 全闭环验证 16/16 通过。
 
-Phase 1 后端范围已冻结并实现完毕；下一阶段可择一推进：**Phase 1 前端集成**（把真实任务链路接入 Vue 视图）或 **Phase 2：真实模型与开发者体验**。
+Phase 1 前端与后端均已闭环；下一阶段可择一推进：**Phase 2：真实模型与开发者体验**（把确定性模板 diff 替换为模型生成 diff，复用现有安全层）或先行**易用性改进**（图形化工作区选择需等到 Electron 阶段）。
 
 ## 快速入口
 
@@ -26,7 +26,7 @@ Phase 1 后端范围已冻结并实现完毕；下一阶段可择一推进：**P
 
 ```text
 frontend/       Vue 应用、类型、Pinia store 与 Mock/HTTP/SSE 服务适配器
-backend/        FastAPI + SQLite 的确定性 Mock Runtime
+backend/        FastAPI + SQLite：Phase 0.5 Mock Runtime 与 Phase 1 真实安全变更闭环
 electron/       阶段 3 桌面 shell 预留
 docs/           架构、设计原型、阶段计划与安全契约
 scripts/        可复现的开发、验证和打包脚本预留

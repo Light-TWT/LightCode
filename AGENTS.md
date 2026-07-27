@@ -6,7 +6,7 @@ LightCode 是一个独立实现的、本地优先的可视化编码智能体，�
 
 ## 当前阶段
 
-项目处于阶段 1：安全变更 MVP（后端）。Phase 0.5 Mock Runtime 保留为 legacy，仅供读取与演示。
+项目处于阶段 1：安全变更 MVP（后端 T1-T7/T9 与前端 T8 均已完成，处于收尾验证阶段）。Phase 0.5 Mock Runtime 保留为 legacy，仅供读取与演示。
 
 - 冻结范围、安全不变量、状态机、审批写入协议与错误码以 `docs/phase1-safety-contract.md` 为准；产品总体行为以 `docs/architecture/lightcode-local-first-agent-design.md` 为准。
 - 真实工作区根路径只来自服务端静态注册表（`LIGHTCODE_WORKSPACES_CONFIG` 或 `backend/workspaces.json`，已 gitignore）；公共 DTO、SSE、日志、错误一律不得返回真实根路径。
@@ -74,13 +74,17 @@ scripts/        开发与验证脚本
 ## 状态追踪
 
 ```text
-前端: 37 测试通过 (9 文件), vue-tsc + vite build 通过
-后端: 78 测试通过 + 2 skipped (symlink 环境不支持), uvicorn 启动无报错
+前端: 60 测试通过 (12 文件), vue-tsc -b + vite build 通过 (2026-07-27)
+后端: 94 测试通过 + 2 skipped (沙箱 symlink 静默降级, 逻辑已由 monkeypatch 测试覆盖) (2026-07-27)
 Phase 0.5 收尾: DB 路径绝对化 + Git 跟踪移除已完成; API 模式持久化验证通过 (临时 DB 审批持久化, 新库回到 awaiting_approval)
-Phase 1 (仅后端): T1-T7 + T9 完成; API 模式 HTTP 全闭环验证 16/16 通过
+Phase 1 后端: T1-T7 + T9 完成; API 模式 HTTP 全闭环验证 16/16 通过
   (注册工作区无根路径泄露 -> 创建真实任务 awaiting_approval -> 审批原子写 + 内建验证 completed
    -> 磁盘文件确实变更且基线保留 -> 幂等重放不重复写 -> 重启持久化 completed
    -> 新库回到 awaiting_approval -> STALE_BASE 失败且外部改动保留)
+Phase 1 前端 (T8): 完成; 8 个 Phase 1 端点全部有对应 UI
+  (/real 注册工作区列表 -> /real/:id 文件树/预览/搜索/建任务 -> /real/:id/task/:taskId 计划/diff/审批/SSE)
+  服务层 mock+http 双实现按 VITE_LIGHTCODE_RUNTIME 切换; 审批请求体测试断言严格等于 extra=forbid 契约; 响应无 rootPath
+  端到端演示验证通过 (registered-workspaces 代理连通, 审批后磁盘文件真实变更)
 ```
 
 ## 问题修复记录
@@ -95,6 +99,7 @@ Phase 1 (仅后端): T1-T7 + T9 完成; API 模式 HTTP 全闭环验证 16/16 �
 - 2026-07-27: 模块 0（高危缺陷修复）。`security/guard.py::_resolve_under` 修正 symlink/junction 检查顺序——原实现先 `resolve()` 再对**已解析路径**调 `is_link_or_reparse`，链接被跟随因而检查失效；改为在 `resolve()` 之前逐父段（含工作区根）检查 reparse point。`services/runtime.py::approve_changeset` 增加 `kind != 'mock'` 显式过滤，真实任务经 legacy Mock 审批端点返回 405。新增 monkeypatch 逻辑级测试覆盖中间段/父目录/根链接三种绕过场景（沙箱 `os.symlink` 静默降级，真实文件系统用例改为不可检测时 skip）。
 - 2026-07-27: 模块 1（契约能力补全）。`changesets` 增 `expires_at` 列，`create_real_task` 按 `CHANGESET_TTL_SECONDS`（策略常量，默认 3600s）写入，`submit_approval` 过期返回 `CHANGESET_EXPIRED` 且不写文件。新建 `security/policy.py` 为唯一策略来源（迁入 `MAX_FILE_BYTES`/`SECRET_GLOB`，新增 `ALLOWED_EXTENSIONS` 扩展名白名单 + `MAX_DIFF_LINES` + `is_allowed_extension()`）；`guard.py` 加扩展名拒绝与 `search_files` 大小/扩展名跳过；`phase1.py` 校验 diff 行数超限。`phase1.py::recover_incomplete_tasks()` 启动扫描 `applying_change` 真实任务并按当前文件哈希判定 completed/reset/unknown（`APPLY_OUTCOME_UNKNOWN` 阻断自动续写），`main.py` lifespan 调用。`runtime.py` + `routes.py` 升级 SSE 支持 `?after_sequence=` + `Last-Event-ID` 续传 + `tail` 轮询，每帧带 `id:`；新增 `/real-tasks/{id}/events`。
 - 2026-07-27: 模块 2（配置与文档对齐）。新增 `backend/workspaces.example.json` 模板（机器特定 `rootPath` 由使用者复制为 `workspaces.json` 后填真实绝对路径，后者已被 .gitignore 忽略）；`db/database.py::initialize_database` 启用 WAL + `busy_timeout=5000` 提升并发读与降低写锁竞态。WP1 简化偏差（无迁移目录、无 `apply_attempts` 表）明文记录于"Phase 1 计划偏差与决策"小节。
+- 2026-07-27: 模块 3（前端 Phase 1 真实闭环 T8）。类型层 `types/agent.ts` 新增 RealTask/RealChangeSet/RegisteredWorkspace/RegisteredFileEntry/WorkspaceSearchHit/ApprovalInput 等，与 `backend/app/schemas/contracts.py` 严格对齐（无 rootPath）。新建 `services/registered-workspace.service.ts` 与 `services/real-task.service.ts`（mock+http 双实现按 `isApiMode` 切换）；`event.service.ts` 增 `subscribeRealTaskEvents`（`after_sequence`/`tail`/`Last-Event-ID` 续传）。新建 `stores/real.store.ts`（idempotencyKey 用 `crypto.randomUUID()`，事件按 sequence 去重）。新建视图 RealWorkspaceListView/RealWorkspaceView/RealTaskView 与路由 `/real`、`/real/:id`、`/real/:id/task/:taskId`；主页加"真实工作区"入口。修复两处存量缺陷：AgentWorkspaceView 拒绝按钮缺失 `@click`（补 `rejectCurrentChangeSet` action + 已拒绝态 UI）；SettingsView 运行时模式硬编码 Mock 改按 `isApiMode` 动态显示。新增/扩充 5 个测试文件（服务契约断言、RealViews 10 用例）。环境注意：vite build 清空 dist 会被 OneDrive 文件锁中断，用 `--emptyOutDir false` 规避。
 - 2026-07-23: 修复 `uvicorn app.main:app` 的同名 `app` 包解析冲突；`main.py` 顶部将本地 `backend/` 插入 `sys.path` 首位。
 
 ## Phase 1 计划偏差与决策
