@@ -162,3 +162,73 @@ class TaskEventResponse(BaseModel, extra="forbid", populate_by_name=True):
     eventType: str = Field(alias="eventType")
     payload: dict[str, Any] = Field(alias="payload")
     createdAt: str = Field(alias="createdAt")
+
+
+# ---------------------------------------------------------------------------
+# Phase 1: real file-change closed loop (no root path leakage)
+# ---------------------------------------------------------------------------
+
+
+class RegisteredWorkspaceResponse(BaseModel, extra="forbid", populate_by_name=True):
+    """Public workspace view. Must never include the real root path."""
+
+    id: str
+    displayName: str = Field(alias="displayName")
+    enabled: bool
+    capabilities: list[str]
+    policyVersion: str = Field(alias="policyVersion")
+
+
+class RealChangeSetResponse(BaseModel, extra="forbid", populate_by_name=True):
+    changeSetId: str = Field(alias="changeSetId")
+    revision: int
+    diffHash: str = Field(alias="diffHash")
+    baseSha256: str = Field(alias="baseSha256")
+    proposedSha256: str = Field(alias="proposedSha256")
+    logicalRelativePath: str = Field(alias="logicalRelativePath")
+    status: str
+    policyVersion: str = Field(alias="policyVersion")
+    additions: int
+    deletions: int
+    before: list[str]
+    after: list[str]
+
+
+class ApprovalRequest(BaseModel, extra="forbid"):
+    """Client may only submit the decision bound to a specific version.
+
+    Any rootPath/filePath/patch/command/relativePath fields are rejected by
+    `extra="forbid"`.
+    """
+
+    decision: str
+    changeSetId: str = Field(alias="changeSetId")
+    revision: int
+    diffHash: str = Field(alias="diffHash")
+    idempotencyKey: str = Field(alias="idempotencyKey")
+
+
+class CreateRealTaskRequest(BaseModel, extra="forbid"):
+    """Browser may only choose a registered workspace and a title.
+
+    The actual change is generated server-side from a controlled template.
+    """
+
+    workspaceId: str = Field(alias="workspaceId")
+    title: str
+    templateId: str = Field(default="append-marker", alias="templateId")
+
+
+class RealTaskResponse(BaseModel, extra="forbid", populate_by_name=True):
+    id: str
+    workspaceId: str = Field(alias="workspaceId")
+    sessionId: str = Field(alias="sessionId")
+    kind: str
+    state: str
+    title: str
+    targetFile: Optional[str] = Field(None, alias="targetFile")
+    changeSet: Optional[RealChangeSetResponse] = Field(None, alias="changeSet")
+    plan: list[PlanStepResponse]
+    toolCalls: list[ToolCallResponse] = Field(alias="toolCalls", default_factory=list)
+    verification: VerificationResponse
+    createdAt: str = Field(alias="createdAt")

@@ -19,6 +19,10 @@ backend/.env
 frontend/.env
 *.log
 
+# Phase 1: static workspace registration config points to real local paths;
+# it must never be committed (contains machine-specific rootPath values).
+backend/workspaces.json
+
 # IDE and operating system state
 .idea/
 .vscode/

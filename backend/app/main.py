@@ -6,11 +6,15 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 
 from app.api.routes import router as api_router
 from app.db.database import initialize_database
+from app.schemas.errors import Phase1Error
+from app.security.guard import WorkspaceGuard
+from app.workspaces.registry import WorkspaceRegistry
 
 
 @asynccontextmanager
@@ -25,11 +29,34 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
         database_path = (backend_dir / database_path).resolve()
     connection = initialize_database(database_path)
     app.state.db = connection
+
+    # Phase 1: load the static workspace registry from server-side config only.
+    # 默认配置路径基于 backend/ 目录，同样与启动目录无关。
+    default_config_path = backend_dir / "workspaces.json"
+    env_config_path = os.environ.get("LIGHTCODE_WORKSPACES_CONFIG")
+    config_path = Path(env_config_path) if env_config_path else default_config_path
+    if not config_path.is_absolute():
+        config_path = (backend_dir / config_path).resolve()
+    registry = WorkspaceRegistry.load(config_path)
+    app.state.registry = registry
+    app.state.guard = WorkspaceGuard(registry)
+
     yield
     connection.close()
 
 
 app = FastAPI(title="LightCode Local Runtime", version="0.1.0", lifespan=lifespan)
+
+
+@app.exception_handler(Phase1Error)
+async def phase1_error_handler(request: Request, exc: Phase1Error) -> JSONResponse:
+    # 公共错误体只暴露稳定机器码与安全消息，绝不泄露真实根路径或内部堆栈。
+    return JSONResponse(
+        status_code=exc.http_status,
+        content={"code": exc.code, "message": exc.message},
+    )
+
+
 app.include_router(api_router)
 app.add_middleware(
     CORSMiddleware,

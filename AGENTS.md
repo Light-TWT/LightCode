@@ -6,20 +6,22 @@ LightCode 是一个独立实现的、本地优先的可视化编码智能体，�
 
 ## 当前阶段
 
-项目处于阶段 0.5：本地运行时基础。
+项目处于阶段 1：安全变更 MVP（后端）。Phase 0.5 Mock Runtime 保留为 legacy，仅供读取与演示。
 
-- 允许实现 FastAPI、SQLite、确定性 Mock Runtime、REST API、SSE 事件回放，以及前端 HTTP/EventSource 服务适配器。
-- 后端 API 必须保持 camelCase JSON，并与前端 TypeScript 合约一致。
-- SQLite 只保存确定性 Mock 工作区、会话、任务、事件、审批、工具调用和变更集状态。
-- 保留前端服务边界，使 Mock 服务可被 REST 和 SSE 适配器替换，而无需更改视图或 store 合约。
-- 此阶段不得实现真实模型提供商、真实本地文件系统桥接、Shell 命令执行、工作区路径选择、密钥输入或存储、Electron、Git 写操作、网络下载或依赖安装能力。
+- 冻结范围、安全不变量、状态机、审批写入协议与错误码以 `docs/phase1-safety-contract.md` 为准；产品总体行为以 `docs/architecture/lightcode-local-first-agent-design.md` 为准。
+- 真实工作区根路径只来自服务端静态注册表（`LIGHTCODE_WORKSPACES_CONFIG` 或 `backend/workspaces.json`，已 gitignore）；公共 DTO、SSE、日志、错误一律不得返回真实根路径。
+- 每次文件访问必须经 `WorkspaceGuard`。ChangeSet 由服务端生成、持久化、版本化；审批绑定 `changeSetId + revision + diffHash`；写前重检基线哈希，冲突返回 `STALE_BASE`；单文件临时文件 + 原子替换 + 内建 UTF-8/哈希验证。
+- 浏览器只提交 `workspaceId`、任务标识、审批决定、`changeSetId`、`revision`、`diffHash`、`idempotencyKey`（Pydantic `extra="forbid"` 拒绝任何 `rootPath`/`filePath`/patch/command）。
+- 后端 API 必须保持 `/api/v1` 与 camelCase JSON。
+- 仍不得实现：真实模型/提供商 Key/密钥管理、Shell/subprocess/包管理/网络下载/Git 写操作、删除/新建/重命名/移动、多文件事务、二进制/非 UTF-8/超限文件修改、Electron、本地文件夹选择。
+- Phase 0.5 允许的能力（FastAPI、SQLite、确定性 Mock Runtime、REST、SSE、前端 HTTP/EventSource 适配器）继续保留，Mock 与真实闭环隔离。
 
 ## 必读文件
 
 在设计或实现工作之前，请阅读：
 
 - `docs/architecture/lightcode-local-first-agent-design.md`
-- `docs/superpowers/plans/2026-07-23-phase-0-5-runtime-foundation.md`
+- `docs/2026-07-23-phase-0-5-runtime-foundation.md`
 - `docs/design/README.md`
 - `docs/design/` 下相关的 HTML 原型文件
 
@@ -54,7 +56,7 @@ scripts/        开发与验证脚本
 - FastAPI 仅暴露确定性 Mock 数据和审批状态迁移；不得宣称或模拟真实项目文件访问、源码写入、终端执行或模型调用。
 - SSE 只回放 SQLite 中已持久化的有序事件；不得伪造持续模型流。
 - 提供商 API Key 不得进入 SQLite、事件、前端状态、日志或截图。
-- Phase 0.5 的任务分解与实现记录见 `docs/superpowers/plans/2026-07-23-phase-0-5-runtime-foundation.md`；当前实现以源码和 README 为准。
+- Phase 0.5 的任务分解与实现记录见 `docs/2026-07-23-phase-0-5-runtime-foundation.md`；当前实现以源码和 README 为准。
 
 ### Phase 1 实施前置规则
 
@@ -73,12 +75,18 @@ scripts/        开发与验证脚本
 
 ```text
 前端: 37 测试通过 (9 文件), vue-tsc + vite build 通过
-后端: 16 测试通过 (7 文件), uvicorn 启动无报错
+后端: 78 测试通过 + 2 skipped (symlink 环境不支持), uvicorn 启动无报错
 Phase 0.5 收尾: DB 路径绝对化 + Git 跟踪移除已完成; API 模式持久化验证通过 (临时 DB 审批持久化, 新库回到 awaiting_approval)
+Phase 1 (仅后端): T1-T7 + T9 完成; API 模式 HTTP 全闭环验证 16/16 通过
+  (注册工作区无根路径泄露 -> 创建真实任务 awaiting_approval -> 审批原子写 + 内建验证 completed
+   -> 磁盘文件确实变更且基线保留 -> 幂等重放不重复写 -> 重启持久化 completed
+   -> 新库回到 awaiting_approval -> STALE_BASE 失败且外部改动保留)
 ```
 
 ## 问题修复记录
 
+- 2026-07-24: Phase 1 (仅后端) 实现。新增 `app/workspaces/registry.py` (静态注册表, 从 `LIGHTCODE_WORKSPACES_CONFIG` 或 `backend/workspaces.json` 加载, 配置含 `rootPath`+`targetFile`, 已 gitignore)、`app/security/fs.py` + `guard.py` (WorkspaceGuard 统一路径守卫)、`app/schemas/errors.py` (稳定错误码)、`app/services/changeset.py` (确定性 append-marker 变换)、`app/services/atomic_write.py` (临时文件 + `os.replace` 原子替换 + 内建 UTF-8/哈希验证 + 每文件锁)、`app/services/phase1.py` (真实任务生命周期 + 6 步审批写入协议)。DB 迁移: `tasks` 增列 `kind`/`target_file`/`changeset_id`/`verification_detail` (旧 Mock 任务默认 `kind='mock'`), 新增 `changesets`/`approvals` 表 (含 `base_text`/`proposed_text` 以保证精确原子写)。新增端点 `/registered-workspaces*`、`/real-tasks*`。真实任务事件复用既有 `task_events` + SSE 端点。
+- 2026-07-24: 修复 `guard.read_text` 默认通用换行转换 (CRLF->LF) 导致 `baseSha256` 与磁盘原始字节哈希不一致、可能误判 STALE_BASE 或静默改写行尾。改为 `read_text(newline="")` 保留原始换行。
 - 2026-07-24: 修复 SQLite 默认路径为相对路径导致从 backend/ 启动落到 backend/backend/data/lightcode.db 且被 Git 跟踪。`main.py` lifespan 与 `database.py` 无参回退均改为基于文件位置的绝对路径 (`<repo>/backend/data/lightcode.db`)；env 覆盖 `LIGHTCODE_DATABASE_PATH` 的相对路径解析到 backend/ 目录。已从 Git 索引移除该 DB 并在 `.gitignore` 忽略 `backend/data/*.db` 与 `backend/backend/data/*.db`。
 - 2026-07-24: 重写 backend README，补充 Phase 0.5 启动方式、`LIGHTCODE_DATABASE_PATH` 临时数据库用法与 Mock Runtime 边界。
 - 2026-07-23: 修复历史任务 `detail_json` 空对象导致的 Pydantic ValidationError。`get_task_detail()` 改为合并行字段与 `detail_json` 额外字段；为 8 条历史任务填充 plan、toolCalls、files、approval、test 及失败/取消字段。

@@ -33,7 +33,47 @@ CREATE TABLE IF NOT EXISTS tasks (
     changeset_status TEXT NOT NULL DEFAULT 'pending',
     verification_status TEXT NOT NULL DEFAULT 'pending',
     verification_command TEXT NOT NULL DEFAULT '',
-    verification_lines_json TEXT NOT NULL DEFAULT '[]'
+    verification_lines_json TEXT NOT NULL DEFAULT '[]',
+    kind TEXT NOT NULL DEFAULT 'mock',
+    target_file TEXT NOT NULL DEFAULT '',
+    changeset_id TEXT NOT NULL DEFAULT '',
+    verification_detail TEXT NOT NULL DEFAULT ''
+);
+
+-- Phase 1: server-generated, immutable, versioned ChangeSets.
+CREATE TABLE IF NOT EXISTS changesets (
+    id TEXT PRIMARY KEY,
+    task_id TEXT NOT NULL,
+    workspace_id TEXT NOT NULL,
+    revision INTEGER NOT NULL DEFAULT 1,
+    logical_relative_path TEXT NOT NULL,
+    base_sha256 TEXT NOT NULL,
+    proposed_sha256 TEXT NOT NULL,
+    diff_hash TEXT NOT NULL,
+    policy_version TEXT NOT NULL,
+    status TEXT NOT NULL DEFAULT 'active',
+    additions INTEGER NOT NULL DEFAULT 0,
+    deletions INTEGER NOT NULL DEFAULT 0,
+    before_json TEXT NOT NULL DEFAULT '[]',
+    after_json TEXT NOT NULL DEFAULT '[]',
+    base_text TEXT NOT NULL DEFAULT '',
+    proposed_text TEXT NOT NULL DEFAULT '',
+    created_at TEXT NOT NULL DEFAULT ''
+);
+
+-- Phase 1: version-bound approval records with idempotency.
+CREATE TABLE IF NOT EXISTS approvals (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    changeset_id TEXT NOT NULL,
+    task_id TEXT NOT NULL,
+    decision TEXT NOT NULL,
+    revision INTEGER NOT NULL,
+    diff_hash TEXT NOT NULL,
+    idempotency_key TEXT NOT NULL,
+    outcome TEXT NOT NULL DEFAULT 'pending',
+    detail TEXT NOT NULL DEFAULT '',
+    created_at TEXT NOT NULL DEFAULT '',
+    UNIQUE(idempotency_key)
 );
 
 CREATE TABLE IF NOT EXISTS task_history (
@@ -62,6 +102,31 @@ CREATE TABLE IF NOT EXISTS task_events (
 """
 
 
+def _column_names(connection: sqlite3.Connection, table: str) -> set[str]:
+    rows = connection.execute(f"PRAGMA table_info({table})").fetchall()
+    return {row["name"] for row in rows}
+
+
+def run_migrations(connection: sqlite3.Connection) -> None:
+    """Idempotently upgrade a pre-existing Phase 0.5 database to the Phase 1 schema.
+
+    Fresh databases already receive the new columns/tables from SCHEMA_SQL; this
+    only backfills columns that older databases are missing. `ALTER TABLE ADD
+    COLUMN` with a DEFAULT marks every existing (mock) task row as kind='mock',
+    which satisfies the "Mock 隔离" safety invariant.
+    """
+    task_columns = _column_names(connection, "tasks")
+    migrations = {
+        "kind": "ALTER TABLE tasks ADD COLUMN kind TEXT NOT NULL DEFAULT 'mock'",
+        "target_file": "ALTER TABLE tasks ADD COLUMN target_file TEXT NOT NULL DEFAULT ''",
+        "changeset_id": "ALTER TABLE tasks ADD COLUMN changeset_id TEXT NOT NULL DEFAULT ''",
+        "verification_detail": "ALTER TABLE tasks ADD COLUMN verification_detail TEXT NOT NULL DEFAULT ''",
+    }
+    for column, statement in migrations.items():
+        if column not in task_columns:
+            connection.execute(statement)
+
+
 def initialize_database(database_path: Optional[Path] = None) -> sqlite3.Connection:
     if database_path is None:
         # 回退路径同样基于本文件位置解析为绝对路径，避免依赖启动目录。
@@ -71,6 +136,7 @@ def initialize_database(database_path: Optional[Path] = None) -> sqlite3.Connect
     connection = sqlite3.connect(str(database_path), check_same_thread=False)
     connection.row_factory = sqlite3.Row
     connection.executescript(SCHEMA_SQL)
+    run_migrations(connection)
     seed_database(connection)
     connection.commit()
     return connection

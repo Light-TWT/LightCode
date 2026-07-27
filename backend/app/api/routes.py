@@ -2,14 +2,19 @@ from fastapi import APIRouter, Request
 from fastapi.responses import StreamingResponse
 
 from app.schemas.contracts import (
+    ApprovalRequest,
+    CreateRealTaskRequest,
     HistoryTaskDetailResponse,
     HistoryTaskEntryResponse,
+    RealTaskResponse,
+    RegisteredWorkspaceResponse,
     SessionResponse,
     TaskEventResponse,
     TaskResponse,
     WorkspaceEntryResponse,
     WorkspaceResponse,
 )
+from app.services.phase1 import Phase1Service
 from app.services.runtime import RuntimeService
 
 router = APIRouter(prefix="/api/v1")
@@ -67,3 +72,53 @@ def task_events(task_id: str, request: Request) -> StreamingResponse:
         yield "event: stream.end\ndata: {}\n\n"
 
     return StreamingResponse(event_stream(), media_type="text/event-stream")
+
+
+# ---------------------------------------------------------------------------
+# Phase 1: real file-change closed loop (registered workspaces, guarded tools)
+# ---------------------------------------------------------------------------
+
+
+@router.get("/registered-workspaces", response_model=list[RegisteredWorkspaceResponse])
+def registered_workspaces(request: Request) -> list[RegisteredWorkspaceResponse]:
+    return Phase1Service.from_request(request).list_registered_workspaces()
+
+
+@router.get("/registered-workspaces/{workspace_id}/files")
+def registered_workspace_files(
+    workspace_id: str, request: Request, path: str = ""
+) -> list[dict]:
+    return Phase1Service.from_request(request).list_files(workspace_id, path)
+
+
+@router.get("/registered-workspaces/{workspace_id}/file")
+def registered_workspace_file(
+    workspace_id: str, path: str, request: Request
+) -> dict:
+    return Phase1Service.from_request(request).read_file(workspace_id, path)
+
+
+@router.get("/registered-workspaces/{workspace_id}/search")
+def registered_workspace_search(
+    workspace_id: str, query: str, request: Request
+) -> list[dict]:
+    return Phase1Service.from_request(request).search_files(workspace_id, query)
+
+
+@router.post("/real-tasks", response_model=RealTaskResponse)
+def create_real_task(payload: CreateRealTaskRequest, request: Request) -> RealTaskResponse:
+    return Phase1Service.from_request(request).create_real_task(
+        payload.workspaceId, payload.title, payload.templateId
+    )
+
+
+@router.get("/real-tasks/{task_id}", response_model=RealTaskResponse)
+def get_real_task(task_id: str, request: Request) -> RealTaskResponse:
+    return Phase1Service.from_request(request).get_real_task(task_id)
+
+
+@router.post("/real-tasks/{task_id}/approval", response_model=RealTaskResponse)
+def submit_real_task_approval(
+    task_id: str, payload: ApprovalRequest, request: Request
+) -> RealTaskResponse:
+    return Phase1Service.from_request(request).submit_approval(task_id, payload)

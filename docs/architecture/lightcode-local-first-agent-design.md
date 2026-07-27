@@ -149,7 +149,7 @@ ChangeSet(id, task_id, diff_text, status, applied_at, rollback_snapshot)
 ```text
 lightcode-local/
   frontend/       Vue 应用，阶段 0 实现目标
-  backend/        为 FastAPI 运行时保留
+  backend/        FastAPI + SQLite；Phase 0.5 Mock Runtime 与 Phase 1 真实安全变更闭环
   electron/       为桌面 shell 保留
   docs/
     architecture/
@@ -174,9 +174,10 @@ lightcode-local/
 - 实现 Mock 运行时、事件和 SSE。
 - 用 REST/SSE 适配器替换夹具服务。
 
-### 阶段 1：安全变更 MVP
+### 阶段 1：安全变更 MVP（后端已实现）
 
 - 绑定由服务端启动静态配置注册的授权工作区；浏览器只能提交 `workspaceId`，不能提交本地路径。
+- **实现状态**：后端闭环已完成 —— 静态注册、`WorkspaceGuard`、受控只读工具、确定性 ChangeSet、版本绑定审批、单文件原子替换与内建验证均已落地并通过测试。前端集成尚未开始。
 - 添加工作区守卫和只读工具，拒绝路径遍历、符号链接逃逸、秘密文件和工作区外访问。
 - 实现持久化状态机、差异审查、版本绑定审批、单个既有 UTF-8 文本文件的受控原子写入和会话持久化。
 - Phase 1 仅执行内建完整性验证，不启动 Shell、外部测试命令或命令白名单中的进程；真实命令策略与 `awaiting_command_approval` 留给后续允许受控进程执行的阶段。
