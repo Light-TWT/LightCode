@@ -154,7 +154,9 @@ function shortHash(hash: string): string {
 
 <style scoped>
 .real-task-page {
-  min-height: 100vh;
+  height: 100vh;
+  height: 100dvh;
+  overflow-y: auto;
   padding: 24px 40px;
   background: #f5f0e8;
   color: #2a2a2a;
