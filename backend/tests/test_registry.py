@@ -6,6 +6,7 @@ from pathlib import Path
 
 import pytest
 
+from app.security.fs import is_link_or_reparse
 from app.workspaces.registry import (
     PHASE1_POLICY,
     WorkspaceRegistry,
@@ -111,6 +112,11 @@ def test_symlink_root_rejected(tmp_path: Path) -> None:
         os.symlink(real, link, target_is_directory=True)
     except OSError:
         pytest.skip("symlink creation not permitted in this environment")
+    # The sandbox may create a non-functional link (no reparse point and not
+    # detected by os.path.islink). In that case the guard cannot detect it, so
+    # skip rather than report a false failure.
+    if not is_link_or_reparse(link):
+        pytest.skip("symlinks are not detectable in this environment")
     cfg = tmp_path / "workspaces.json"
     _write_config(cfg, [_entry(root=link)])
     with pytest.raises(WorkspaceRegistryError):

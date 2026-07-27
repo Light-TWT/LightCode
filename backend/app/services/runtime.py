@@ -89,6 +89,13 @@ class RuntimeService:
         ).fetchone()
         if row is None:
             raise HTTPException(status_code=404, detail=f"Task not found: {task_id}")
+        # Legacy endpoint only serves Phase 0.5 mock tasks. Real Phase 1 tasks
+        # must go through the guarded approval protocol, never this path.
+        if row["kind"] != "mock":
+            raise HTTPException(
+                status_code=405,
+                detail="real tasks must be approved via the Phase 1 approval endpoint",
+            )
         if row["changeset_status"] != "pending":
             raise HTTPException(status_code=409, detail="Change set is not pending")
 

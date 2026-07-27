@@ -15,6 +15,7 @@ from app.schemas.errors import (
     WORKSPACE_DISABLED,
     WORKSPACE_NOT_REGISTERED,
 )
+from app.security.fs import is_link_or_reparse
 from app.security.guard import WorkspaceGuard
 from app.workspaces.registry import (
     PHASE1_POLICY,
@@ -140,7 +141,60 @@ def test_symlink_target_denied(tmp_path: Path) -> None:
         os.symlink(root / "real.txt", link)
     except OSError:
         pytest.skip("symlink creation not permitted in this environment")
+    # The sandbox may create a non-functional link (no reparse point and not
+    # detected by os.path.islink). In that case the guard cannot distinguish it
+    # from a real file, so skip rather than report a false failure.
+    if not is_link_or_reparse(link):
+        pytest.skip("symlinks are not detectable in this environment")
     g = _make_registry(root)
     with pytest.raises(Phase1Error) as exc:
         g.read_text("ws1", "evil.txt")
+    assert exc.value.code == SYMLINK_DENIED
+
+
+def test_symlink_segment_detected_before_resolve(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # Deterministic logic test: a reparse point at the final segment must be
+    # caught BEFORE resolve() follows it. Does not depend on FS symlink support.
+    root = tmp_path / "proj"
+    root.mkdir()
+    (root / "real.txt").write_text("data", encoding="utf-8")
+    g = _make_registry(root)
+    monkeypatch.setattr(
+        "app.security.guard.is_link_or_reparse",
+        lambda p: p.name == "evil.txt",
+    )
+    with pytest.raises(Phase1Error) as exc:
+        g.read_text("ws1", "evil.txt")
+    assert exc.value.code == SYMLINK_DENIED
+
+
+def test_symlink_in_parent_segment_denied(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    root = tmp_path / "proj"
+    root.mkdir()
+    (root / "sub").mkdir()
+    (root / "sub" / "real.txt").write_text("data", encoding="utf-8")
+    g = _make_registry(root)
+    monkeypatch.setattr(
+        "app.security.guard.is_link_or_reparse",
+        lambda p: p.name == "sub",
+    )
+    with pytest.raises(Phase1Error) as exc:
+        g.read_text("ws1", "sub/real.txt")
+    assert exc.value.code == SYMLINK_DENIED
+
+
+def test_root_symlink_denied(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    root = tmp_path / "proj"
+    root.mkdir()
+    (root / "real.txt").write_text("data", encoding="utf-8")
+    g = _make_registry(root)
+    monkeypatch.setattr("app.security.guard.is_link_or_reparse", lambda p: True)
+    with pytest.raises(Phase1Error) as exc:
+        g.read_text("ws1", "real.txt")
     assert exc.value.code == SYMLINK_DENIED

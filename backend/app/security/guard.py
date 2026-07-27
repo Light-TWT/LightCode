@@ -30,9 +30,27 @@ def _is_secret(name: str) -> bool:
 
 def _resolve_under(root: Path, relative: str) -> Path:
     validate_relative_input(relative)
-    target = (root / relative).resolve()
+    # Defense in depth: the workspace root itself must not be a reparse point.
+    if is_link_or_reparse(root):
+        raise Phase1Error(SYMLINK_DENIED, "workspace root is a symlink/junction/reparse point")
+    current = root
+    # Walk every logical segment and inspect the on-disk entry for a
+    # symlink/junction/reparse point BEFORE resolving, because resolving would
+    # follow the link and mask the escape attempt (the original bug).
+    segments = [s for s in relative.replace("\\", "/").split("/") if s]
+    for seg in segments:
+        current = current / seg
+        if is_link_or_reparse(current):
+            raise Phase1Error(SYMLINK_DENIED, "symlink/junction/reparse points are not allowed")
+        # Canonicalize the (verified non-link) component for accurate containment.
+        current = current.resolve()
+        if current != root and root not in current.parents:
+            raise Phase1Error(PATH_POLICY_DENIED, "path escapes workspace root")
+    target = current
+    # Final containment check on the fully resolved target.
     if target != root and root not in target.parents:
         raise Phase1Error(PATH_POLICY_DENIED, "path escapes workspace root")
+    # Final safety re-check on the resolved final component.
     if is_link_or_reparse(target):
         raise Phase1Error(SYMLINK_DENIED, "symlink/junction/reparse points are not allowed")
     return target

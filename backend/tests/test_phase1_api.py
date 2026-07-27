@@ -163,3 +163,16 @@ def test_create_real_task_unregistered_workspace(client: TestClient) -> None:
     )
     assert resp.status_code == 400
     assert resp.json()["code"] == "WORKSPACE_NOT_REGISTERED"
+
+
+def test_legacy_approve_endpoint_rejects_real_task(client: TestClient) -> None:
+    # M0.2: real Phase 1 tasks must not be approvable through the legacy
+    # Phase 0.5 endpoint. The guarded approval protocol is the only path.
+    created = client.post(
+        "/api/v1/real-tasks",
+        json={"workspaceId": "ws-demo", "title": "must use guarded approval"},
+    ).json()
+    task_id = created["id"]
+    resp = client.post(f"/api/v1/tasks/{task_id}/changeset/approve")
+    assert resp.status_code == 405
+    assert "Phase 1 approval endpoint" in resp.json()["detail"]
