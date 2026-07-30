@@ -22,6 +22,7 @@ LightCode 是一个独立实现的、本地优先的可视化编码智能体，�
 
 - `docs/architecture/lightcode-local-first-agent-design.md`
 - `docs/2026-07-23-phase-0-5-runtime-foundation.md`
+- `docs/2026-07-30-phase-2-model-and-dx-plan.md`
 - `docs/design/README.md`
 - `docs/design/` 下相关的 HTML 原型文件
 
