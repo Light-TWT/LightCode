@@ -5,6 +5,9 @@ from fastapi.responses import StreamingResponse
 
 from app.schemas.contracts import (
     ApprovalRequest,
+    BrowseFileContent,
+    BrowseFileEntry,
+    BrowseSearchHit,
     CreateRealTaskRequest,
     HistoryTaskDetailResponse,
     HistoryTaskEntryResponse,
@@ -16,48 +19,12 @@ from app.schemas.contracts import (
     WorkspaceEntryResponse,
     WorkspaceResponse,
 )
+from app.services.browse_tokens import issue, verify
+from app.services.event_service import stream_events
 from app.services.phase1 import Phase1Service
 from app.services.runtime import RuntimeService
 
 router = APIRouter(prefix="/api/v1")
-
-# SSE resume behaviour. After replaying persisted events, a `tail=true` stream
-# keeps polling for new events up to this timeout so the browser can resume
-# after a dropped connection (contract §API、事件与错误码: SSE 仅传递已持久化
-# 事实事件，且支持基于 sequence / Last-Event-ID 的续传).
-SSE_TAIL_TIMEOUT_SECONDS = 30
-SSE_POLL_INTERVAL_SECONDS = 0.5
-
-
-def _event_to_sse(event: TaskEventResponse) -> str:
-    """Serialize a task event as an SSE frame with an `id` for Last-Event-ID."""
-    data = event.model_dump_json(by_alias=True)
-    return f"id: {event.sequence}\nevent: task.event\ndata: {data}\n\n"
-
-
-def _build_event_stream(service: RuntimeService, task_id: str, after_sequence: int, tail: bool):
-    pending = service.list_task_events_after(task_id, after_sequence)
-    for event in pending:
-        yield _event_to_sse(event)
-        after_sequence = event.sequence
-    if not tail:
-        yield "event: stream.end\ndata: {}\n\n"
-        return
-    deadline = time.monotonic() + SSE_TAIL_TIMEOUT_SECONDS
-    while time.monotonic() < deadline:
-        for event in service.list_task_events_after(task_id, after_sequence):
-            yield _event_to_sse(event)
-            after_sequence = event.sequence
-        time.sleep(SSE_POLL_INTERVAL_SECONDS)
-    yield "event: stream.end\ndata: {}\n\n"
-
-
-def _resolve_after_sequence(request: Request, after_sequence: int) -> int:
-    """Honour a browser-sent Last-Event-ID for SSE resume."""
-    last_event_id = request.headers.get("last-event-id")
-    if last_event_id and last_event_id.isdigit():
-        return max(after_sequence, int(last_event_id))
-    return after_sequence
 
 
 @router.get("/workspaces/recent", response_model=list[WorkspaceEntryResponse])
@@ -100,6 +67,14 @@ def task_detail(task_id: str, request: Request) -> HistoryTaskDetailResponse:
     return RuntimeService.from_request(request).get_task_detail(task_id)
 
 
+def _resolve_after_sequence(request: Request, after_sequence: int) -> int:
+    """Honour a browser-sent Last-Event-ID for SSE resume."""
+    last_event_id = request.headers.get("last-event-id")
+    if last_event_id and last_event_id.isdigit():
+        return max(after_sequence, int(last_event_id))
+    return after_sequence
+
+
 @router.get("/tasks/{task_id}/events")
 def task_events(
     task_id: str,
@@ -112,7 +87,7 @@ def task_events(
     service = RuntimeService.from_request(request)
     after = _resolve_after_sequence(request, after_sequence)
     return StreamingResponse(
-        _build_event_stream(service, task_id, after, tail),
+        stream_events(service, task_id, after, tail),
         media_type="text/event-stream",
     )
 
@@ -129,23 +104,59 @@ def registered_workspaces(request: Request) -> list[RegisteredWorkspaceResponse]
 
 @router.get("/registered-workspaces/{workspace_id}/files")
 def registered_workspace_files(
-    workspace_id: str, request: Request, path: str = ""
-) -> list[dict]:
-    return Phase1Service.from_request(request).list_files(workspace_id, path)
+    workspace_id: str, request: Request, nodeToken: str = ""
+) -> list[BrowseFileEntry]:
+    """List a directory. The initial (root) listing takes no token; any deeper
+    navigation passes the ``nodeToken`` issued for the parent directory. Each
+    entry carries a freshly signed token (``list`` for dirs, ``read`` for files)
+    so the browser never constructs or submits a relative path."""
+    svc = Phase1Service.from_request(request)
+    relative = verify(nodeToken, workspace_id, "list") if nodeToken else ""
+    entries = svc.list_files(workspace_id, relative)
+    result: list[BrowseFileEntry] = []
+    for entry in entries:
+        # Sensitive (secret) or non-navigable (link) entries get no token: the
+        # browser can see they exist but cannot open or read them.
+        if entry["kind"] in ("file", "dir"):
+            op = "list" if entry["kind"] == "dir" else "read"
+            token = issue(workspace_id, op, entry["relativePath"])
+        else:
+            token = ""
+        result.append(
+            BrowseFileEntry(name=entry["name"], kind=entry["kind"], token=token)
+        )
+    return result
 
 
 @router.get("/registered-workspaces/{workspace_id}/file")
 def registered_workspace_file(
-    workspace_id: str, path: str, request: Request
-) -> dict:
-    return Phase1Service.from_request(request).read_file(workspace_id, path)
+    workspace_id: str, fileToken: str, request: Request
+) -> BrowseFileContent:
+    """Read a file by its ``fileToken`` (issued by a prior listing/search). The
+    server resolves and guards the path; only the content is returned."""
+    svc = Phase1Service.from_request(request)
+    relative = verify(fileToken, workspace_id, "read")
+    content = svc.read_file(workspace_id, relative)["content"]
+    return BrowseFileContent(content=content)
 
 
 @router.get("/registered-workspaces/{workspace_id}/search")
 def registered_workspace_search(
     workspace_id: str, query: str, request: Request
-) -> list[dict]:
-    return Phase1Service.from_request(request).search_files(workspace_id, query)
+) -> list[BrowseSearchHit]:
+    """Search a workspace. Hits carry a ``read`` token; the browser opens them
+    without ever seeing or submitting a path."""
+    svc = Phase1Service.from_request(request)
+    hits = svc.search_files(workspace_id, query)
+    result: list[BrowseSearchHit] = []
+    for hit in hits:
+        result.append(
+            BrowseSearchHit(
+                name=hit["name"],
+                token=issue(workspace_id, "read", hit["relativePath"]),
+            )
+        )
+    return result
 
 
 @router.post("/real-tasks", response_model=RealTaskResponse)
@@ -180,6 +191,6 @@ def real_task_events(
     service = RuntimeService.from_request(request)
     after = _resolve_after_sequence(request, after_sequence)
     return StreamingResponse(
-        _build_event_stream(service, task_id, after, tail),
+        stream_events(service, task_id, after, tail),
         media_type="text/event-stream",
     )

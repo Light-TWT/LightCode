@@ -128,8 +128,10 @@ def test_approval_rejects_smuggled_fields(env) -> None:
 
 def test_binary_file_denied(env) -> None:
     client, _ = env
+    listing = client.get("/api/v1/registered-workspaces/ws-demo/files").json()
+    entry = next(i for i in listing if i["name"] == "blob.bin")
     resp = client.get(
-        "/api/v1/registered-workspaces/ws-demo/file", params={"path": "blob.bin"}
+        "/api/v1/registered-workspaces/ws-demo/file", params={"fileToken": entry["token"]}
     )
     assert resp.status_code == 400
     assert resp.json()["code"] == "FILE_TYPE_DENIED"
@@ -137,8 +139,10 @@ def test_binary_file_denied(env) -> None:
 
 def test_oversize_file_denied(env) -> None:
     client, _ = env
+    listing = client.get("/api/v1/registered-workspaces/ws-demo/files").json()
+    entry = next(i for i in listing if i["name"] == "big.txt")
     resp = client.get(
-        "/api/v1/registered-workspaces/ws-demo/file", params={"path": "big.txt"}
+        "/api/v1/registered-workspaces/ws-demo/file", params={"fileToken": entry["token"]}
     )
     assert resp.status_code == 400
     assert resp.json()["code"] == "FILE_SIZE_DENIED"
@@ -147,8 +151,12 @@ def test_oversize_file_denied(env) -> None:
 def test_directory_read_denied(env) -> None:
     client, ws_root = env
     (ws_root / "sub").mkdir()
+    from app.services.browse_tokens import issue
+
+    # a 'read' token pointing at a directory is rejected by the guard
+    token = issue("ws-demo", "read", "sub")
     resp = client.get(
-        "/api/v1/registered-workspaces/ws-demo/file", params={"path": "sub"}
+        "/api/v1/registered-workspaces/ws-demo/file", params={"fileToken": token}
     )
     assert resp.status_code == 400
     assert resp.json()["code"] == "FILE_TYPE_DENIED"

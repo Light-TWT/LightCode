@@ -17,6 +17,8 @@ import json
 import sqlite3
 import uuid
 from datetime import datetime, timedelta, timezone
+from pathlib import Path
+from typing import Optional
 
 from fastapi import Request
 
@@ -30,6 +32,7 @@ from app.schemas.contracts import (
     VerificationResponse,
 )
 from app.schemas.errors import (
+    APPLY_CONFLICT,
     APPLY_OUTCOME_UNKNOWN,
     APPROVAL_ALREADY_PROCESSED,
     CHANGESET_EXPIRED,
@@ -247,31 +250,39 @@ class Phase1Service:
                     ("task.awaiting_approval", {"changeSetId": change_set_id, "revision": 1}),
                 ],
                 now,
+                self._db,
             )
 
         return self.get_real_task(task_id)
 
-    def get_real_task(self, task_id: str) -> RealTaskResponse:
-        task = self._db.execute(
+    def get_real_task(self, task_id: str, conn: sqlite3.Connection = None) -> RealTaskResponse:
+        c = conn or self._db
+        task = c.execute(
             "SELECT * FROM tasks WHERE id = ? AND kind = 'real'", (task_id,)
         ).fetchone()
         if task is None:
             raise Phase1Error(
                 INVALID_STATE_TRANSITION, f"real task not found: {task_id}", http_status=404
             )
-        return self._row_to_real_task(task)
+        return self._row_to_real_task(task, c)
 
     # --- Approval + atomic write + built-in verification (T5) ---
 
     def submit_approval(self, task_id: str, approval: ApprovalRequest) -> RealTaskResponse:
         """Execute the审批与写入协议 (safety-contract §审批与写入协议).
 
-        Ordering: validate -> record approval + applying_change (txn) -> lock +
-        re-check baseline -> atomic replace -> built-in verify -> persist terminal
-        state (txn). Network retries with the same idempotencyKey yield exactly one
-        apply attempt.
+        Concurrency model (WP2 / P0-3): the exclusive write section runs on the
+        shared connection, but the "claim" is a single, file-scoped, atomic
+        conditional ``UPDATE ... WHERE state='awaiting_approval' AND NOT EXISTS(
+        … another task on the same file is applying/completed)``. Because SQLite
+        serialises writers via its file-level write lock under WAL, at most one
+        approval can ever transition a given target file into ``applying_change``
+        (or have it already written), so at most one process performs the actual
+        file write — across threads, Uvicorn workers and separate processes —
+        with no new table and no schema change.
         """
-        task = self._db.execute(
+        conn = self._db
+        task = conn.execute(
             "SELECT * FROM tasks WHERE id = ? AND kind = 'real'", (task_id,)
         ).fetchone()
         if task is None:
@@ -280,7 +291,7 @@ class Phase1Service:
             )
 
         # Idempotency: a replayed request must not produce a second apply attempt.
-        existing = self._db.execute(
+        existing = conn.execute(
             "SELECT * FROM approvals WHERE idempotency_key = ?",
             (approval.idempotencyKey,),
         ).fetchone()
@@ -293,19 +304,18 @@ class Phase1Service:
                     APPROVAL_ALREADY_PROCESSED,
                     "idempotency key already used for a different request",
                 )
-            return self.get_real_task(task_id)
+            return self.get_real_task(task_id, conn)
 
-        # Rejection path: no file access at all.
-        if approval.decision != "approve":
-            return self._reject(task, approval)
-
-        # Step 1: validate state, change set, revision, hash.
+        # ---- Binding validation runs BEFORE the decision branch (P0-2) ----
+        # A reject must not bypass the ChangeSet ownership / state / revision /
+        # diffHash / TTL checks. Invalid input fails closed with a stable code;
+        # no filesystem access is performed for rejects at any point.
         if task["state"] != "awaiting_approval":
             raise Phase1Error(
                 INVALID_STATE_TRANSITION,
                 f"task is not awaiting approval (state={task['state']})",
             )
-        cs = self._db.execute(
+        cs = conn.execute(
             "SELECT * FROM changesets WHERE id = ?", (approval.changeSetId,)
         ).fetchone()
         if cs is None or cs["task_id"] != task_id:
@@ -326,12 +336,39 @@ class Phase1Service:
                     CHANGESET_EXPIRED, "change set has expired; create a fresh task"
                 )
 
-        ws = self._guard.workspace(task["workspace_id"])
-        now = _now()
+        # Rejection path: only reached after the ChangeSet binding above has
+        # been verified. Performs no filesystem access.
+        if approval.decision != "approve":
+            return self._reject(task, cs, approval, conn)
 
-        # Step 2: record approval + move to applying_change in one transaction.
-        with self._db:
-            self._db.execute(
+        # ---- Exclusive write claim (P0-3 / WP2) ----
+        # The claim is a single, file-scoped, atomic conditional UPDATE.
+        # SQLite serialises writers via its file-level write lock under WAL,
+        # so even across Uvicorn workers or separate processes, at most one
+        # approval can transition a given target file into `applying_change`
+        # (or find it already written). A concurrent / contending approval
+        # sees rowcount 0 and is rejected instead of double-writing. The
+        # claim is committed before the OS file operation so the mutex is
+        # visible to every other process immediately.
+        with conn:
+            cur = conn.execute(
+                """UPDATE tasks
+                   SET state = 'applying_change'
+                   WHERE id = ? AND state = 'awaiting_approval'
+                     AND NOT EXISTS (
+                       SELECT 1 FROM tasks t2
+                       WHERE t2.workspace_id = ? AND t2.target_file = ?
+                         AND t2.state IN ('applying_change', 'completed')
+                     )""",
+                (task_id, task["workspace_id"], task["target_file"]),
+            )
+            if cur.rowcount != 1:
+                raise Phase1Error(
+                    APPLY_CONFLICT,
+                    "target file is being written by, or has already been written "
+                    "by, another task; approve that task first",
+                )
+            conn.execute(
                 """INSERT INTO approvals
                    (changeset_id, task_id, decision, revision, diff_hash,
                     idempotency_key, outcome, detail, created_at)
@@ -345,44 +382,49 @@ class Phase1Service:
                     approval.idempotencyKey,
                     "applying",
                     "",
-                    now,
+                    _now(),
                 ),
-            )
-            self._db.execute(
-                "UPDATE tasks SET state = 'applying_change' WHERE id = ?", (task_id,)
             )
             self._append_events(
                 task_id,
                 [("task.applying_change", {"changeSetId": approval.changeSetId})],
-                now,
+                _now(),
+                conn,
             )
 
         # Steps 3-5: locked, re-checked, atomic write + built-in verification.
+        # No active DB transaction is held during the OS file operation, yet
+        # the file-scoped claim above guarantees no other task can be writing
+        # this file concurrently.
+        ws = self._guard.workspace(task["workspace_id"])
         target = self._guard.resolve(task["workspace_id"], ws.target_file)
         lock = file_lock(target)
         with lock:
             try:
                 self._require_baseline(task["workspace_id"], ws.target_file, cs["base_sha256"])
             except Phase1Error as exc:
-                return self._fail(task, approval.changeSetId, exc.code, exc.message)
-
+                return self._fail(
+                    task, approval.changeSetId, exc.code, exc.message,
+                    approval.idempotencyKey, conn,
+                )
             try:
                 atomic_replace(target, cs["proposed_text"])
             except Exception as exc:  # noqa: BLE001
                 # Failure before/at replace: original stays at baseline content.
                 return self._fail(
-                    task, approval.changeSetId, APPLY_OUTCOME_UNKNOWN, f"atomic replace failed: {exc}"
+                    task, approval.changeSetId, APPLY_OUTCOME_UNKNOWN,
+                    f"atomic replace failed: {exc}", approval.idempotencyKey, conn,
                 )
-
             ok, message = verify_written(target, cs["proposed_sha256"])
             if not ok:
                 # Attempt recovery to baseline while the process is still alive.
                 return self._recover_or_unknown(
-                    task, approval.changeSetId, ws.target_file, cs, message
+                    task, approval.changeSetId, ws.target_file, cs, message,
+                    approval.idempotencyKey, conn,
                 )
 
         # Step 6: persist success terminal state.
-        return self._complete(task, approval.changeSetId)
+        return self._complete(task, approval.changeSetId, approval.idempotencyKey, conn)
 
     # --- Internal helpers ---
 
@@ -395,16 +437,24 @@ class Phase1Service:
         if sha256_text(current_text) != base_sha256:
             raise Phase1Error(STALE_BASE, "target changed since change set was generated")
 
-    def _reject(self, task: sqlite3.Row, approval: ApprovalRequest) -> RealTaskResponse:
+    def _reject(
+        self, task: sqlite3.Row, cs: sqlite3.Row, approval: ApprovalRequest, conn: sqlite3.Connection
+    ) -> RealTaskResponse:
+        """Reject a ChangeSet that has already passed binding validation.
+
+        Only ever called after `submit_approval` has verified the ChangeSet
+        belongs to `task`, is active, matches revision/diffHash/TTL and the task
+        is still `awaiting_approval`. Performs no filesystem access.
+        """
         now = _now()
-        with self._db:
-            self._db.execute(
+        with conn:
+            conn.execute(
                 """INSERT INTO approvals
                    (changeset_id, task_id, decision, revision, diff_hash,
                     idempotency_key, outcome, detail, created_at)
                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
                 (
-                    approval.changeSetId,
+                    cs["id"],
                     task["id"],
                     "reject",
                     approval.revision,
@@ -415,45 +465,59 @@ class Phase1Service:
                     now,
                 ),
             )
-            self._db.execute(
+            conn.execute(
                 "UPDATE tasks SET state = 'cancelled', changeset_status = 'rejected' WHERE id = ?",
                 (task["id"],),
             )
-            self._db.execute(
+            conn.execute(
                 "UPDATE changesets SET status = 'rejected' WHERE id = ?",
-                (approval.changeSetId,),
+                (cs["id"],),
             )
             self._append_events(
                 task["id"],
                 [("task.cancelled", {"reason": USER_REJECTED})],
                 now,
+                conn,
             )
-        return self.get_real_task(task["id"])
+        return self.get_real_task(task["id"], conn)
 
     def _fail(
-        self, task: sqlite3.Row, change_set_id: str, code: str, message: str
+        self,
+        task: sqlite3.Row,
+        change_set_id: str,
+        code: str,
+        message: str,
+        idempotency_key: Optional[str] = None,
+        conn: sqlite3.Connection = None,
     ) -> RealTaskResponse:
         now = _now()
-        with self._db:
-            self._db.execute(
-                "UPDATE approvals SET outcome = 'failed', detail = ? WHERE idempotency_key IN "
-                "(SELECT idempotency_key FROM approvals WHERE task_id = ? ORDER BY id DESC LIMIT 1)",
-                (code, task["id"]),
-            )
-            self._db.execute(
+        with conn:
+            if idempotency_key is not None:
+                conn.execute(
+                    "UPDATE approvals SET outcome = 'failed', detail = ? WHERE idempotency_key = ?",
+                    (code, idempotency_key),
+                )
+            else:
+                conn.execute(
+                    "UPDATE approvals SET outcome = 'failed', detail = ? WHERE idempotency_key IN "
+                    "(SELECT idempotency_key FROM approvals WHERE task_id = ? ORDER BY id DESC LIMIT 1)",
+                    (code, task["id"]),
+                )
+            conn.execute(
                 "UPDATE tasks SET state = 'failed', changeset_status = 'failed', "
                 "verification_status = 'failed', verification_detail = ? WHERE id = ?",
                 (f"{code}: {message}", task["id"]),
             )
-            self._db.execute(
+            conn.execute(
                 "UPDATE changesets SET status = 'failed' WHERE id = ?", (change_set_id,)
             )
             self._append_events(
                 task["id"],
                 [("task.failed", {"code": code, "message": message})],
                 now,
+                conn,
             )
-        return self.get_real_task(task["id"])
+        return self.get_real_task(task["id"], conn)
 
     def _recover_or_unknown(
         self,
@@ -462,6 +526,8 @@ class Phase1Service:
         target_file: str,
         cs: sqlite3.Row,
         verify_message: str,
+        idempotency_key: Optional[str] = None,
+        conn: sqlite3.Connection = None,
     ) -> RealTaskResponse:
         """Verification failed after write: try to restore the exact baseline.
 
@@ -479,26 +545,41 @@ class Phase1Service:
                 return self._fail(
                     task, change_set_id, APPLY_OUTCOME_UNKNOWN,
                     f"verification failed and restore unconfirmed: {verify_message}",
+                    idempotency_key, conn,
                 )
         except Exception as exc:  # noqa: BLE001
             return self._fail(
                 task, change_set_id, APPLY_OUTCOME_UNKNOWN,
                 f"verification failed and restore errored: {exc}",
+                idempotency_key, conn,
             )
         return self._fail(
             task, change_set_id, VERIFICATION_FAILED,
             f"verification failed, baseline restored: {verify_message}",
+            idempotency_key, conn,
         )
 
-    def _complete(self, task: sqlite3.Row, change_set_id: str) -> RealTaskResponse:
+    def _complete(
+        self,
+        task: sqlite3.Row,
+        change_set_id: str,
+        idempotency_key: Optional[str] = None,
+        conn: sqlite3.Connection = None,
+    ) -> RealTaskResponse:
         now = _now()
-        with self._db:
-            self._db.execute(
-                "UPDATE approvals SET outcome = 'applied' WHERE idempotency_key IN "
-                "(SELECT idempotency_key FROM approvals WHERE task_id = ? ORDER BY id DESC LIMIT 1)",
-                (task["id"],),
-            )
-            self._db.execute(
+        with conn:
+            if idempotency_key is not None:
+                conn.execute(
+                    "UPDATE approvals SET outcome = 'applied' WHERE idempotency_key = ?",
+                    (idempotency_key,),
+                )
+            else:
+                conn.execute(
+                    "UPDATE approvals SET outcome = 'applied' WHERE idempotency_key IN "
+                    "(SELECT idempotency_key FROM approvals WHERE task_id = ? ORDER BY id DESC LIMIT 1)",
+                    (task["id"],),
+                )
+            conn.execute(
                 "UPDATE tasks SET state = 'completed', changeset_status = 'applied', "
                 "verification_status = 'passed', verification_detail = ?, "
                 "verification_lines_json = ? WHERE id = ?",
@@ -508,7 +589,7 @@ class Phase1Service:
                     task["id"],
                 ),
             )
-            self._db.execute(
+            conn.execute(
                 "UPDATE changesets SET status = 'applied' WHERE id = ?", (change_set_id,)
             )
             self._append_events(
@@ -519,13 +600,14 @@ class Phase1Service:
                     ("task.completed", {"changeSetId": change_set_id}),
                 ],
                 now,
+                conn,
             )
-        return self.get_real_task(task["id"])
+        return self.get_real_task(task["id"], conn)
 
     def _append_events(
-        self, task_id: str, events: list[tuple[str, dict]], now: str
+        self, task_id: str, events: list[tuple[str, dict]], now: str, conn: sqlite3.Connection
     ) -> None:
-        max_seq = self._db.execute(
+        max_seq = conn.execute(
             "SELECT COALESCE(MAX(sequence), 0) FROM task_events WHERE task_id = ?",
             (task_id,),
         ).fetchone()[0]
@@ -533,13 +615,14 @@ class Phase1Service:
             (task_id, max_seq + offset + 1, event_type, json.dumps(payload), now)
             for offset, (event_type, payload) in enumerate(events)
         ]
-        self._db.executemany(
+        conn.executemany(
             "INSERT INTO task_events (task_id, sequence, event_type, payload_json, created_at) VALUES (?, ?, ?, ?, ?)",
             rows,
         )
 
-    def _load_change_set(self, change_set_id: str) -> sqlite3.Row:
-        row = self._db.execute(
+    def _load_change_set(self, change_set_id: str, conn: sqlite3.Connection = None) -> sqlite3.Row:
+        c = conn or self._db
+        row = c.execute(
             "SELECT * FROM changesets WHERE id = ?", (change_set_id,)
         ).fetchone()
         if row is None:
@@ -548,10 +631,19 @@ class Phase1Service:
 
     # --- Startup crash recovery (contract §失败和恢复承诺) ---
 
-    def _safe_sha256(self, path: Path) -> str | None:
-        """Hash the on-disk target file, or None if it is missing/unreadable."""
+    def _safe_sha256(self, workspace_id: str, target_file: str) -> str | None:
+        """Hash the on-disk target file via the Guard interface.
+
+        Routing through `guard.read_text` keeps crash recovery under the same
+        file policy as normal reads (no raw filesystem bypass). Returns None if
+        the file is missing, blocked or not valid UTF-8.
+        """
         try:
-            return sha256_text(path.read_text(encoding="utf-8", newline=""))
+            text = self._guard.read_text(workspace_id, target_file)
+        except Phase1Error:
+            return None
+        try:
+            return sha256_text(text)
         except (OSError, UnicodeDecodeError):
             return None
 
@@ -573,12 +665,12 @@ class Phase1Service:
         for task in rows:
             cs = self._load_change_set(task["changeset_id"])
             target = self._guard.resolve(task["workspace_id"], task["target_file"])
-            current_hash = self._safe_sha256(target)
+            current_hash = self._safe_sha256(task["workspace_id"], task["target_file"])
             now = _now()
             if current_hash == cs["proposed_sha256"]:
                 # Write landed but the terminal state was not persisted. The
                 # built-in hash verification is implicitly satisfied.
-                self._complete(task, cs["id"])
+                self._complete(task, cs["id"], None, self._db)
                 summary["completed"] += 1
             elif current_hash == cs["base_sha256"]:
                 # Nothing was written; safe to return to awaiting_approval.
@@ -587,10 +679,18 @@ class Phase1Service:
                         "UPDATE tasks SET state = 'awaiting_approval' WHERE id = ?",
                         (task["id"],),
                     )
+                    # Settle any approval left dangling ("applying") by the
+                    # crashed process so it is not mistaken for an open decision.
+                    self._db.execute(
+                        "UPDATE approvals SET outcome = 'reset' "
+                        "WHERE task_id = ? AND outcome = 'applying'",
+                        (task["id"],),
+                    )
                     self._append_events(
                         task["id"],
                         [("task.recovered", {"reason": "baseline intact; reset for re-approval"})],
                         now,
+                        self._db,
                     )
                 summary["reset"] += 1
             else:
@@ -600,14 +700,17 @@ class Phase1Service:
                     cs["id"],
                     APPLY_OUTCOME_UNKNOWN,
                     "process crashed during apply; on-disk hash is unknown",
+                    None,
+                    self._db,
                 )
                 summary["unknown"] += 1
         return summary
 
-    def _row_to_real_task(self, task: sqlite3.Row) -> RealTaskResponse:
+    def _row_to_real_task(self, task: sqlite3.Row, conn: sqlite3.Connection = None) -> RealTaskResponse:
+        c = conn or self._db
         change_set = None
         if task["changeset_id"]:
-            cs = self._db.execute(
+            cs = c.execute(
                 "SELECT * FROM changesets WHERE id = ?", (task["changeset_id"],)
             ).fetchone()
             if cs is not None:
@@ -636,7 +739,7 @@ class Phase1Service:
             if task["verification_lines_json"]
             else [],
         )
-        created_at = self._db.execute(
+        created_at = c.execute(
             "SELECT COALESCE(MIN(created_at), '') FROM task_events WHERE task_id = ?",
             (task["id"],),
         ).fetchone()[0]

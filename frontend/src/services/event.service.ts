@@ -1,4 +1,5 @@
 import { apiBaseUrl } from '@/config/runtime'
+import { parseTaskEvent } from '@/contracts/real-task.schema'
 import type { TaskEvent } from '@/types/agent'
 
 export interface SubscribeOptions {
@@ -29,9 +30,20 @@ function subscribe(
   // 浏览器断线自动重连时会自带 Last-Event-ID 头（后端 SSE 帧含 id: 字段），
   // 首次连接的续传位置通过 after_sequence 查询参数显式传入。
   const source = new EventSource(buildEventUrl(basePath, options))
-  source.addEventListener('task.event', (event: MessageEvent) => onEvent(JSON.parse(event.data)))
+  source.addEventListener('task.event', (event: MessageEvent) => {
+    try {
+      const parsed = parseTaskEvent(JSON.parse(event.data))
+      onEvent(parsed as TaskEvent)
+    } catch {
+      // 畸形事件：丢弃而非污染状态机
+    }
+  })
   source.addEventListener('error', onError)
   source.addEventListener('stream.end', () => source.close())
+  source.addEventListener('stream.error', () => {
+    source.close()
+    onError(new Event('stream.error'))
+  })
   return () => source.close()
 }
 

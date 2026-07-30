@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import Any, Optional
+from typing import Any, Literal, Optional
 
 from pydantic import BaseModel, Field
 
@@ -179,6 +179,28 @@ class RegisteredWorkspaceResponse(BaseModel, extra="forbid", populate_by_name=Tr
     policyVersion: str = Field(alias="policyVersion")
 
 
+class BrowseFileEntry(BaseModel, extra="forbid"):
+    """A directory listing entry. The browser navigates via ``token`` only; the
+    relative path is never echoed back as a client-constructible value."""
+
+    name: str
+    kind: str
+    token: str
+
+
+class BrowseFileContent(BaseModel, extra="forbid"):
+    """A file preview. Only the content is returned; no path is exposed."""
+
+    content: str
+
+
+class BrowseSearchHit(BaseModel, extra="forbid"):
+    """A search hit. The browser opens it via ``token`` only."""
+
+    name: str
+    token: str
+
+
 class RealChangeSetResponse(BaseModel, extra="forbid", populate_by_name=True):
     changeSetId: str = Field(alias="changeSetId")
     revision: int
@@ -202,7 +224,7 @@ class ApprovalRequest(BaseModel, extra="forbid"):
     `extra="forbid"`.
     """
 
-    decision: str
+    decision: Literal["approve", "reject"]
     changeSetId: str = Field(alias="changeSetId")
     revision: int
     diffHash: str = Field(alias="diffHash")

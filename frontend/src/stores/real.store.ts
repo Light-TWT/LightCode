@@ -22,10 +22,11 @@ function newIdempotencyKey(): string {
 
 export const useRealStore = defineStore('real', {
   state: () => ({
-    // 注册工作区浏览
+    // 注册工作区浏览（令牌导航，前端不持有自由路径）
     workspaces: [] as RegisteredWorkspace[],
     currentWorkspaceId: null as string | null,
-    currentPath: '',
+    /** 面包屑栈：根目录为空；每项含展示名与回传用的浏览令牌 */
+    pathStack: [] as { name: string; token: string }[],
     entries: [] as RegisteredFileEntry[],
     filePreview: null as RegisteredFileContent | null,
     searchQuery: '',
@@ -55,23 +56,27 @@ export const useRealStore = defineStore('real', {
 
     async openWorkspace(workspaceId: string) {
       this.currentWorkspaceId = workspaceId
-      this.currentPath = ''
+      this.pathStack = []
       this.filePreview = null
       this.searchQuery = ''
       this.searchHits = []
       if (this.workspaces.length === 0) {
         await this.loadWorkspaces()
       }
-      await this.loadDirectory('')
+      await this.loadDirectory(undefined)
     },
 
-    async loadDirectory(path: string) {
+    /** 列出目录。`nodeToken` 为上层目录签发的令牌；根目录传 undefined */
+    async loadDirectory(nodeToken?: string) {
       if (!this.currentWorkspaceId) return
       this.loading = true
       this.error = null
       try {
-        this.entries = await registeredWorkspaceService.listFiles(this.currentWorkspaceId, path)
-        this.currentPath = path
+        this.entries = await registeredWorkspaceService.listFiles(
+          this.currentWorkspaceId,
+          nodeToken,
+        )
+        this.filePreview = null
       } catch (err) {
         this.error = err instanceof Error ? err.message : String(err)
       } finally {
@@ -79,16 +84,33 @@ export const useRealStore = defineStore('real', {
       }
     },
 
-    /** 后端 relativePath 相对当前列举目录，这里拼出工作区内完整相对路径 */
-    childPath(entry: RegisteredFileEntry): string {
-      return this.currentPath ? `${this.currentPath}/${entry.name}` : entry.name
+    /** 进入子目录：压入面包屑并以下一层令牌继续列举 */
+    async enterDirectory(entry: RegisteredFileEntry) {
+      if (entry.kind !== 'dir' || !entry.token) return
+      this.pathStack = [...this.pathStack, { name: entry.name, token: entry.token }]
+      this.searchHits = []
+      this.searchQuery = ''
+      await this.loadDirectory(entry.token)
     },
 
-    async openFile(path: string) {
-      if (!this.currentWorkspaceId) return
+    /** 返回上一级：弹出面包屑栈顶，用父级令牌重新列举 */
+    async goUp() {
+      if (this.pathStack.length === 0) return
+      const stack = this.pathStack.slice(0, -1)
+      this.pathStack = stack
+      const parent = stack[stack.length - 1]
+      await this.loadDirectory(parent ? parent.token : undefined)
+    },
+
+    /** 仅回传服务端签发的 fileToken 打开文件，绝不提交自由路径 */
+    async openFileByToken(token: string) {
+      if (!this.currentWorkspaceId || !token) return
       this.error = null
       try {
-        this.filePreview = await registeredWorkspaceService.readFile(this.currentWorkspaceId, path)
+        this.filePreview = await registeredWorkspaceService.readFile(
+          this.currentWorkspaceId,
+          token,
+        )
       } catch (err) {
         this.error = err instanceof Error ? err.message : String(err)
       }

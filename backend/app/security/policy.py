@@ -8,6 +8,7 @@ explicit and unit-testable instead of buried in guard/phase1 logic.
 
 from __future__ import annotations
 
+import fnmatch
 from pathlib import Path
 
 # Maximum size of a file that may be read or searched (bytes).
@@ -38,6 +39,35 @@ ALLOWED_EXTENSIONS = {
 
 # Secret file globs rejected before any content read (see §默认敏感文件拒绝).
 SECRET_GLOB = ("*.pem", "*.key", "id_rsa*", "credentials*", "secrets*")
+
+# Logical path segments that are always sensitive, regardless of their position
+# in the path. `.git` is rejected everywhere (not just as a bare basename) so
+# `.git/config` cannot be read; `.env` is included because it is a secret store
+# even when nested (e.g. `config/.env`). The check is case-insensitive because
+# Windows filesystems fold `.GIT` onto `.git`.
+SENSITIVE_SEGMENTS = {".env", ".git"}
+
+
+def is_sensitive_relative_path(relative: str) -> bool:
+    """Reject sensitive logical paths by a canonical per-segment check.
+
+    Unlike a basename-only test, this denies every segment of the logical path,
+    so `.git/config`, `.GIT/CONFIG`, `a/b/.env` and `secrets/prod.key` are all
+    caught. Used by the guard on read, list and search entry points.
+
+    Args:
+        relative: A workspace-relative logical path (forward or back slashes).
+    """
+    segments = [s for s in relative.replace("\\", "/").split("/") if s]
+    if not segments:
+        return False
+    lowered = [s.casefold() for s in segments]
+    if any(seg in SENSITIVE_SEGMENTS for seg in lowered):
+        return True
+    for seg in lowered:
+        if any(fnmatch.fnmatch(seg, pat.casefold()) for pat in SECRET_GLOB):
+            return True
+    return False
 
 
 def is_allowed_extension(path: Path) -> bool:

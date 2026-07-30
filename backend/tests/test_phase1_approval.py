@@ -162,3 +162,60 @@ def test_events_persisted_through_completion(env) -> None:
     assert "task.applying_change" in body
     assert "task.verification_completed" in body
     assert "task.completed" in body
+
+
+# ---------------------------------------------------------------------------
+# P0-2 (WP0): the rejection path must NOT bypass ChangeSet binding validation.
+# Currently any non-"approve" decision is routed to `_reject()` *before* the
+# task state / ChangeSet ownership / revision / diffHash / TTL are checked, and
+# `ApprovalRequest.decision` is an unconstrained string. These tests encode the
+# post-fix invariants and are expected to FAIL (red) until WP1 tightens the
+# approval contract.
+# ---------------------------------------------------------------------------
+
+
+def test_reject_unknown_decision_fails_closed(env) -> None:
+    client, _ = env
+    task = _create(client)
+    # An unrecognised decision must be rejected by schema/enum validation, not
+    # silently treated as a reject that cancels the task.
+    resp = client.post(
+        f"/api/v1/real-tasks/{task['id']}/approval",
+        json=_approval_body(task, decision="approve_but_exploit"),
+    )
+    assert resp.status_code != 200
+    fetched = client.get(f"/api/v1/real-tasks/{task['id']}").json()
+    assert fetched["state"] == "awaiting_approval"
+
+
+def test_reject_terminal_task_not_recancelled(env) -> None:
+    client, _ = env
+    task = _create(client)
+    client.post(f"/api/v1/real-tasks/{task['id']}/approval", json=_approval_body(task))
+    assert client.get(f"/api/v1/real-tasks/{task['id']}").json()["state"] == "completed"
+    # A late reject against an already-completed task must not re-cancel it.
+    resp = client.post(
+        f"/api/v1/real-tasks/{task['id']}/approval",
+        json=_approval_body(task, decision="reject", key="late-reject"),
+    )
+    assert resp.status_code == 400
+    fetched = client.get(f"/api/v1/real-tasks/{task['id']}").json()
+    assert fetched["state"] == "completed"
+
+
+def test_reject_cross_task_changeset_not_polluted(env) -> None:
+    client, _ = env
+    task_a = _create(client)
+    task_b = _create(client)
+    cs_b_id = task_b["changeSet"]["changeSetId"]
+    # Reject task A but smuggle task B's ChangeSet id into the request.
+    body = _approval_body(task_a, decision="reject", key="cross-key")
+    body["changeSetId"] = cs_b_id
+    resp = client.post(f"/api/v1/real-tasks/{task_a['id']}/approval", json=body)
+    cs_b = client.app.state.db.execute(
+        "SELECT status FROM changesets WHERE id = ?", (cs_b_id,)
+    ).fetchone()
+    # Task B's ChangeSet must remain untouched/active.
+    assert cs_b["status"] == "active"
+    # The cross-task binding must be rejected, not silently applied to B.
+    assert resp.status_code == 400

@@ -68,8 +68,8 @@ npm run typecheck
 npm run build
 ```
 
-当前基线为 60 个前端测试通过（12 文件），`vue-tsc -b && vite build` 通过。修改服务合约、store 或视图后，应先运行对应聚焦测试，再运行完整测试和构建。
+当前基线为 64 个前端测试通过（13 文件），`vue-tsc -b && vite build` 通过。修改服务合约、store 或视图后，应先运行对应聚焦测试，再运行完整测试和构建。
 
 ## Phase 1 前端边界（已完成 T8）
 
-Phase 1 已扩展任务状态、ChangeSet 审查与安全错误展示，并新增真实工作区闭环（`RegisteredWorkspaceService`、`RealTaskService`）。仍必须保留 `TaskService`、`WorkspaceService`、`RegisteredWorkspaceService`、`RealTaskService` 与 SSE 适配器边界：View 和 Pinia store 不直接调用 `fetch`、`EventSource`，不接收真实根路径、补丁正文或命令。详细规则见 `../docs/phase1-safety-contract.md`。
+Phase 1 已扩展任务状态、ChangeSet 审查与安全错误展示，并新增真实工作区闭环（`RegisteredWorkspaceService`、`RealTaskService`）。浏览与读取改为不透明令牌导航（面包屑 token 栈，后端用 `browse_tokens` 签发/校验，前端不再持有自由路径），并新增运行时 DTO 校验（`contracts/real-task.schema.ts`：拒绝含 `rootPath` 的 workspace、未知 task state、畸形事件）。仍必须保留 `TaskService`、`WorkspaceService`、`RegisteredWorkspaceService`、`RealTaskService` 与 SSE 适配器边界：View 和 Pinia store 不直接调用 `fetch`、`EventSource`，不接收真实根路径、补丁正文或命令。详细规则见 `../docs/phase1-safety-contract.md`。

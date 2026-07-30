@@ -109,8 +109,10 @@ def test_diff_line_limit_blocks_large_changeset(env, monkeypatch) -> None:
 def test_disallowed_extension_read_denied(env) -> None:
     client, ws_root = env
     (ws_root / "image.png").write_text("binary-ish", encoding="utf-8")
+    listing = client.get("/api/v1/registered-workspaces/ws-demo/files").json()
+    entry = next(i for i in listing if i["name"] == "image.png")
     resp = client.get(
-        "/api/v1/registered-workspaces/ws-demo/file", params={"path": "image.png"}
+        "/api/v1/registered-workspaces/ws-demo/file", params={"fileToken": entry["token"]}
     )
     assert resp.status_code == 400
     assert resp.json()["code"] == "FILE_TYPE_DENIED"
@@ -123,7 +125,7 @@ def test_search_skips_disallowed_extension(env) -> None:
         "/api/v1/registered-workspaces/ws-demo/search", params={"query": "needle-token-xyz"}
     )
     assert resp.status_code == 200
-    assert not any("hidden.bin" in r["relativePath"] for r in resp.json())
+    assert not any("hidden.bin" in r["name"] for r in resp.json())
 
 
 # --- M1.3 crash recovery ---
@@ -241,7 +243,8 @@ def test_sse_last_event_id_header_resumes(env) -> None:
 
 def test_sse_tail_captures_later_events(env, monkeypatch) -> None:
     client, _ = env
-    monkeypatch.setattr("app.api.routes.SSE_TAIL_TIMEOUT_SECONDS", 2)
+    monkeypatch.setattr("app.services.event_service.SSE_TAIL_TIMEOUT_SECONDS", 2)
+    monkeypatch.setattr("app.services.event_service.SSE_POLL_INTERVAL_SECONDS", 0.1)
     created = _create_real_task(client)
     task_id = created["id"]
     approval = _make_approval(created["changeSet"])

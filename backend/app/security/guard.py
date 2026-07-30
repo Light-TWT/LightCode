@@ -15,7 +15,12 @@ from app.schemas.errors import (
     WORKSPACE_NOT_REGISTERED,
 )
 from app.security.fs import canonical_resolve, is_link_or_reparse, validate_relative_input
-from app.security.policy import MAX_FILE_BYTES, SECRET_GLOB, is_allowed_extension
+from app.security.policy import (
+    MAX_FILE_BYTES,
+    SECRET_GLOB,
+    is_allowed_extension,
+    is_sensitive_relative_path,
+)
 from app.workspaces.registry import RegistryWorkspace, WorkspaceRegistry
 
 
@@ -85,6 +90,8 @@ class WorkspaceGuard:
             raise Phase1Error(FILE_TYPE_DENIED, "file type not allowed by policy")
 
     def read_text(self, workspace_id: str, relative: str) -> str:
+        if is_sensitive_relative_path(relative):
+            raise Phase1Error(SECRET_FILE_DENIED, f"sensitive path denied: {relative}")
         path = self.resolve(workspace_id, relative)
         self._require_readable_file(path)
         try:
@@ -96,6 +103,8 @@ class WorkspaceGuard:
             raise Phase1Error(FILE_TYPE_DENIED, "file is not valid UTF-8 text")
 
     def list_files(self, workspace_id: str, relative: str = "") -> list[dict]:
+        if relative and is_sensitive_relative_path(relative):
+            raise Phase1Error(SECRET_FILE_DENIED, f"sensitive path denied: {relative}")
         if relative:
             base = self.resolve(workspace_id, relative)
         else:
@@ -123,6 +132,13 @@ class WorkspaceGuard:
         for path in root.rglob("*"):
             if not path.is_file() or is_link_or_reparse(path) or _is_secret(path.name):
                 continue
+            try:
+                rel = path.relative_to(root)
+            except ValueError:
+                # Path escaped the root (e.g. a followed symlink); skip fail-safe.
+                continue
+            if is_sensitive_relative_path(str(rel).replace("\\", "/")):
+                continue
             if path.stat().st_size > MAX_FILE_BYTES:
                 continue
             if not is_allowed_extension(path):
@@ -133,6 +149,6 @@ class WorkspaceGuard:
                 continue
             if query in text:
                 results.append(
-                    {"name": path.name, "relativePath": str(path.relative_to(root)).replace("\\", "/")}
+                    {"name": path.name, "relativePath": str(rel).replace("\\", "/")}
                 )
         return results

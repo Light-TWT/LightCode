@@ -28,12 +28,12 @@ export const registeredWorkspacesFixture: RegisteredWorkspace[] = [
 
 export const registeredFilesFixture: Record<string, RegisteredFileEntry[]> = {
   '': [
-    { name: 'src', kind: 'dir', relativePath: 'src' },
-    { name: 'NOTES.md', kind: 'file', relativePath: 'NOTES.md' },
-    { name: '.env', kind: 'secret', relativePath: '.env' },
+    { name: 'src', kind: 'dir', token: 'src', relativePath: 'src' },
+    { name: 'NOTES.md', kind: 'file', token: 'NOTES.md', relativePath: 'NOTES.md' },
+    { name: '.env', kind: 'secret', token: '', relativePath: '.env' },
   ],
   src: [
-    { name: 'main.py', kind: 'file', relativePath: 'main.py' },
+    { name: 'main.py', kind: 'file', token: 'src/main.py', relativePath: 'src/main.py' },
   ],
 }
 
@@ -43,7 +43,7 @@ export const registeredFileContentFixture: RegisteredFileContent = {
 }
 
 export const searchHitsFixture: WorkspaceSearchHit[] = [
-  { name: 'NOTES.md', relativePath: 'NOTES.md' },
+  { name: 'NOTES.md', token: 'NOTES.md', relativePath: 'NOTES.md' },
 ]
 
 export const realTaskFixture: RealTask = {

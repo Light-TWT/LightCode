@@ -75,8 +75,8 @@ scripts/        开发与验证脚本
 ## 状态追踪
 
 ```text
-前端: 60 测试通过 (12 文件), vue-tsc -b + vite build 通过 (2026-07-27)
-后端: 94 测试通过 + 2 skipped (沙箱 symlink 静默降级, 逻辑已由 monkeypatch 测试覆盖) (2026-07-27)
+前端: 64 测试通过 (13 文件), vue-tsc -b + vite build (--emptyOutDir false) 通过 (2026-07-30)
+后端: 117 测试通过 + 2 skipped (沙箱 symlink 静默降级, 逻辑已由 monkeypatch 测试覆盖) (2026-07-30)
 Phase 0.5 收尾: DB 路径绝对化 + Git 跟踪移除已完成; API 模式持久化验证通过 (临时 DB 审批持久化, 新库回到 awaiting_approval)
 Phase 1 后端: T1-T7 + T9 完成; API 模式 HTTP 全闭环验证 16/16 通过
   (注册工作区无根路径泄露 -> 创建真实任务 awaiting_approval -> 审批原子写 + 内建验证 completed
@@ -86,6 +86,20 @@ Phase 1 前端 (T8): 完成; 8 个 Phase 1 端点全部有对应 UI
   (/real 注册工作区列表 -> /real/:id 文件树/预览/搜索/建任务 -> /real/:id/task/:taskId 计划/diff/审批/SSE)
   服务层 mock+http 双实现按 VITE_LIGHTCODE_RUNTIME 切换; 审批请求体测试断言严格等于 extra=forbid 契约; 响应无 rootPath
   端到端演示验证通过 (registered-workspaces 代理连通, 审批后磁盘文件真实变更)
+Phase 1R (安全收尾门禁, WP0-WP4 = M1+M2+M3): 全部完成 (2026-07-30)
+  WP0: 先写失败测试 (P0-1/2/3 门禁用例) 已完成并转绿
+  WP1 (M1 P0-1/2): policy.casefold 敏感路径逐段拒绝 (.git/** .env 大小写变体);
+    ApprovalRequest.decision=Literal["approve","reject"] 未知决策 422 fail-closed;
+    审批绑定校验前置 decision 分支; registry policy 白名单 fail-closed;
+    APPLY_CONFLICT 稳定错误码
+  WP2 (M2 P0-3): 多进程文件级原子条件 UPDATE 作跨进程 CAS (无 schema 变更, 规避红线);
+    提交后再写文件; test_phase1_concurrency 证明两独立连接/进程同文件最多一个写入
+  M3 (WP3+WP4): 已完成 — browse_tokens (HMAC-SHA256 短期 TTL, 绑定 workspace+operation+relative_path,
+    取代浏览器自由路径) + event_service (SSE 重放上限/心跳/tail 续传/最大连接数) +
+    前端 token 面包屑导航 (不持有自由路径) + runtime DTO schema 校验 (ContractValidationError,
+    拒绝含 rootPath 的 workspace / 未知 task state) + API-mode E2E (test_api_mode_e2e 全闭环) +
+    质量门禁 (vue-tsc -b + vite build --emptyOutDir false 通过)
+  3 个 P0 缺陷 (P0-1 敏感路径绕过 / P0-2 审批绑定绕过 / P0-3 并发未证安全) 全部关闭; M1+M2+M3 全绿
 ```
 
 ## 问题修复记录
@@ -101,6 +115,7 @@ Phase 1 前端 (T8): 完成; 8 个 Phase 1 端点全部有对应 UI
 - 2026-07-27: 模块 1（契约能力补全）。`changesets` 增 `expires_at` 列，`create_real_task` 按 `CHANGESET_TTL_SECONDS`（策略常量，默认 3600s）写入，`submit_approval` 过期返回 `CHANGESET_EXPIRED` 且不写文件。新建 `security/policy.py` 为唯一策略来源（迁入 `MAX_FILE_BYTES`/`SECRET_GLOB`，新增 `ALLOWED_EXTENSIONS` 扩展名白名单 + `MAX_DIFF_LINES` + `is_allowed_extension()`）；`guard.py` 加扩展名拒绝与 `search_files` 大小/扩展名跳过；`phase1.py` 校验 diff 行数超限。`phase1.py::recover_incomplete_tasks()` 启动扫描 `applying_change` 真实任务并按当前文件哈希判定 completed/reset/unknown（`APPLY_OUTCOME_UNKNOWN` 阻断自动续写），`main.py` lifespan 调用。`runtime.py` + `routes.py` 升级 SSE 支持 `?after_sequence=` + `Last-Event-ID` 续传 + `tail` 轮询，每帧带 `id:`；新增 `/real-tasks/{id}/events`。
 - 2026-07-27: 模块 2（配置与文档对齐）。新增 `backend/workspaces.example.json` 模板（机器特定 `rootPath` 由使用者复制为 `workspaces.json` 后填真实绝对路径，后者已被 .gitignore 忽略）；`db/database.py::initialize_database` 启用 WAL + `busy_timeout=5000` 提升并发读与降低写锁竞态。WP1 简化偏差（无迁移目录、无 `apply_attempts` 表）明文记录于"Phase 1 计划偏差与决策"小节。
 - 2026-07-27: 模块 3（前端 Phase 1 真实闭环 T8）。类型层 `types/agent.ts` 新增 RealTask/RealChangeSet/RegisteredWorkspace/RegisteredFileEntry/WorkspaceSearchHit/ApprovalInput 等，与 `backend/app/schemas/contracts.py` 严格对齐（无 rootPath）。新建 `services/registered-workspace.service.ts` 与 `services/real-task.service.ts`（mock+http 双实现按 `isApiMode` 切换）；`event.service.ts` 增 `subscribeRealTaskEvents`（`after_sequence`/`tail`/`Last-Event-ID` 续传）。新建 `stores/real.store.ts`（idempotencyKey 用 `crypto.randomUUID()`，事件按 sequence 去重）。新建视图 RealWorkspaceListView/RealWorkspaceView/RealTaskView 与路由 `/real`、`/real/:id`、`/real/:id/task/:taskId`；主页加"真实工作区"入口。修复两处存量缺陷：AgentWorkspaceView 拒绝按钮缺失 `@click`（补 `rejectCurrentChangeSet` action + 已拒绝态 UI）；SettingsView 运行时模式硬编码 Mock 改按 `isApiMode` 动态显示。新增/扩充 5 个测试文件（服务契约断言、RealViews 10 用例）。环境注意：vite build 清空 dist 会被 OneDrive 文件锁中断，用 `--emptyOutDir false` 规避。
+- 2026-07-30 (Phase 1R M3, WP3+WP4): 后端新建 `app/services/browse_tokens.py`（HMAC-SHA256 签名、TTL 默认 30s、绑定 `(workspace_id, operation, relative_path)` 不透明令牌，fail-closed 拒绝畸形/签名不符/workspace 不符/operation 不符/过期），`app/services/event_service.py`（SSE_REPLAY_CAP=1000 / TAIL_TIMEOUT=30 / HEARTBEAT=10 / POLL=0.5 / MAX_CONNECTIONS=50，连接计数 + 重放/心跳/错误帧生成）。`schemas/contracts.py` 增 `BrowseFileEntry/BrowseFileContent/BrowseSearchHit`（含 token）；`schemas/errors.py` 增 `BROWSE_TOKEN_INVALID/EXPIRED`；`api/routes.py` 移除内联 SSE 逻辑改用 `stream_events`，文件树/读/搜全面 token 化（secret/link 条目发空 token 可见不可开）。测试新增 `test_browse_tokens.py`、`test_event_service.py`、`test_api_mode_e2e.py`；改写 browse/negative/safety 用例为 token 模型。前端：`types/agent.ts` + fixture 增 `token`；`registered-workspace.service.ts` 改收 `nodeToken`/`fileToken`，`real.store.ts` 用面包屑 token 栈取代自由路径；新增 `contracts/real-task.schema.ts`（运行时 DTO 校验，拒绝 rootPath/未知 state）+ 测试；`http.ts` 增 `requestJsonValidated`；`event.service.ts` 接 `parseTaskEvent` 与 `stream.error`；`SettingsView` 修正为"无外部命令/仅内建验证"。后端 117 passed/2 skipped，前端 64 passed/64，vue-tsc -b + vite build (--emptyOutDir false) 通过。
 - 2026-07-23: 修复 `uvicorn app.main:app` 的同名 `app` 包解析冲突；`main.py` 顶部将本地 `backend/` 插入 `sys.path` 首位。
 
 ## Phase 1 计划偏差与决策

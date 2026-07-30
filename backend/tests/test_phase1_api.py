@@ -60,34 +60,74 @@ def test_registered_workspaces_hide_root_path(client: TestClient) -> None:
     assert "proj" not in json.dumps(ws)
 
 
-def test_list_files_marks_secret(client: TestClient) -> None:
+def test_list_files_issues_tokens_and_marks_secret(client: TestClient) -> None:
     resp = client.get("/api/v1/registered-workspaces/ws-demo/files")
     assert resp.status_code == 200
-    kinds = {item["name"]: item["kind"] for item in resp.json()}
+    items = resp.json()
+    kinds = {item["name"]: item["kind"] for item in items}
     assert kinds["notes.txt"] == "file"
     assert kinds["sub"] == "dir"
     assert kinds[".env"] == "secret"
+    # navigable entries carry an opaque token; the browser never receives a
+    # free-form relative path to submit back.
+    for item in items:
+        assert "relativePath" not in item
+        if item["kind"] in ("file", "dir"):
+            assert item["token"]
+        else:
+            assert item["token"] == ""
 
 
-def test_read_file_returns_content(client: TestClient) -> None:
-    resp = client.get("/api/v1/registered-workspaces/ws-demo/file", params={"path": "notes.txt"})
+def test_read_file_via_token(client: TestClient) -> None:
+    listing = client.get("/api/v1/registered-workspaces/ws-demo/files").json()
+    entry = next(i for i in listing if i["name"] == "notes.txt")
+    resp = client.get(
+        "/api/v1/registered-workspaces/ws-demo/file", params={"fileToken": entry["token"]}
+    )
     assert resp.status_code == 200
     assert "first line" in resp.json()["content"]
+    assert "relativePath" not in resp.json()
 
 
-def test_read_traversal_denied(client: TestClient) -> None:
+def test_navigate_subdirectory_via_token(client: TestClient) -> None:
+    root = client.get("/api/v1/registered-workspaces/ws-demo/files").json()
+    sub = next(i for i in root if i["name"] == "sub")
     resp = client.get(
-        "/api/v1/registered-workspaces/ws-demo/file", params={"path": "../secret.txt"}
+        "/api/v1/registered-workspaces/ws-demo/files", params={"nodeToken": sub["token"]}
+    )
+    assert resp.status_code == 200
+    names = {i["name"] for i in resp.json()}
+    assert "deep.txt" in names
+
+
+def test_read_with_forged_token_denied(client: TestClient) -> None:
+    resp = client.get(
+        "/api/v1/registered-workspaces/ws-demo/file", params={"fileToken": "garbage.token"}
     )
     assert resp.status_code == 400
-    assert resp.json()["code"] == "PATH_POLICY_DENIED"
+    assert resp.json()["code"] == "BROWSE_TOKEN_INVALID"
+
+
+def test_read_with_wrong_operation_token_denied(client: TestClient) -> None:
+    # a 'list' token (issued for a directory) cannot be used to read a file
+    root = client.get("/api/v1/registered-workspaces/ws-demo/files").json()
+    sub = next(i for i in root if i["name"] == "sub")
+    resp = client.get(
+        "/api/v1/registered-workspaces/ws-demo/file", params={"fileToken": sub["token"]}
+    )
+    assert resp.status_code == 400
+    assert resp.json()["code"] == "BROWSE_TOKEN_INVALID"
 
 
 def test_read_secret_denied(client: TestClient) -> None:
+    # a forged 'read' token pointing at .env is rejected by the guard
+    from app.services.browse_tokens import issue
+
+    token = issue("ws-demo", "read", ".env")
     resp = client.get(
-        "/api/v1/registered-workspaces/ws-demo/file", params={"path": ".env"}
+        "/api/v1/registered-workspaces/ws-demo/file", params={"fileToken": token}
     )
-    assert resp.status_code == 400
+    assert resp.status_code in (400, 403)
     assert resp.json()["code"] == "SECRET_FILE_DENIED"
 
 
@@ -102,7 +142,18 @@ def test_search_finds_nested_match(client: TestClient) -> None:
         "/api/v1/registered-workspaces/ws-demo/search", params={"query": "nested content"}
     )
     assert resp.status_code == 200
-    assert any(r["relativePath"] == "sub/deep.txt" for r in resp.json())
+    hits = resp.json()
+    assert any(h["name"] == "deep.txt" for h in hits)
+    for hit in hits:
+        assert "relativePath" not in hit
+        assert hit["token"]
+    # the token from the search hit opens the file without a free path
+    first = hits[0]
+    read = client.get(
+        "/api/v1/registered-workspaces/ws-demo/file", params={"fileToken": first["token"]}
+    )
+    assert read.status_code == 200
+    assert "nested content" in read.json()["content"]
 
 
 def test_create_real_task_lands_in_awaiting_approval(client: TestClient) -> None:

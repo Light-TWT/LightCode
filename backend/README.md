@@ -16,6 +16,7 @@ app/
   main.py                  FastAPI 入口、CORS、SQLite 与 WorkspaceRegistry 生命周期
   api/routes.py            REST 与 SSE 路由（Mock + Phase 1 真实端点）
   db/database.py           SQLite schema、迁移、初始化与确定性种子
+  db/connection.py         独立连接工厂（WAL + busy_timeout + row factory），供并发验证复用
   schemas/
     contracts.py           camelCase Pydantic 请求/响应合约（extra="forbid"）
     errors.py              稳定错误码（Phase1Error）
@@ -27,13 +28,15 @@ app/
     changeset.py           确定性 append-marker ChangeSet 生成
     atomic_write.py        临时文件 + os.replace 原子替换 + 内建 UTF-8/哈希验证 + 每文件锁
     phase1.py              真实任务生命周期与 6 步审批写入协议
+    browse_tokens.py       HMAC-SHA256 短期浏览令牌（绑定 workspace+operation+relative_path）
+    event_service.py       SSE 事件生成（重放上限/心跳/tail 续传/最大连接数）
   workspaces/
     registry.py            服务端静态工作区注册表（启动加载）
 tests/                    pytest 用例；每个用例使用隔离临时数据库
 pyproject.toml            Python 依赖与 pytest 配置
 ```
 
-SSE 实现在 `app/api/routes.py`：它仅回放 SQLite 中已持久化且按 `sequence` 排序的事件，不是持续模型流。每帧携带 `id:`（即 `sequence`），支持 `?after_sequence=<n>` 显式续传与浏览器自动重连的 `Last-Event-ID`；`?tail=true` 时回放后保持连接轮询新事件（默认 30s 窗口），否则发送 `stream.end` 后关闭。Phase 1 真实任务事件复用既有的 `task_events` 表，并有独立端点 `GET /api/v1/real-tasks/{taskId}/events`。
+SSE 事件生成在 `app/services/event_service.py`（重放上限 1000、心跳 10s、tail 窗口 30s、最大连接数 50），由 `app/api/routes.py` 通过 `stream_events(...)` 输出。SSE 仅回放 SQLite 中已持久化且按 `sequence` 排序的事件，不是持续模型流。每帧携带 `id:`（即 `sequence`），支持 `?after_sequence=<n>` 显式续传与浏览器自动重连的 `Last-Event-ID`；`?tail=true` 时回放后保持连接轮询新事件，否则发送 `stream.end` 后关闭。Phase 1 真实任务事件复用既有的 `task_events` 表，并有独立端点 `GET /api/v1/real-tasks/{taskId}/events`。
 
 ## 依赖与启动
 
@@ -112,14 +115,16 @@ GET  /api/v1/tasks/{taskId}/events
 
 ```text
 GET  /api/v1/registered-workspaces
-GET  /api/v1/registered-workspaces/{workspaceId}/files
-GET  /api/v1/registered-workspaces/{workspaceId}/file?path=<logicalRelative>
+GET  /api/v1/registered-workspaces/{workspaceId}/files?nodeToken=<opaque>
+GET  /api/v1/registered-workspaces/{workspaceId}/file?fileToken=<opaque>
 GET  /api/v1/registered-workspaces/{workspaceId}/search?query=<text>
 POST /api/v1/real-tasks
 GET  /api/v1/real-tasks/{taskId}
 POST /api/v1/real-tasks/{taskId}/approval
 GET  /api/v1/real-tasks/{taskId}/events
 ```
+
+文件树（`/files`）与文件读取（`/file`）不再接收自由路径，改用不透明浏览令牌（`browse_tokens`）：`/files` 对每个条目签发绑定 `(workspaceId, operation="list", relativePath)` 的令牌（secret/link 条目发空令牌，可见不可开）；`/file` 用 `fileToken`（绑定 `operation="read"`）解析真实相对路径，令牌经 HMAC 校验，签名不符/workspace 不符/operation 不符/过期均 fail-closed 拒绝。`/search` 命中项带回绑定 `operation="read"` 的令牌供前端直接打开。
 
 真实任务 SSE 端点支持 `?after_sequence=`、`Last-Event-ID` 续传与 `?tail=true` 轮询。公共 DTO、SSE、日志与错误信息均不含真实根路径；审批请求仅接受 `decision`/`changeSetId`/`revision`/`diffHash`/`idempotencyKey`，且 Pydantic `extra="forbid"` 拒绝任何 `rootPath`/`filePath`/patch/command。稳定错误码见 `app/schemas/errors.py`。
 
@@ -141,7 +146,7 @@ Phase 1 允许的受控真实读取与单文件原子写入，必须在 `../docs
 python -m pytest -q
 ```
 
-当前基线为 **94 个后端测试通过 + 2 个跳过**（跳过项为沙箱环境 `os.symlink` 静默降级导致不可检测，对应逻辑已由 monkeypatch 测试覆盖）。全量验证还应从 `frontend/` 运行：
+当前基线为 **117 个后端测试通过 + 2 个跳过**（跳过项为沙箱环境 `os.symlink` 静默降级导致不可检测，对应逻辑已由 monkeypatch 测试覆盖）。全量验证还应从 `frontend/` 运行 `npm run test` 与 `npm run build`：
 
 ```bash
 npm run test

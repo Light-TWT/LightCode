@@ -64,7 +64,7 @@ describe('httpRegisteredWorkspaceService', () => {
 
     await httpRegisteredWorkspaceService.listFiles('ws-1', 'src/sub dir')
     expect(fetchMock.mock.calls[1][0]).toContain(
-      '/registered-workspaces/ws-1/files?path=src%2Fsub%20dir',
+      '/registered-workspaces/ws-1/files?nodeToken=src%2Fsub%20dir',
     )
 
     await httpRegisteredWorkspaceService.search('ws-1', 'a&b')
@@ -78,7 +78,7 @@ describe('httpRegisteredWorkspaceService', () => {
 
     const file = await httpRegisteredWorkspaceService.readFile('ws-1', 'NOTES.md')
     expect(fetchMock.mock.calls[0][0]).toContain(
-      '/registered-workspaces/ws-1/file?path=NOTES.md',
+      '/registered-workspaces/ws-1/file?fileToken=NOTES.md',
     )
     expect(file.content).toBe('x')
   })

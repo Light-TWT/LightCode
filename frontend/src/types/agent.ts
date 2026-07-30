@@ -172,20 +172,26 @@ export interface RegisteredWorkspace {
 export interface RegisteredFileEntry {
   name: string
   kind: 'file' | 'dir' | 'link' | 'secret'
-  /** 相对于当前列举目录（非工作区根）的路径 */
-  relativePath: string
+  /** 服务端签发的短期浏览令牌；前端仅回传此令牌，绝不自行构造 relativePath */
+  token: string
+  /** 仅用于展示的服务器下发相对路径；前端绝不将其作为自由路径回传 */
+  relativePath?: string
 }
 
 /** GET /registered-workspaces/{id}/file 的响应 */
 export interface RegisteredFileContent {
-  relativePath: string
+  /** 仅用于展示；服务端不回显可写路径 */
+  relativePath?: string
   content: string
 }
 
 /** GET /registered-workspaces/{id}/search 的命中条目 */
 export interface WorkspaceSearchHit {
   name: string
-  relativePath: string
+  /** 服务端签发的短期浏览令牌；前端仅回传此令牌打开文件 */
+  token: string
+  /** 仅用于展示 */
+  relativePath?: string
 }
 
 /** RealChangeSetResponse 对应结构 */

@@ -18,24 +18,20 @@ const workspace = computed(
   () => store.workspaces.find((ws) => ws.id === workspaceId.value) ?? null,
 )
 
-/** 面包屑：'' 根 + 逐级目录段 */
+/** 面包屑：根目录 + 逐级目录（来自令牌导航栈） */
 const breadcrumbs = computed(() => {
-  const segments = store.currentPath ? store.currentPath.split('/') : []
-  const crumbs = [{ label: '根目录', path: '' }]
-  let acc = ''
-  for (const seg of segments) {
-    acc = acc ? `${acc}/${seg}` : seg
-    crumbs.push({ label: seg, path: acc })
+  const crumbs = [{ label: '根目录' }]
+  for (const seg of store.pathStack) {
+    crumbs.push({ label: seg.name })
   }
   return crumbs
 })
 
 function onEntryClick(entry: RegisteredFileEntry) {
-  const path = store.childPath(entry)
   if (entry.kind === 'dir') {
-    store.loadDirectory(path)
-  } else if (entry.kind === 'file') {
-    store.openFile(path)
+    store.enterDirectory(entry)
+  } else if (entry.kind === 'file' && entry.token) {
+    store.openFileByToken(entry.token)
   }
   // link / secret：受安全策略保护，不可读取
 }
@@ -78,17 +74,18 @@ async function createTask() {
         <p class="panel-kicker">文件浏览（只读，经服务端守卫）</p>
         <nav class="breadcrumbs" aria-label="路径">
           <button
-            v-for="crumb in breadcrumbs"
-            :key="crumb.path"
+            v-for="(crumb, idx) in breadcrumbs"
+            :key="idx"
             type="button"
             class="crumb"
-            @click="store.loadDirectory(crumb.path)"
+            :disabled="idx === breadcrumbs.length - 1"
+            @click="store.goUp()"
           >{{ crumb.label }}</button>
         </nav>
         <div class="entry-list">
           <button
             v-for="entry in store.entries"
-            :key="entry.relativePath"
+            :key="entry.token || entry.name"
             type="button"
             class="entry-row"
             :class="{ blocked: entry.kind === 'link' || entry.kind === 'secret' }"
@@ -107,8 +104,8 @@ async function createTask() {
 
       <section class="panel preview-panel" aria-label="文件预览">
         <p class="panel-kicker">文件预览</p>
-        <template v-if="store.filePreview">
-          <p class="preview-path" data-testid="preview-path">{{ store.filePreview.relativePath }}</p>
+          <template v-if="store.filePreview">
+          <p class="preview-path" data-testid="preview-path">{{ store.filePreview.relativePath ?? '文件预览' }}</p>
           <pre class="code-surface" data-testid="preview-content">{{ store.filePreview.content }}</pre>
         </template>
         <p v-else class="empty-hint">点击左侧文件查看内容</p>
@@ -130,12 +127,12 @@ async function createTask() {
           <div v-if="store.searchQuery" class="search-results">
             <button
               v-for="hit in store.searchHits"
-              :key="hit.relativePath"
+              :key="hit.token || hit.name"
               type="button"
               class="hit-row"
               data-testid="search-hit"
-              @click="store.openFile(hit.relativePath)"
-            >{{ hit.relativePath }}</button>
+              @click="store.openFileByToken(hit.token)"
+            >{{ hit.name }}</button>
             <p v-if="store.searchHits.length === 0" class="empty-hint">无匹配结果</p>
           </div>
         </section>

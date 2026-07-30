@@ -90,8 +90,13 @@ class WorkspaceRegistry:
         if not canonical.is_dir():
             raise WorkspaceRegistryError(f"workspace {ws_id} root is not a directory: {canonical}")
         policy = entry.get("policy", PHASE1_POLICY)
-        if not isinstance(policy, str):
-            raise WorkspaceRegistryError(f"workspace {ws_id} policy must be a string")
+        # Fail-closed: only allow-listed policies are accepted. A non-string
+        # (bool/number), a stringified boolean ("true"), or any unknown policy
+        # name is rejected rather than silently defaulted to a permitted policy.
+        if not isinstance(policy, str) or policy not in POLICY_CAPABILITIES:
+            raise WorkspaceRegistryError(
+                f"workspace {ws_id} policy must be one of {sorted(POLICY_CAPABILITIES)}"
+            )
         target_file = entry.get("targetFile")
         if not target_file or not isinstance(target_file, str):
             raise WorkspaceRegistryError(f"workspace {ws_id} missing string targetFile")

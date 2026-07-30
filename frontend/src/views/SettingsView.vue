@@ -114,10 +114,10 @@ function goBack() {
             <div class="perm-group allowed">
               <div class="perm-group-title">✓ 允许</div>
               <ul class="perm-list">
-                <li class="perm-item">读取工作区内文件</li>
-                <li class="perm-item">生成 Diff 变更预览</li>
-                <li class="perm-item">经批准后写入文件</li>
-                <li class="perm-item">运行预设测试命令</li>
+                <li class="perm-item">读取工作区内文件（经服务端守卫）</li>
+                <li class="perm-item">生成 Diff 变更预览（服务端确定性变换）</li>
+                <li class="perm-item">经显式审批后原子写入文件</li>
+                <li class="perm-item">写入后内建完整性验证（UTF-8 + sha256）</li>
               </ul>
             </div>
             <div class="perm-group denied">
@@ -137,22 +137,17 @@ function goBack() {
           <div class="detail-header">
             <div class="detail-title">命令策略</div>
           </div>
-          <div class="cmd-columns">
-            <div class="cmd-group safe">
-              <div class="cmd-group-title">安全预设 · 直接执行</div>
-              <div class="cmd-item"><span class="cmd-dot" />pytest</div>
-              <div class="cmd-item"><span class="cmd-dot" />python -m pytest</div>
-              <div class="cmd-item"><span class="cmd-dot" />npm test</div>
-              <div class="cmd-item"><span class="cmd-dot" />npm run lint</div>
+          <div class="mode-block disabled-mode">
+            <div class="mode-label-row">
+              <div class="mode-dot" />
+              <span class="mode-name">外部命令执行</span>
+              <span class="mode-badge badge-coming">Phase 1 未启用</span>
             </div>
-            <div class="cmd-group review">
-              <div class="cmd-group-title">非预设命令 · 需审批</div>
-              <div class="cmd-item"><span class="cmd-dot" />其他所有命令</div>
-            </div>
+            <div class="mode-desc">Phase 1 不调用任何外部命令（无 shell / pytest / npm / git 执行）。文件写入后仅运行内建完整性验证（UTF-8 解码 + 内容哈希与 proposedSha256 比对）。外部命令执行能力将在后续阶段评估，且必须显式审批、受预算与超时约束。</div>
           </div>
           <div class="cmd-denied-bar">
-            <span class="denied-label">高风险命令 · 默认拒绝</span>
-            <span class="denied-examples">rm -rf · git push --force · curl | sh</span>
+            <span class="denied-label">Phase 1 默认拒绝</span>
+            <span class="denied-examples">rm -rf · git push --force · curl | sh · 任何 shell / 包管理 / 网络调用</span>
           </div>
         </div>
 

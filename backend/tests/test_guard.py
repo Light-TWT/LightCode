@@ -198,3 +198,60 @@ def test_root_symlink_denied(
     with pytest.raises(Phase1Error) as exc:
         g.read_text("ws1", "real.txt")
     assert exc.value.code == SYMLINK_DENIED
+
+
+# ---------------------------------------------------------------------------
+# P0-1 (WP0): sensitive-path policy must reject the .git/** subtree by *every*
+# access path (read / list / search), including case-variant spellings.
+# Currently `_is_secret` only inspects the basename, so `.git/config` reads as
+# `config` and slips through. These tests encode the post-fix invariant and are
+# expected to FAIL (red) until WP1 introduces per-segment canonical checks.
+# ---------------------------------------------------------------------------
+
+
+@pytest.fixture
+def secret_guard(tmp_path: Path) -> WorkspaceGuard:
+    root = tmp_path / "proj"
+    root.mkdir()
+    (root / "notes.txt").write_text("hello\n", encoding="utf-8")
+    git_dir = root / ".git"
+    git_dir.mkdir()
+    (git_dir / "config").write_text("[core]\n", encoding="utf-8")
+    (git_dir / "HEAD").write_text("ref: refs/heads/main\n", encoding="utf-8")
+    # Case-variant subtree, best-effort: on case-insensitive filesystems (.GIT
+    # == .git) this collides and is skipped, but the path `.GIT/CONFIG` still
+    # resolves to `.git/CONFIG` so the casefold bypass test remains valid.
+    upper_git = root / ".GIT"
+    try:
+        upper_git.mkdir()
+        (upper_git / "CONFIG").write_text("[core]\n", encoding="utf-8")
+    except FileExistsError:
+        pass
+    (root / "credentials.json").write_text("{}", encoding="utf-8")
+    (root / "id_rsa").write_text("PRIVATE", encoding="utf-8")
+    (root / "secret.key").write_text("KEY", encoding="utf-8")
+    return _make_registry(root)
+
+
+def test_read_git_config_denied(secret_guard: WorkspaceGuard) -> None:
+    with pytest.raises(Phase1Error) as exc:
+        secret_guard.read_text("ws1", ".git/config")
+    assert exc.value.code == SECRET_FILE_DENIED
+
+
+def test_read_git_config_casefold_denied(secret_guard: WorkspaceGuard) -> None:
+    with pytest.raises(Phase1Error) as exc:
+        secret_guard.read_text("ws1", ".GIT/CONFIG")
+    assert exc.value.code == SECRET_FILE_DENIED
+
+
+def test_list_git_dir_denied(secret_guard: WorkspaceGuard) -> None:
+    # Listing the .git subtree must be rejected, not enumerate its contents.
+    with pytest.raises(Phase1Error) as exc:
+        secret_guard.list_files("ws1", ".git")
+    assert exc.value.code in (SECRET_FILE_DENIED, PATH_POLICY_DENIED)
+
+
+def test_search_excludes_git_subtree(secret_guard: WorkspaceGuard) -> None:
+    results = secret_guard.search_files("ws1", "core")
+    assert not any(".git" in r["relativePath"].lower() for r in results)

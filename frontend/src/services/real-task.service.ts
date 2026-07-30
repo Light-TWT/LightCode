@@ -1,6 +1,7 @@
 import { realTaskFixture } from '@/fixtures/phase1.fixture'
 import { isApiMode } from '@/config/runtime'
 import { requestJson } from '@/services/http'
+import { parseRealTask } from '@/contracts/real-task.schema'
 import type { ApprovalInput, CreateRealTaskInput, RealTask } from '@/types/agent'
 
 export interface RealTaskService {
@@ -50,7 +51,7 @@ export const mockRealTaskService: RealTaskService = {
 
 export const httpRealTaskService: RealTaskService = {
   async createRealTask(input) {
-    return requestJson<RealTask>('/real-tasks', {
+    const raw = await requestJson<unknown>('/real-tasks', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
@@ -59,16 +60,19 @@ export const httpRealTaskService: RealTaskService = {
         templateId: input.templateId ?? 'append-marker',
       }),
     })
+    return parseRealTask(raw) as RealTask
   },
   async getRealTask(taskId) {
-    return requestJson<RealTask>(`/real-tasks/${taskId}`)
+    const raw = await requestJson<unknown>(`/real-tasks/${taskId}`)
+    return parseRealTask(raw) as RealTask
   },
   async submitApproval(taskId, approval) {
-    return requestJson<RealTask>(`/real-tasks/${taskId}/approval`, {
+    const raw = await requestJson<unknown>(`/real-tasks/${taskId}/approval`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(approval),
     })
+    return parseRealTask(raw) as RealTask
   },
 }
 
