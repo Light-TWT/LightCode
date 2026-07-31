@@ -261,3 +261,39 @@ export interface HistoryTaskDetail {
   rejectedCmd?: string
   cancelInfo?: { stage: string; detail: string }
 }
+
+// --- Phase 2 / WP5：Provider 健康状态（仅展示，绝不含 key/baseUrl） ---
+
+/** `GET /api/v1/provider/health` 的状态枚举 */
+export type ProviderStatus = 'disabled' | 'unconfigured' | 'ready' | 'degraded'
+
+/** 模型被允许的能力与预算（只读，服务端校验后下发） */
+export interface ProviderCapabilities {
+  tools: string[]
+  canWriteFiles: boolean
+  canRunCommands: boolean
+  maxToolRounds: number
+  maxRequestsPerTask: number
+  maxInputBytes: number
+  maxOutputTokens: number
+  maxConcurrentTasks: number
+}
+
+/** 模型安全事实（布尔/枚举，绝不暴露凭据或完整 URL） */
+export interface ProviderSecurity {
+  apiKeyConfigured: boolean
+  transport: 'https' | 'http' | 'none'
+  originAllowlisted: boolean
+  followRedirects: boolean
+  trustEnvProxies: boolean
+}
+
+/** `GET /api/v1/provider/health` 响应（config 派生，计算时不发网络请求） */
+export interface ProviderHealth {
+  status: ProviderStatus
+  provider: string
+  modelId: string
+  detail: string
+  capabilities: ProviderCapabilities
+  security: ProviderSecurity
+}

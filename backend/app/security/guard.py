@@ -105,10 +105,8 @@ class WorkspaceGuard:
     def list_files(self, workspace_id: str, relative: str = "") -> list[dict]:
         if relative and is_sensitive_relative_path(relative):
             raise Phase1Error(SECRET_FILE_DENIED, f"sensitive path denied: {relative}")
-        if relative:
-            base = self.resolve(workspace_id, relative)
-        else:
-            base = self.workspace(workspace_id).canonical_root
+        root = self.workspace(workspace_id).canonical_root
+        base = self.resolve(workspace_id, relative) if relative else root
         if not base.exists() or not base.is_dir():
             raise Phase1Error(FILE_TYPE_DENIED, "directory does not exist")
         results = []
@@ -121,7 +119,17 @@ class WorkspaceGuard:
                 kind = "secret"
             else:
                 kind = "file"
-            results.append({"name": entry.name, "kind": kind, "relativePath": str(entry.relative_to(base)).replace("\\", "/")})
+            # relativePath 必须相对于工作区根，而不是当前列举目录：routes.py 会把它
+            # 签进 browse token，之后 verify 出来的路径又是从根解析的。若这里返回
+            # base-relative 路径，二级以下目录导航会解析到错误位置（fail-closed 报
+            # "file does not exist"），令牌浏览在嵌套目录下不可用。
+            results.append(
+                {
+                    "name": entry.name,
+                    "kind": kind,
+                    "relativePath": str(entry.relative_to(root)).replace("\\", "/"),
+                }
+            )
         return results
 
     def search_files(self, workspace_id: str, query: str) -> list[dict]:

@@ -38,6 +38,17 @@ VERIFICATION_FAILED = "VERIFICATION_FAILED"
 BROWSE_TOKEN_INVALID = "BROWSE_TOKEN_INVALID"
 BROWSE_TOKEN_EXPIRED = "BROWSE_TOKEN_EXPIRED"
 
+# Phase 2 / WP5 model provider codes. Every one of these is safe to surface to
+# the browser: none carries the API key, the full provider URL, the prompt or
+# the raw upstream response body.
+MODEL_DISABLED = "MODEL_DISABLED"
+MODEL_UNCONFIGURED = "MODEL_UNCONFIGURED"
+MODEL_TIMEOUT = "MODEL_TIMEOUT"
+MODEL_RATE_LIMITED = "MODEL_RATE_LIMITED"
+MODEL_UPSTREAM_ERROR = "MODEL_UPSTREAM_ERROR"
+MODEL_RESPONSE_INVALID = "MODEL_RESPONSE_INVALID"
+MODEL_BUDGET_EXCEEDED = "MODEL_BUDGET_EXCEEDED"
+
 
 def to_http_error(exc: Phase1Error) -> HTTPException:
     return HTTPException(

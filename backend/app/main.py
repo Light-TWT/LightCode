@@ -11,6 +11,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
 from app.api.routes import router as api_router
+from app.config.model_provider import load_model_provider_config
 from app.db.database import initialize_database
 from app.schemas.errors import Phase1Error
 from app.security.guard import WorkspaceGuard
@@ -41,6 +42,14 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     registry = WorkspaceRegistry.load(config_path)
     app.state.registry = registry
     app.state.guard = WorkspaceGuard(registry)
+
+    # Phase 2 / WP5: snapshot the model provider config once at startup. It is
+    # read from backend env vars only and is OFF unless explicitly enabled, so
+    # a default deployment has no provider, no key and no outbound capability.
+    # Only the status is ever logged — never the key or the base URL.
+    model_provider = load_model_provider_config()
+    app.state.model_provider = model_provider
+    print(f"[lightcode] model provider: {model_provider.status()}")
 
     # Startup crash recovery: reconcile any real task left mid-apply by a
     # previously crashed process (contract §失败和恢复承诺).

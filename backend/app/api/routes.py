@@ -19,6 +19,12 @@ from app.schemas.contracts import (
     WorkspaceEntryResponse,
     WorkspaceResponse,
 )
+from app.config.model_provider import MODEL_ALLOWED_TOOLS, ModelProviderConfig
+from app.schemas.model_contracts import (
+    ProviderCapabilitiesResponse,
+    ProviderHealthResponse,
+    ProviderSecurityResponse,
+)
 from app.services.browse_tokens import issue, verify
 from app.services.event_service import stream_events
 from app.services.phase1 import Phase1Service
@@ -193,4 +199,46 @@ def real_task_events(
     return StreamingResponse(
         stream_events(service, task_id, after, tail),
         media_type="text/event-stream",
+    )
+
+
+# ---------------------------------------------------------------------------
+# Phase 2 / WP5: model provider health (default-off, config-derived, read-only)
+# ---------------------------------------------------------------------------
+
+
+@router.get("/provider/health", response_model=ProviderHealthResponse)
+def provider_health(request: Request) -> ProviderHealthResponse:
+    """Report the provider status without contacting the provider.
+
+    The response is derived purely from backend configuration, so calling this
+    endpoint can never open a socket, incur cost or leak a prompt. It carries
+    no API key, no Authorization header and no base URL — only the scheme, the
+    allowlist verdict and the declared budgets (safety-contract §API/事件/错误码).
+    """
+    config: ModelProviderConfig = request.app.state.model_provider
+    return ProviderHealthResponse(
+        status=config.status(),
+        provider=config.provider,
+        modelId=config.model_id,
+        detail=config.status_detail(),
+        capabilities=ProviderCapabilitiesResponse(
+            tools=list(MODEL_ALLOWED_TOOLS),
+            # Hard product invariants, not runtime toggles: the model proposes,
+            # the server decides, the user approves.
+            canWriteFiles=False,
+            canRunCommands=False,
+            maxToolRounds=config.max_tool_rounds,
+            maxRequestsPerTask=config.max_requests_per_task,
+            maxInputBytes=config.max_input_bytes,
+            maxOutputTokens=config.max_output_tokens,
+            maxConcurrentTasks=config.max_concurrent_tasks,
+        ),
+        security=ProviderSecurityResponse(
+            apiKeyConfigured=config.api_key_configured,
+            transport=config.transport,
+            originAllowlisted=config.origin_allowlisted,
+            followRedirects=False,
+            trustEnvProxies=False,
+        ),
     )

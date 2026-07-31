@@ -100,6 +100,22 @@ Phase 1R (安全收尾门禁, WP0-WP4 = M1+M2+M3): 全部完成 (2026-07-30)
     拒绝含 rootPath 的 workspace / 未知 task state) + API-mode E2E (test_api_mode_e2e 全闭环) +
     质量门禁 (vue-tsc -b + vite build --emptyOutDir false 通过)
   3 个 P0 缺陷 (P0-1 敏感路径绕过 / P0-2 审批绑定绕过 / P0-3 并发未证安全) 全部关闭; M1+M2+M3 全绿
+
+### Phase 2 (WP5 默认关闭的 Provider 配置与健康状态, 2026-07-31)
+
+- WP5 完成 (后端 + 前端), 严格 default-off + fail-closed, 零 Phase 1 闭环风险, 无 DB schema 变更:
+  - 后端: `app/config/model_provider.py` (ModelProviderConfig frozen dataclass, 环境变量加载, 状态 disabled|unconfigured|ready|degraded, secret 不进 repr/str/summary) +
+    `app/services/openai_compatible_provider.py` (OpenAICompatibleProvider.chat: trust_env=False, follow_redirects=False, 显式超时, 每任务请求预算, 稳定错误码) +
+    `app/schemas/model_contracts.py` (ProviderHealth/Capabilities/Security, extra=forbid, camelCase, 无 key/baseUrl/authorization) +
+    `app/api/routes.py` 新增 `GET /api/v1/provider/health` (只读 config 派生, 不发网络请求) +
+    `app/main.py` lifespan 载入 `app.state.model_provider` (仅打印 status, 不打印 key/url) +
+    `app/schemas/errors.py` 新增 7 个 MODEL_* 稳定错误码
+  - 修复 Phase 1 缺陷: `guard.list_files` 返回 base-relative `relativePath` 导致 browse-token (从 ROOT 签发) 二级目录导航解析错路径; 改为 `entry.relative_to(root)` 根相对路径 (2 个失败测试先写后转绿)
+  - 前端: `types/agent.ts` 新增 Provider* 类型; `services/provider.service.ts` (mock+http 双实现, 按 isApiMode 切换); `views/SettingsView.vue` 模型页新增「Provider 健康状态」只读卡片 (状态/能力/安全, 不暴露 key/baseUrl); 对应测试
+  - WP5 健康卡片微调 (2026-07-31): 补全 maxInputBytes(格式化 KB/MB)/maxOutputTokens/followRedirects/trustEnvProxies 字段; 新增「数据源: 后端 API/前端 Mock」标识与「刷新」按钮 (spinner); SettingsView 测试增 2 例 (全字段渲染 + 刷新调用次数)
+  - 演示验证 (2026-07-31): 后端以 LIGHTCODE_MODEL_ENABLED=true + https base_url + 放行 origin 启动, `/api/v1/provider/health` 返回 ready 且字段完整、无 key/baseUrl; 前端 VITE_LIGHTCODE_RUNTIME=api 经 vite 代理拉取一致数据; 全链路跑通
+  - 验证: 后端 pytest 165 passed / 2 skipped (基线 117+2, WP5 增 48: config 19 + http 17 + health 10 + guard 2); 前端 vitest 69 passed (基线 64, WP5 增 5), vue-tsc -b + vite build --emptyOutDir false 通过
+- WP6 (受限模型编排与候选 ChangeSet) 未开始: **触碰 database.py schema, 属红线, 实施前须再次获得用户明确确认** (见 docs/2026-07-30-phase-2-model-and-dx-plan.md WP6)
 ```
 
 ## 问题修复记录

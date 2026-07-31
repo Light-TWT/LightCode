@@ -255,3 +255,24 @@ def test_list_git_dir_denied(secret_guard: WorkspaceGuard) -> None:
 def test_search_excludes_git_subtree(secret_guard: WorkspaceGuard) -> None:
     results = secret_guard.search_files("ws1", "core")
     assert not any(".git" in r["relativePath"].lower() for r in results)
+
+
+# --- Nested browse navigation (WP3 token correctness) ---------------------
+# `list_files` powers the browse-token flow in routes.py: each entry's
+# `relativePath` is signed into a token that is later resolved from the
+# WORKSPACE ROOT. Entries must therefore be root-relative, not base-relative,
+# or navigation beyond the first directory level resolves the wrong path.
+
+
+def test_nested_listing_returns_root_relative_paths(guard: WorkspaceGuard) -> None:
+    entries = guard.list_files("ws1", "sub")
+    by_name = {e["name"]: e for e in entries}
+    assert by_name["deep.txt"]["relativePath"] == "sub/deep.txt"
+
+
+def test_nested_listing_paths_are_resolvable_from_root(guard: WorkspaceGuard) -> None:
+    # A path handed back by a nested listing must be usable as-is for a read,
+    # which is exactly what the browse token round-trip does.
+    entries = guard.list_files("ws1", "sub")
+    relative = next(e["relativePath"] for e in entries if e["name"] == "deep.txt")
+    assert guard.read_text("ws1", relative) == "nested content"
