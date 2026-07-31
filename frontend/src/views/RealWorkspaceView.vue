@@ -11,6 +11,7 @@ const store = useRealStore()
 const workspaceId = computed(() => route.params.id as string)
 const searchInput = ref('')
 const taskTitle = ref('')
+const modelTaskTitle = ref('')
 
 onMounted(() => store.openWorkspace(workspaceId.value))
 
@@ -55,6 +56,15 @@ async function createTask() {
   const task = await store.createTask(workspaceId.value, title)
   if (task) {
     await router.push(`/real/${workspaceId.value}/task/${task.id}`)
+  }
+}
+
+async function createModelTask() {
+  const title = modelTaskTitle.value.trim()
+  if (!title) return
+  const resp = await store.createModelTask(workspaceId.value, title)
+  if (resp) {
+    await router.push(`/real/${workspaceId.value}/task/${resp.id}`)
   }
 }
 </script>
@@ -156,6 +166,26 @@ async function createTask() {
             >{{ store.submitting ? '创建中…' : '创建任务' }}</button>
           </form>
         </section>
+
+        <section class="panel" aria-label="创建模型任务">
+          <p class="panel-kicker">创建模型任务</p>
+          <p class="tpl-note">模型只读取目标文件并提议精确文本替换；服务端校验后生成不可变变更集，最终由你审批才写入。需服务端已配置 Provider。</p>
+          <form class="task-form" @submit.prevent="createModelTask">
+            <input
+              v-model="modelTaskTitle"
+              data-testid="model-task-title-input"
+              class="text-input"
+              type="text"
+              placeholder="任务标题…"
+            >
+            <button
+              class="primary-btn model-btn"
+              type="submit"
+              data-testid="create-model-task-btn"
+              :disabled="store.submitting || !modelTaskTitle.trim()"
+            >{{ store.submitting ? '运行中…' : '创建模型任务' }}</button>
+          </form>
+        </section>
       </aside>
     </div>
   </div>
@@ -225,6 +255,7 @@ async function createTask() {
   background: rgba(212,160,23,.15); color: #2a2a2a; flex-shrink: 0;
 }
 .primary-btn:disabled { opacity: .5; cursor: not-allowed; }
+.model-btn { background: rgba(45,90,122,.12); border-color: #2d5a7a; color: #2d5a7a; }
 .search-results { margin-top: 10px; display: flex; flex-direction: column; gap: 2px; }
 .hit-row {
   background: none; border: none; cursor: pointer; text-align: left; padding: 4px 6px;

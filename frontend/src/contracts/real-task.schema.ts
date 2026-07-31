@@ -1,4 +1,5 @@
 // Runtime DTO validation for Phase 1 HTTP / SSE responses.
+import type { ModelTaskResponse } from '@/types/agent'
 //
 // The backend is the only authority and already validates with Pydantic
 // (extra="forbid"), but the browser must still guard against malformed or
@@ -101,5 +102,32 @@ export function parseTaskEvent(raw: unknown): {
     sequence: raw.sequence,
     eventType: raw.eventType,
     payload: raw.payload,
+  }
+}
+
+const MODEL_TASK_STATES = new Set(['awaiting_approval', 'failed', 'planning'])
+
+export function parseModelTask(raw: unknown): ModelTaskResponse {
+  if (!isObject(raw)) throw new ContractValidationError('model task 不是对象')
+  if (!isString(raw.id)) throw new ContractValidationError('task.id 缺失')
+  if (!isString(raw.workspaceId)) throw new ContractValidationError('task.workspaceId 缺失')
+  if (!isString(raw.state) || !MODEL_TASK_STATES.has(raw.state)) {
+    throw new ContractValidationError(`task.state 非法: ${String(raw.state)}`)
+  }
+  if (!isString(raw.detail)) throw new ContractValidationError('task.detail 缺失')
+  const cs = raw.changeSetId
+  if (cs !== null && cs !== undefined && !isString(cs)) {
+    throw new ContractValidationError('task.changeSetId 非法')
+  }
+  // 关键不变量：模型任务 DTO 绝不携带真实根路径
+  if ('rootPath' in raw) {
+    throw new ContractValidationError('model task 不应包含 rootPath')
+  }
+  return {
+    id: raw.id,
+    workspaceId: raw.workspaceId,
+    state: raw.state,
+    changeSetId: cs == null ? null : cs,
+    detail: raw.detail,
   }
 }

@@ -243,6 +243,22 @@ export interface RealTask {
   createdAt: string
 }
 
+// --- Phase 2 / WP6：模型任务（仅提交 workspaceId + title；模型只"提议" ---
+/** POST /api/v1/model-tasks 请求体（ModelTaskCreateRequest，extra=forbid） */
+export interface CreateModelTaskInput {
+  workspaceId: string
+  title: string
+}
+
+/** POST/GET /api/v1/model-tasks 响应（ModelTaskResponse，extra=forbid） */
+export interface ModelTaskResponse {
+  id: string
+  workspaceId: string
+  state: string
+  changeSetId: string | null
+  detail: string
+}
+
 export interface HistoryTaskDetail {
   id: string
   status: HistoryTaskStatus

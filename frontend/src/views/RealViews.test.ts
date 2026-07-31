@@ -112,6 +112,19 @@ describe('RealWorkspaceView', () => {
       `/real/demo-real-workspace/task/${realTaskFixture.id}`,
     )
   })
+
+  it('creates a model task and navigates to the task view', async () => {
+    const { wrapper, router } = await mountWorkspace()
+
+    await wrapper.get('[data-testid="model-task-title-input"]').setValue('让模型追加标记')
+    await wrapper.get('[data-testid="create-model-task-btn"]').trigger('submit')
+    await flushPromises()
+
+    // Mock 模式首个模型任务 id 固定为 model-task-mock1
+    expect(router.currentRoute.value.fullPath).toBe(
+      '/real/demo-real-workspace/task/model-task-mock1',
+    )
+  })
 })
 
 describe('RealTaskView', () => {

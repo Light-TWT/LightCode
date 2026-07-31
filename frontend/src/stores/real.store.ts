@@ -2,9 +2,11 @@ import { defineStore } from 'pinia'
 import { isApiMode } from '@/config/runtime'
 import { subscribeRealTaskEvents } from '@/services/event.service'
 import { realTaskService } from '@/services/real-task.service'
+import { modelTaskService } from '@/services/model-task.service'
 import { registeredWorkspaceService } from '@/services/registered-workspace.service'
 import type {
   ApprovalDecision,
+  ModelTaskResponse,
   RealTask,
   RegisteredFileContent,
   RegisteredFileEntry,
@@ -138,6 +140,26 @@ export const useRealStore = defineStore('real', {
         const task = await realTaskService.createRealTask({ workspaceId, title, templateId })
         this._setTask(task)
         return task
+      } catch (err) {
+        this.error = err instanceof Error ? err.message : String(err)
+        return null
+      } finally {
+        this.submitting = false
+      }
+    },
+
+    /** 创建模型任务（WP6）：仅提交 workspaceId + title。服务端跑编排并生成候选
+     *  变更集；成功返回 ModelTaskResponse 供上层导航，failed/异常则设置 error 并返回 null。 */
+    async createModelTask(workspaceId: string, title: string): Promise<ModelTaskResponse | null> {
+      this.submitting = true
+      this.error = null
+      try {
+        const resp = await modelTaskService.createModelTask({ workspaceId, title })
+        if (resp.state !== 'awaiting_approval') {
+          this.error = resp.detail || '模型任务创建失败'
+          return null
+        }
+        return resp
       } catch (err) {
         this.error = err instanceof Error ? err.message : String(err)
         return null
