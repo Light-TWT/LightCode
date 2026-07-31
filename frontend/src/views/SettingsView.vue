@@ -1,10 +1,35 @@
 <script setup lang="ts">
-import { ref } from 'vue'
+import { computed, onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { isApiMode } from '@/config/runtime'
+import { providerService } from '@/services/provider.service'
+import type { ProviderHealth } from '@/types/agent'
 
 const router = useRouter()
 const activePage = ref('general')
+
+const health = ref<ProviderHealth | null>(null)
+const healthError = ref(false)
+const refreshing = ref(false)
+
+// 数据来源：API 模式拉取后端 /provider/health，Mock 模式用内置只读快照
+const dataSource = computed(() => (isApiMode ? '后端 API' : '前端 Mock'))
+const isDemoReady = computed(() => health.value?.status === 'ready')
+
+const healthBadgeClass = computed(() => {
+  const status = health.value?.status
+  if (status === 'ready') return 'badge-ready'
+  if (status === 'degraded') return 'badge-degraded'
+  if (status === 'unconfigured') return 'badge-unconfigured'
+  return 'badge-disabled'
+})
+
+function formatBytes(bytes: number | undefined): string {
+  if (!bytes) return '—'
+  if (bytes >= 1024 * 1024) return `${bytes} 字节（${(bytes / 1024 / 1024).toFixed(1)} MB）`
+  if (bytes >= 1024) return `${bytes} 字节（${Math.round(bytes / 1024)} KB）`
+  return `${bytes} 字节`
+}
 
 function switchPage(page: string) {
   activePage.value = page
@@ -13,6 +38,31 @@ function switchPage(page: string) {
 function goBack() {
   router.push('/')
 }
+
+async function loadHealth() {
+  health.value = null
+  healthError.value = false
+  try {
+    health.value = await providerService.getHealth()
+  } catch {
+    healthError.value = true
+  }
+}
+
+async function refreshHealth() {
+  if (refreshing.value) return
+  refreshing.value = true
+  try {
+    health.value = await providerService.getHealth()
+    healthError.value = false
+  } catch {
+    healthError.value = true
+  } finally {
+    refreshing.value = false
+  }
+}
+
+onMounted(loadHealth)
 </script>
 
 <template>
@@ -59,6 +109,91 @@ function goBack() {
           <div class="detail-header">
             <div class="detail-title">模型</div>
           </div>
+
+          <div class="health-card">
+            <div class="health-title-row">
+              <span class="health-title">Provider 健康状态</span>
+              <span class="health-source" :title="isApiMode ? '数据来自后端 /api/v1/provider/health' : '数据来自前端内置只读快照'">数据源：{{ dataSource }}</span>
+            </div>
+            <div class="health-badge-row">
+              <span class="health-badge" :class="healthBadgeClass">{{ health?.status ?? '加载中…' }}</span>
+              <button class="health-refresh" type="button" :disabled="refreshing" @click="refreshHealth">
+                <span class="refresh-icon" :class="{ spinning: refreshing }">↻</span> 刷新
+              </button>
+            </div>
+            <div v-if="healthError" class="health-error">无法获取 Provider 状态</div>
+            <template v-else-if="health">
+              <div class="info-row">
+                <span class="info-label">Provider</span>
+                <span class="info-value">{{ health.provider || '—' }}</span>
+              </div>
+              <div class="info-row">
+                <span class="info-label">模型</span>
+                <span class="info-value">{{ health.modelId || '—' }}</span>
+              </div>
+              <div class="info-row">
+                <span class="info-label">说明</span>
+                <span class="info-value">{{ health.detail }}</span>
+              </div>
+              <div class="health-subtitle">能力（只读）</div>
+              <div class="info-row">
+                <span class="info-label">工具</span>
+                <span class="info-value">{{ health.capabilities.tools.join(', ') }}</span>
+              </div>
+              <div class="info-row">
+                <span class="info-label">可写文件</span>
+                <span class="info-value">{{ health.capabilities.canWriteFiles ? '是' : '否' }}</span>
+              </div>
+              <div class="info-row">
+                <span class="info-label">可执行命令</span>
+                <span class="info-value">{{ health.capabilities.canRunCommands ? '是' : '否' }}</span>
+              </div>
+              <div class="info-row">
+                <span class="info-label">最大工具轮次</span>
+                <span class="info-value">{{ health.capabilities.maxToolRounds }}</span>
+              </div>
+              <div class="info-row">
+                <span class="info-label">单任务最大请求</span>
+                <span class="info-value">{{ health.capabilities.maxRequestsPerTask }}</span>
+              </div>
+              <div class="info-row">
+                <span class="info-label">最大输入</span>
+                <span class="info-value">{{ formatBytes(health.capabilities.maxInputBytes) }}</span>
+              </div>
+              <div class="info-row">
+                <span class="info-label">最大输出</span>
+                <span class="info-value">{{ health.capabilities.maxOutputTokens }} tokens</span>
+              </div>
+              <div class="info-row">
+                <span class="info-label">最大并发任务</span>
+                <span class="info-value">{{ health.capabilities.maxConcurrentTasks }}</span>
+              </div>
+              <div class="health-subtitle">安全</div>
+              <div class="info-row">
+                <span class="info-label">API Key 已配置</span>
+                <span class="info-value">{{ health.security.apiKeyConfigured ? '是' : '否' }}</span>
+              </div>
+              <div class="info-row">
+                <span class="info-label">传输</span>
+                <span class="info-value">{{ health.security.transport }}</span>
+              </div>
+              <div class="info-row">
+                <span class="info-label">来源域名已放行</span>
+                <span class="info-value">{{ health.security.originAllowlisted ? '是' : '否' }}</span>
+              </div>
+              <div class="info-row">
+                <span class="info-label">跟随重定向</span>
+                <span class="info-value">{{ health.security.followRedirects ? '是' : '否' }}</span>
+              </div>
+              <div class="info-row">
+                <span class="info-label">信任环境变量代理</span>
+                <span class="info-value">{{ health.security.trustEnvProxies ? '是' : '否' }}</span>
+              </div>
+            </template>
+            <div v-else class="health-loading">加载中…</div>
+            <div class="health-note">提供方由后端环境变量配置，前端仅只读展示健康状态，绝不暴露 Base URL 或 API Key。</div>
+          </div>
+
           <div class="mode-block" :class="isApiMode ? 'disabled-mode' : 'active-mode'">
             <div class="mode-label-row">
               <div class="mode-dot" />
@@ -80,24 +215,10 @@ function goBack() {
             <div class="mode-label-row">
               <div class="mode-dot" />
               <span class="mode-name">OpenAI Compatible API</span>
-              <span class="mode-badge badge-coming">第二阶段可用</span>
+              <span class="mode-badge badge-coming">后端已接入（默认关闭）</span>
             </div>
-            <div class="mode-desc">接入 OpenAI 兼容的 API 端点，使用真实模型生成代码。</div>
-            <div class="api-fields">
-              <div class="api-fields-label">配置项（当前不可编辑）</div>
-              <div class="field-row">
-                <span class="field-key">Base URL</span>
-                <span class="field-val">&mdash;</span>
-              </div>
-              <div class="field-row">
-                <span class="field-key">Model</span>
-                <span class="field-val">&mdash;</span>
-              </div>
-              <div class="field-row">
-                <span class="field-key">API Key</span>
-                <span class="field-val masked">未配置</span>
-              </div>
-            </div>
+            <div class="mode-desc">接入 OpenAI 兼容的 API 端点，使用真实模型生成候选编辑意图；模型只提议，写入仍由服务端确定性变更集 + 显式审批完成（第二阶段编排）。</div>
+            <div class="health-note">健康状态与能力由上方「Provider 健康状态」卡片实时展示，配置仅来自后端环境变量，前端不提供编辑，也不持久化任何凭据。</div>
           </div>
         </div>
 
@@ -443,43 +564,106 @@ const pages = [
   line-height: 1.6;
 }
 .disabled-mode .mode-desc { color: #999; }
-.api-fields {
-  margin-top: 10px;
-  padding-top: 10px;
-  border-top: 1px dashed #e0d8cc;
+.health-card {
+  border: 1.5px solid #d8d0c4;
+  border-radius: 5px;
+  padding: 14px 18px;
+  background: rgba(255,255,255,.15);
+  margin-bottom: 14px;
 }
-.api-fields-label {
+.health-title-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 12px;
+  padding-bottom: 10px;
+  border-bottom: 1px dashed #e0d8cc;
+}
+.health-title {
+  font-family: 'Caveat', cursive;
+  font-size: 22px;
+  font-weight: 700;
+  color: #1a1a1a;
+}
+.health-badge {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 11px;
+  padding: 3px 12px;
+  border-radius: 12px;
+  flex-shrink: 0;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+}
+.badge-disabled { color: #6b7d8e; background: rgba(107,125,144,.1); border: 1px solid rgba(107,125,144,.25); }
+.badge-unconfigured { color: #c87020; background: rgba(212,160,23,.1); border: 1px solid rgba(200,112,32,.3); }
+.badge-ready { color: #2d7a3a; background: rgba(45,122,58,.1); border: 1px solid rgba(45,122,58,.3); }
+.badge-degraded { color: #b83030; background: rgba(184,48,48,.08); border: 1px solid rgba(184,48,48,.3); }
+.health-source {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 10px;
+  color: #8a9aa8;
+  background: rgba(107,125,144,.08);
+  border: 1px solid rgba(107,125,144,.2);
+  border-radius: 3px;
+  padding: 2px 8px;
+  flex-shrink: 0;
+}
+.health-badge-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 12px;
+  padding-bottom: 10px;
+  border-bottom: 1px dashed #e0d8cc;
+}
+.health-refresh {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 11px;
+  color: #4a5a68;
+  background: rgba(255,255,255,.4);
+  border: 1px solid #c5b9a8;
+  border-radius: 4px;
+  padding: 4px 12px;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  flex-shrink: 0;
+}
+.health-refresh:hover:not(:disabled) { background: rgba(212,160,23,.1); border-color: #c87020; color: #c87020; }
+.health-refresh:disabled { opacity: .55; cursor: default; }
+.refresh-icon { display: inline-block; font-size: 13px; line-height: 1; }
+.refresh-icon.spinning { animation: health-spin 0.7s linear infinite; }
+@keyframes health-spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
+.health-subtitle {
   font-family: 'JetBrains Mono', monospace;
   font-size: 10px;
   text-transform: uppercase;
   letter-spacing: 1.5px;
   color: #aaa;
-  margin-bottom: 8px;
+  margin: 12px 0 4px;
+  padding-top: 8px;
+  border-top: 1px dashed #e0d8cc;
 }
-.field-row {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  margin-bottom: 6px;
+.health-error {
+  font-family: 'Architects Daughter', cursive;
+  font-size: 13px;
+  color: #b83030;
+  margin: 8px 0;
 }
-.field-key {
-  font-family: 'JetBrains Mono', monospace;
-  font-size: 12px;
+.health-loading {
+  font-family: 'Architects Daughter', cursive;
+  font-size: 13px;
   color: #888;
-  min-width: 80px;
-  flex-shrink: 0;
+  margin: 8px 0;
 }
-.field-val {
-  font-family: 'JetBrains Mono', monospace;
-  font-size: 12px;
-  color: #bbb;
-  background: rgba(0,0,0,.03);
-  border: 1px dashed #e0d8cc;
-  border-radius: 3px;
-  padding: 3px 10px;
-  flex: 1;
+.health-note {
+  font-family: 'Patrick Hand', cursive;
+  font-size: 13px;
+  color: #6b7d8e;
+  margin-top: 12px;
+  line-height: 1.7;
 }
-.field-val.masked { color: #aaa; font-style: italic; }
 
 .perm-root-bar {
   display: flex;
