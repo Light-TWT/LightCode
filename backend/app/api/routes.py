@@ -21,12 +21,15 @@ from app.schemas.contracts import (
 )
 from app.config.model_provider import MODEL_ALLOWED_TOOLS, ModelProviderConfig
 from app.schemas.model_contracts import (
+    ModelTaskCreateRequest,
+    ModelTaskResponse,
     ProviderCapabilitiesResponse,
     ProviderHealthResponse,
     ProviderSecurityResponse,
 )
 from app.services.browse_tokens import issue, verify
 from app.services.event_service import stream_events
+from app.services.model_orchestrator import ModelOrchestrator
 from app.services.phase1 import Phase1Service
 from app.services.runtime import RuntimeService
 
@@ -242,3 +245,30 @@ def provider_health(request: Request) -> ProviderHealthResponse:
             trustEnvProxies=False,
         ),
     )
+
+
+# ---------------------------------------------------------------------------
+# Phase 2 / WP6: model-task surface. The model only proposes; the server
+# validates and the user approves (reuses the Phase 1 guarded approval path).
+# No root path, patch, command or key is ever submitted by the browser.
+# ---------------------------------------------------------------------------
+
+
+@router.post("/model-tasks", response_model=ModelTaskResponse)
+def create_model_task(payload: ModelTaskCreateRequest, request: Request) -> ModelTaskResponse:
+    """Create a model task and run the orchestration end-to-end.
+
+    The browser submits only ``workspaceId`` + ``title``. The server creates the
+    task in ``planning``, runs the read -> candidate -> ChangeSet loop under its
+    own control, and returns either ``awaiting_approval`` (with an immutable
+    ChangeSet the user can approve via the Phase 1 endpoint) or ``failed`` with a
+    stable machine code. No filesystem write occurs here — only at approval.
+    """
+    return ModelOrchestrator.from_request(request).create_model_task(
+        payload.workspaceId, payload.title
+    )
+
+
+@router.get("/model-tasks/{task_id}", response_model=ModelTaskResponse)
+def get_model_task(task_id: str, request: Request) -> ModelTaskResponse:
+    return ModelOrchestrator.from_request(request).get_model_task(task_id)

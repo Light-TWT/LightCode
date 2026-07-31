@@ -1,17 +1,22 @@
-"""Phase 2 / WP5: hardened OpenAI-compatible chat client.
+"""Phase 2 / WP5: hardened OpenAI-compatible chat client (backed by LangChain).
 
 This is the **only** place in the codebase permitted to make an outbound
-network call, and it is deliberately not wired into any task flow yet — WP6
-(`model_orchestrator`) will consume it. Keeping it standalone lets the security
-behaviour be pinned by tests before the model can influence a ChangeSet.
+model call in WP5, and it is deliberately not wired into any task flow yet —
+WP6 (``model_orchestrator``) will consume it. The hardened transport and the
+error-code mapping now live in :mod:`app.services.llm_client`, the single
+integration point for LangChain, so the security behaviour is pinned before
+the model can influence a ChangeSet.
 
 Hardening (docs/2026-07-30-phase-2-model-and-dx-plan.md §WP5):
 
-* ``trust_env=False``   — ambient ``HTTP(S)_PROXY``/``NO_PROXY``/netrc are
+* ``trust_env=False``   — ambient ``HTTP(S)_PROXY`` / ``NO_PROXY`` / netrc are
   ignored, so no operator env var can silently re-route model traffic.
-* ``follow_redirects=False`` — a 3xx is an error, not an invitation to visit
-  an off-allowlist host.
-* Origin allowlist re-checked at call time, not just at config load.
+* ``follow_redirects=False`` — a 3xx is an error, not an invitation to visit an
+  off-allowlist host.
+* ``max_retries=0`` — the SDK never retries behind our back; the per-task
+  request budget owns that decision.
+* Origin allowlist is enforced at config load (``ModelProviderConfig.status``);
+  a ``degraded`` config is rejected before any socket opens.
 * Explicit connect/read/total timeouts; no unbounded wait.
 * Per-instance request budget; one instance is intended per task.
 * Errors carry a stable machine code and a fixed, human-written message. The
@@ -25,20 +30,38 @@ import json
 from typing import Any, Mapping, Sequence
 
 import httpx
+from langchain_core.messages import (
+    AIMessage,
+    BaseMessage,
+    HumanMessage,
+    SystemMessage,
+)
 
 from app.config.model_provider import ModelProviderConfig
 from app.schemas.errors import (
     MODEL_BUDGET_EXCEEDED,
     MODEL_DISABLED,
-    MODEL_RATE_LIMITED,
-    MODEL_RESPONSE_INVALID,
-    MODEL_TIMEOUT,
     MODEL_UNCONFIGURED,
     MODEL_UPSTREAM_ERROR,
     Phase1Error,
 )
+from app.services.llm_client import build_llm, map_llm_errors
 
-CHAT_COMPLETIONS_PATH = "/chat/completions"
+_ROLE_TO_MESSAGE: Mapping[str, type[BaseMessage]] = {
+    "system": SystemMessage,
+    "user": HumanMessage,
+    "assistant": AIMessage,
+}
+
+
+def _to_langchain_messages(messages: Sequence[Mapping[str, Any]]) -> list[BaseMessage]:
+    converted: list[BaseMessage] = []
+    for message in messages:
+        role = message.get("role", "user")
+        content = message.get("content", "")
+        message_cls = _ROLE_TO_MESSAGE.get(role, HumanMessage)
+        converted.append(message_cls(content=content))
+    return converted
 
 
 class OpenAICompatibleProvider:
@@ -49,10 +72,13 @@ class OpenAICompatibleProvider:
         config: ModelProviderConfig,
         *,
         transport: httpx.BaseTransport | None = None,
+        temperature: float = 0,
     ) -> None:
         self._config = config
         self._transport = transport
+        self._temperature = temperature
         self._requests_made = 0
+        self._llm: ChatOpenAI | None = None  # type: ignore[name-defined]
 
     # --- Introspection (safe: no key, no full URL) ---
 
@@ -108,18 +134,12 @@ class OpenAICompatibleProvider:
                 http_status=429,
             )
 
-    def _client(self) -> httpx.Client:
-        timeout = httpx.Timeout(
-            self._config.total_timeout_seconds,
-            connect=self._config.connect_timeout_seconds,
-            read=self._config.read_timeout_seconds,
-        )
-        return httpx.Client(
-            timeout=timeout,
-            trust_env=self.trust_env,
-            follow_redirects=False,
-            transport=self._transport,
-        )
+    def _llm_client(self):  # type: ignore[no-untyped-def]
+        if self._llm is None:
+            self._llm = build_llm(
+                self._config, transport=self._transport, temperature=self._temperature
+            )
+        return self._llm
 
     # --- Call ---
 
@@ -141,75 +161,19 @@ class OpenAICompatibleProvider:
             "max_tokens": max_output_tokens or self._config.max_output_tokens,
             "stream": False,
         }
-        encoded = json.dumps(body, ensure_ascii=False, separators=(",", ":")).encode("utf-8")
+        encoded = json.dumps(body, ensure_ascii=False, separators=(",", ":")).encode(
+            "utf-8"
+        )
         self._check_budgets(len(encoded))
 
-        url = self._config.base_url.rstrip("/") + CHAT_COMPLETIONS_PATH
-        headers = {
-            "authorization": f"Bearer {self._config.api_key}",
-            "content-type": "application/json",
-            "accept": "application/json",
-        }
-
         self._requests_made += 1
-        try:
-            with self._client() as client:
-                response = client.post(url, content=encoded, headers=headers)
-        except httpx.TimeoutException as exc:
-            # `from None` keeps the upstream URL/host out of the chained traceback.
-            raise Phase1Error(
-                MODEL_TIMEOUT, "Provider 请求超时。", http_status=504
-            ) from None
-        except httpx.HTTPError:
-            raise Phase1Error(
-                MODEL_UPSTREAM_ERROR, "无法连接到 Provider。", http_status=502
-            ) from None
+        with map_llm_errors():
+            ai_message = self._llm_client().invoke(_to_langchain_messages(messages))
 
-        return self._parse(response)
-
-    def _parse(self, response: httpx.Response) -> str:
-        status = response.status_code
-
-        if status in (301, 302, 303, 307, 308):
-            # Never follow: the Location header may point outside the allowlist.
+        content = ai_message.content if isinstance(ai_message.content, str) else ""
+        if not content:
             raise Phase1Error(
                 MODEL_UPSTREAM_ERROR,
-                "Provider 返回了重定向，已按安全策略拒绝。",
-                http_status=502,
-            )
-        if status == 429:
-            raise Phase1Error(
-                MODEL_RATE_LIMITED, "Provider 触发限流，请稍后重试。", http_status=429
-            )
-        if status >= 400:
-            # The body may echo the key or user code; only the class escapes.
-            raise Phase1Error(
-                MODEL_UPSTREAM_ERROR,
-                f"Provider 返回错误状态（HTTP {status}）。",
-                http_status=502,
-            )
-
-        try:
-            payload = response.json()
-        except (json.JSONDecodeError, ValueError, UnicodeDecodeError):
-            raise Phase1Error(
-                MODEL_RESPONSE_INVALID, "Provider 响应不是合法 JSON。", http_status=502
-            ) from None
-
-        if not isinstance(payload, dict):
-            raise Phase1Error(
-                MODEL_RESPONSE_INVALID, "Provider 响应结构不符合预期。", http_status=502
-            )
-        choices = payload.get("choices")
-        if not isinstance(choices, list) or not choices:
-            raise Phase1Error(
-                MODEL_RESPONSE_INVALID, "Provider 响应缺少 choices。", http_status=502
-            )
-        message = choices[0].get("message") if isinstance(choices[0], dict) else None
-        content = message.get("content") if isinstance(message, dict) else None
-        if not isinstance(content, str):
-            raise Phase1Error(
-                MODEL_RESPONSE_INVALID,
                 "Provider 响应缺少 assistant 文本。",
                 http_status=502,
             )

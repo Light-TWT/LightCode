@@ -258,7 +258,7 @@ class Phase1Service:
     def get_real_task(self, task_id: str, conn: sqlite3.Connection = None) -> RealTaskResponse:
         c = conn or self._db
         task = c.execute(
-            "SELECT * FROM tasks WHERE id = ? AND kind = 'real'", (task_id,)
+            "SELECT * FROM tasks WHERE id = ? AND kind IN ('real', 'model')", (task_id,)
         ).fetchone()
         if task is None:
             raise Phase1Error(
@@ -283,7 +283,7 @@ class Phase1Service:
         """
         conn = self._db
         task = conn.execute(
-            "SELECT * FROM tasks WHERE id = ? AND kind = 'real'", (task_id,)
+            "SELECT * FROM tasks WHERE id = ? AND kind IN ('real', 'model')", (task_id,)
         ).fetchone()
         if task is None:
             raise Phase1Error(
@@ -659,7 +659,7 @@ class Phase1Service:
             `APPLY_OUTCOME_UNKNOWN` (requires manual inspection).
         """
         rows = self._db.execute(
-            "SELECT * FROM tasks WHERE kind = 'real' AND state = 'applying_change'"
+            "SELECT * FROM tasks WHERE kind IN ('real', 'model') AND state = 'applying_change'"
         ).fetchall()
         summary = {"completed": 0, "reset": 0, "unknown": 0}
         for task in rows:
