@@ -1,5 +1,6 @@
 // Runtime DTO validation for Phase 1 HTTP / SSE responses.
 import type { ModelTaskResponse } from '@/types/agent'
+import { MODEL_TASK_EVENT_TYPES } from '@/types/agent'
 //
 // The backend is the only authority and already validates with Pydantic
 // (extra="forbid"), but the browser must still guard against malformed or
@@ -129,5 +130,36 @@ export function parseModelTask(raw: unknown): ModelTaskResponse {
     state: raw.state,
     changeSetId: cs == null ? null : cs,
     detail: raw.detail,
+  }
+}
+
+/**
+ * 模型任务事件 payload 的防御性校验。后端已用 Pydantic 校验，浏览器再校验一次
+ * 以避免畸形/意外 payload 进入状态机：未知事件类型或缺失必填字段一律抛错，
+ * 调用方应静默丢弃而非崩溃 UI。
+ */
+export function parseModelLifecycleEvent(eventType: string, payload: Record<string, unknown>): void {
+  if (!MODEL_TASK_EVENT_TYPES.includes(eventType as (typeof MODEL_TASK_EVENT_TYPES)[number])) {
+    throw new ContractValidationError(`未知模型任务事件类型: ${eventType}`)
+  }
+  if (eventType === 'task.reading_workspace') {
+    if (!isString(payload.target)) {
+      throw new ContractValidationError('reading_workspace 缺少 target')
+    }
+  } else if (eventType === 'task.generating_diff') {
+    if (!isString(payload.changeSetId)) {
+      throw new ContractValidationError('generating_diff 缺少 changeSetId')
+    }
+    if (typeof payload.additions !== 'number' || typeof payload.deletions !== 'number') {
+      throw new ContractValidationError('generating_diff 缺少 additions/deletions')
+    }
+  } else if (eventType === 'task.awaiting_approval') {
+    if (!isString(payload.changeSetId)) {
+      throw new ContractValidationError('awaiting_approval 缺少 changeSetId')
+    }
+  } else if (eventType === 'task.failed') {
+    if (!isString(payload.code) || !isString(payload.message)) {
+      throw new ContractValidationError('failed 缺少 code/message')
+    }
   }
 }

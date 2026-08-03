@@ -4,8 +4,12 @@ import { subscribeRealTaskEvents } from '@/services/event.service'
 import { realTaskService } from '@/services/real-task.service'
 import { modelTaskService } from '@/services/model-task.service'
 import { registeredWorkspaceService } from '@/services/registered-workspace.service'
+import { parseModelLifecycleEvent } from '@/contracts/real-task.schema'
 import type {
   ApprovalDecision,
+  EventConnection,
+  ModelLifecycleStage,
+  ModelLifecycleStep,
   ModelTaskResponse,
   RealTask,
   RegisteredFileContent,
@@ -37,12 +41,57 @@ export const useRealStore = defineStore('real', {
     task: null as RealTask | null,
     events: [] as TaskEvent[],
     lastSequence: 0,
+    /** SSE 连接状态机（WP7）：断点续传与降级可观测性 */
+    eventConnection: 'idle' as EventConnection,
     // 通用
     loading: false,
     submitting: false,
     error: null as string | null,
     _unsubscribeEvents: null as (() => void) | null,
+    /** 缺口全量同步进行中的防重入标志 */
+    _resyncing: false,
   }),
+
+  getters: {
+    /** 从 SSE 事件派生模型任务的稳定生命周期时间线（WP7 前端状态机）。
+     *  仅当任务为模型任务时返回非空；其他类型任务返回空数组。 */
+    modelLifecycle(state): ModelLifecycleStep[] {
+      if (state.task?.kind !== 'model') return []
+      const order: { stage: ModelLifecycleStage; eventType: string; label: string }[] = [
+        { stage: 'planning', eventType: 'task.planning', label: '规划变更' },
+        { stage: 'reading', eventType: 'task.reading_workspace', label: '读取目标文件' },
+        { stage: 'generating', eventType: 'task.generating_diff', label: '生成候选变更集' },
+        { stage: 'awaiting', eventType: 'task.awaiting_approval', label: '等待审批' },
+      ]
+      const seen = new Set<string>()
+      let failed = false
+      for (const ev of state.events) {
+        if (ev.eventType === 'task.failed') failed = true
+        seen.add(ev.eventType)
+      }
+      // 已到达的最远阶段索引（事件存在的最后一个有序阶段）
+      let reachedIdx = -1
+      order.forEach((o, i) => {
+        if (seen.has(o.eventType)) reachedIdx = i
+      })
+      const steps: ModelLifecycleStep[] = order.map((o, i) => {
+        let status: ModelLifecycleStep['status']
+        if (failed) {
+          // 失败：已到达阶段标记为完成，其后第一步标记为 failed（无法进行）
+          status = i <= reachedIdx ? 'completed' : i === reachedIdx + 1 ? 'failed' : 'upcoming'
+        } else if (i < reachedIdx) {
+          status = 'completed'
+        } else if (i === reachedIdx) {
+          // 最远到达阶段即当前停留点（如 awaiting_approval 等待用户审批）
+          status = 'current'
+        } else {
+          status = 'upcoming'
+        }
+        return { stage: o.stage, label: o.label, status }
+      })
+      return steps
+    },
+  },
   actions: {
     async loadWorkspaces() {
       this.loading = true
@@ -217,17 +266,49 @@ export const useRealStore = defineStore('real', {
       this._resubscribe(task.id)
     },
 
+    /** 缺口全量同步：清空本地事件游标后重新拉取任务并重订阅，
+     *  用于 SSE sequence 不连续（断线后丢帧）的恢复路径。 */
+    async _resync(taskId: string) {
+      this.events = []
+      this.lastSequence = 0
+      await this.loadTask(taskId)
+    },
+
     _resubscribe(taskId: string) {
       this.cleanup()
-      if (!isApiMode) return
+      if (!isApiMode) {
+        this.eventConnection = 'idle'
+        return
+      }
+      this.eventConnection = 'connecting'
       this._unsubscribeEvents = subscribeRealTaskEvents(
         taskId,
         (event) => {
-          if (event.sequence <= this.lastSequence) return
+          if (this._resyncing) return
+          // sequence 缺口检测：本地已有事件但收到不连续帧 → 全量重同步，
+          // 避免状态机漂移（WP7 要求缺口全量同步）。
+          if (this.lastSequence > 0 && event.sequence > this.lastSequence + 1) {
+            this._resyncing = true
+            this._resync(taskId).finally(() => {
+              this._resyncing = false
+            })
+            return
+          }
+          if (event.sequence <= this.lastSequence) return // 去重
+          // 模型事件 payload 防御性校验：畸形事件丢弃而非污染状态机
+          try {
+            parseModelLifecycleEvent(event.eventType, event.payload)
+          } catch {
+            return
+          }
+          this.eventConnection = 'open'
           this.lastSequence = event.sequence
           this.events = [...this.events, event]
         },
-        () => {},
+        // EventSource 在连接错误后会自动重连；标记为 reconnecting 而非 closed
+        () => {
+          this.eventConnection = 'reconnecting'
+        },
         { afterSequence: this.lastSequence },
       )
     },
@@ -237,6 +318,8 @@ export const useRealStore = defineStore('real', {
       this.task = null
       this.events = []
       this.lastSequence = 0
+      this.eventConnection = 'idle'
+      this._resyncing = false
       this.error = null
     },
 

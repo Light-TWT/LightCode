@@ -3,7 +3,7 @@ import { computed, onMounted, onUnmounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { isApiMode } from '@/config/runtime'
 import { useRealStore } from '@/stores/real.store'
-import type { RealTaskState } from '@/types/agent'
+import type { EventConnection, RealTaskState } from '@/types/agent'
 
 const route = useRoute()
 const router = useRouter()
@@ -24,6 +24,7 @@ const changeSet = computed(() => store.task?.changeSet ?? null)
 const canDecide = computed(
   () => task.value?.state === 'awaiting_approval' && changeSet.value?.status === 'active',
 )
+const isModelTask = computed(() => task.value?.kind === 'model')
 
 const stateLabels: Record<RealTaskState, string> = {
   awaiting_approval: '等待审批',
@@ -32,6 +33,29 @@ const stateLabels: Record<RealTaskState, string> = {
   failed: '失败',
   cancelled: '已拒绝',
 }
+
+const kindLabels: Record<string, string> = {
+  real: '真实任务',
+  model: '模型任务',
+}
+
+const connectionLabels: Record<EventConnection, string> = {
+  idle: '未连接',
+  connecting: '连接中…',
+  open: '已连接',
+  reconnecting: '重连中…',
+  closed: '已关闭',
+}
+
+/** 模型任务失败时的可行动、无敏感信息提示（取自 SSE 的 task.failed 事件） */
+const modelFailed = computed(() => {
+  const ev = store.events.find((e) => e.eventType === 'task.failed')
+  if (!ev) return null
+  return {
+    code: String(ev.payload.code ?? ''),
+    message: String(ev.payload.message ?? ''),
+  }
+})
 
 function shortHash(hash: string): string {
   return hash.length > 16 ? `${hash.slice(0, 16)}…` : hash
@@ -42,7 +66,10 @@ function shortHash(hash: string): string {
   <div class="real-task-page">
     <header class="top-bar">
       <button class="back-btn" type="button" data-testid="back-real-ws-btn" @click="router.push(`/real/${workspaceId}`)">← 返回工作区</button>
-      <div class="brand">真实任务</div>
+      <div class="brand">
+        真实任务
+        <span v-if="task && isModelTask" class="kind-badge" data-testid="task-kind">模型任务</span>
+      </div>
       <span v-if="task" class="state-badge" :class="task.state" data-testid="task-state">{{ stateLabels[task.state] }}</span>
     </header>
 
@@ -81,7 +108,9 @@ function shortHash(hash: string): string {
           <span class="meta-key">revision</span><span class="meta-val">{{ changeSet.revision }}</span>
           <span class="meta-key">diffHash</span><span class="meta-val">{{ shortHash(changeSet.diffHash) }}</span>
           <span class="meta-key">有效期至</span><span class="meta-val">{{ changeSet.expiresAt || '不限' }}</span>
+          <span class="meta-key">策略版本</span><span class="meta-val" data-testid="cs-policy-version">{{ changeSet.policyVersion }}</span>
         </div>
+        <p class="no-external-cmd" data-testid="no-external-cmd">审批通过后服务端仅执行受控原子写入与内建完整性验证；本任务不执行任何外部命令（Shell/网络/Git/包管理）。</p>
         <div class="diff-columns">
           <div>
             <p class="diff-label">变更前</p>
@@ -96,6 +125,16 @@ function shortHash(hash: string): string {
         </div>
       </section>
 
+      <section v-if="isModelTask && store.modelLifecycle.length" class="panel" aria-label="模型任务生命周期">
+        <p class="panel-kicker">模型任务生命周期（SSE · 服务端权威）</p>
+        <ol class="plan-list" data-testid="model-lifecycle">
+          <li v-for="step in store.modelLifecycle" :key="step.stage" :class="step.status">
+            <span class="step-mark">{{ step.status === 'completed' ? '✓' : step.status === 'current' ? '•' : step.status === 'failed' ? '✕' : '○' }}</span>
+            {{ step.label }}
+          </li>
+        </ol>
+      </section>
+
       <section class="panel" aria-label="验证结果">
         <p class="panel-kicker">写入验证</p>
         <div class="verify-row" data-testid="verification-status">
@@ -106,7 +145,10 @@ function shortHash(hash: string): string {
       </section>
 
       <section class="panel" aria-label="事件流">
-        <p class="panel-kicker">事件流（SSE · 支持断点续传）</p>
+        <p class="panel-kicker">
+          事件流（SSE · 支持断点续传）
+          <span v-if="isApiMode" class="conn-badge" :class="store.eventConnection" data-testid="event-connection">{{ connectionLabels[store.eventConnection] }}</span>
+        </p>
         <template v-if="isApiMode">
           <div v-for="event in store.events" :key="event.sequence" class="event-row" data-testid="task-event">
             <span class="event-seq">#{{ event.sequence }}</span>
@@ -143,8 +185,13 @@ function shortHash(hash: string): string {
       <footer v-else-if="task.state === 'cancelled'" class="result-bar rejected" data-testid="result-bar">
         ✕ 变更已拒绝，未接触任何文件
       </footer>
-      <footer v-else-if="task.state === 'failed'" class="result-bar fail" data-testid="result-bar">
+      <footer v-else-if="task.state === 'failed' && !modelFailed" class="result-bar fail" data-testid="result-bar">
         ✕ 写入失败：{{ task.verification.lines.join(' ') || '详见事件流' }}
+      </footer>
+      <footer v-else-if="task.state === 'failed' && modelFailed" class="result-bar fail" data-testid="result-bar">
+        <p class="fail-title">✕ 模型任务失败</p>
+        <p class="fail-detail" data-testid="model-fail-detail">错误码：{{ modelFailed.code }} — {{ modelFailed.message }}</p>
+        <p class="fail-hint">可行动建议：检查 Provider 配置（状态、密钥、允许源）后重新创建任务；本提示不含任何密钥或完整响应。</p>
       </footer>
     </main>
 
@@ -174,6 +221,23 @@ function shortHash(hash: string): string {
 .state-badge.applying_change { color: #2d5a7a; border: 1px solid rgba(45,90,122,.3); background: rgba(45,90,122,.06); }
 .state-badge.completed { color: #2d7a3a; border: 1px solid rgba(45,122,58,.3); background: rgba(45,122,58,.06); }
 .state-badge.failed, .state-badge.cancelled { color: #b83030; border: 1px solid rgba(184,48,48,.25); background: rgba(184,48,48,.04); }
+.kind-badge {
+  font-family: 'JetBrains Mono', monospace; font-size: 9px;
+  padding: 2px 7px; border-radius: 3px; margin-left: 8px; vertical-align: middle;
+  color: #2d5a7a; border: 1px solid rgba(45,90,122,.3); background: rgba(45,90,122,.06);
+}
+.no-external-cmd {
+  font-family: 'JetBrains Mono', monospace; font-size: 10px; color: #6b7d8e;
+  border: 1px dashed rgba(45,90,122,.25); border-radius: 4px; padding: 7px 10px;
+  margin: 8px 0; line-height: 1.6;
+}
+.conn-badge {
+  font-family: 'JetBrains Mono', monospace; font-size: 9px; padding: 2px 7px;
+  border-radius: 3px; margin-left: 8px; border: 1px solid #d8d0c4; color: #888;
+}
+.conn-badge.open { color: #2d7a3a; border-color: rgba(45,122,58,.3); }
+.conn-badge.connecting, .conn-badge.reconnecting { color: #c87020; border-color: rgba(200,112,32,.3); }
+.conn-badge.closed { color: #b83030; border-color: rgba(184,48,48,.25); }
 .error-banner {
   border: 1.5px solid rgba(184,48,48,.35); background: rgba(184,48,48,.05);
   color: #b83030; border-radius: 5px; padding: 10px 14px; margin-bottom: 14px; font-size: 13px;
@@ -248,7 +312,10 @@ function shortHash(hash: string): string {
 .approve-btn:disabled, .reject-btn:disabled { opacity: .5; cursor: not-allowed; }
 .result-bar { border-radius: 6px; padding: 12px 18px; font-size: 14px; }
 .result-bar.ok { border: 1.5px solid rgba(45,122,58,.3); background: rgba(45,122,58,.05); color: #2d7a3a; }
-.result-bar.rejected, .result-bar.fail { border: 1.5px solid rgba(184,48,48,.25); background: rgba(184,48,48,.03); color: #b83030; }
+.result-bar.rejected, .result-bar.fail { border: 1.5px solid rgba(184,48,48,.25); background: rgba(184,48,48,.03); color: #b83030; display: flex; flex-direction: column; gap: 4px; }
+.fail-title { font-weight: 600; }
+.fail-detail { font-family: 'JetBrains Mono', monospace; font-size: 12px; }
+.fail-hint { font-size: 12px; color: #6b7d8e; }
 .empty-hint { color: #999; font-size: 12px; }
 .loading-hint { padding: 20px; }
 </style>

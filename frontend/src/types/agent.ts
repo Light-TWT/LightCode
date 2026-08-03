@@ -259,6 +259,36 @@ export interface ModelTaskResponse {
   detail: string
 }
 
+// --- Phase 2 / WP7：模型任务 SSE 生命周期（前端状态机） ---
+/** 模型任务的稳定生命周期阶段（与后端 emit 的事件类型一一对应） */
+export type ModelLifecycleStage =
+  | 'created'
+  | 'planning'
+  | 'reading'
+  | 'generating'
+  | 'awaiting'
+  | 'failed'
+
+/** 单个生命周期阶段在 UI 时间线中的渲染态 */
+export interface ModelLifecycleStep {
+  stage: ModelLifecycleStage
+  label: string
+  status: 'completed' | 'current' | 'upcoming' | 'failed'
+}
+
+/** SSE 连接状态机（断点续传与降级可观测性） */
+export type EventConnection = 'idle' | 'connecting' | 'open' | 'reconnecting' | 'closed'
+
+/** 后端为模型任务 emit 的事件类型白名单（WP6 编排器决定） */
+export const MODEL_TASK_EVENT_TYPES = [
+  'task.created',
+  'task.planning',
+  'task.reading_workspace',
+  'task.generating_diff',
+  'task.awaiting_approval',
+  'task.failed',
+] as const
+
 export interface HistoryTaskDetail {
   id: string
   status: HistoryTaskStatus

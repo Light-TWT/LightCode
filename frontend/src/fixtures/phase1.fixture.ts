@@ -1,5 +1,6 @@
 import type {
   RealTask,
+  TaskEvent,
   RegisteredFileContent,
   RegisteredFileEntry,
   RegisteredWorkspace,
@@ -79,3 +80,91 @@ export const realTaskFixture: RealTask = {
   verification: { status: 'pending', command: '内建完整性验证', lines: [] },
   createdAt: '2026-07-27T00:00:00+00:00',
 }
+
+/** WP7：模型任务夹具（kind='model'，awaiting_approval，复用 Phase 1 审批闭环）。 */
+export const modelTaskFixture: RealTask = {
+  id: 'model-task-mock1',
+  workspaceId: 'demo-real-workspace',
+  sessionId: 'model-session-model-task-mock1',
+  kind: 'model',
+  state: 'awaiting_approval',
+  title: '让模型在 NOTES.md 末尾追加标记',
+  targetFile: 'NOTES.md',
+  changeSet: {
+    changeSetId: 'cs-model00000001',
+    revision: 1,
+    diffHash: 'model-diff-hash',
+    baseSha256: 'model-base-sha256',
+    proposedSha256: 'model-proposed-sha256',
+    logicalRelativePath: 'NOTES.md',
+    status: 'active',
+    policyVersion: 'policy-v1',
+    additions: 1,
+    deletions: 0,
+    before: ['# Notes', '', 'demo content line'],
+    after: ['# Notes', '', 'demo content line', '<!-- lightcode: appended marker -->'],
+    expiresAt: null,
+  },
+  plan: [
+    { id: 'plan', label: '规划变更', status: 'completed' },
+    { id: 'read', label: '读取 NOTES.md', status: 'completed' },
+    { id: 'diff', label: '生成候选变更集', status: 'completed' },
+    { id: 'approve', label: '等待审批', status: 'current' },
+    { id: 'apply', label: '原子写入', status: 'upcoming' },
+    { id: 'verify', label: '内建验证', status: 'upcoming' },
+  ],
+  toolCalls: [
+    {
+      id: 'model-task-mock1-read',
+      toolName: 'read_file',
+      target: 'NOTES.md',
+      status: 'ok',
+      duration: '—',
+      detail: ['# Notes'],
+    },
+    {
+      id: 'model-task-mock1-diff',
+      toolName: 'generate_diff',
+      target: 'NOTES.md · +1 -0 · 等待审批',
+      status: 'pending',
+      duration: '—',
+      detail: ['marker'],
+    },
+  ],
+  verification: { status: 'pending', command: '内建完整性验证', lines: [] },
+  createdAt: '2026-07-31T00:00:00+00:00',
+}
+
+/** WP7：模型任务 SSE 事件流（与后端编排器 emit 顺序一致），驱动前端生命周期时间线。 */
+export const modelTaskEventsFixture: TaskEvent[] = [
+  {
+    sequence: 1,
+    eventType: 'task.created',
+    payload: { taskId: 'model-task-mock1', kind: 'model' },
+    createdAt: '2026-07-31T00:00:00+00:00',
+  },
+  {
+    sequence: 2,
+    eventType: 'task.planning',
+    payload: {},
+    createdAt: '2026-07-31T00:00:00.100+00:00',
+  },
+  {
+    sequence: 3,
+    eventType: 'task.reading_workspace',
+    payload: { target: 'NOTES.md' },
+    createdAt: '2026-07-31T00:00:00.200+00:00',
+  },
+  {
+    sequence: 4,
+    eventType: 'task.generating_diff',
+    payload: { changeSetId: 'cs-model00000001', additions: 1, deletions: 0 },
+    createdAt: '2026-07-31T00:00:00.300+00:00',
+  },
+  {
+    sequence: 5,
+    eventType: 'task.awaiting_approval',
+    payload: { changeSetId: 'cs-model00000001', revision: 1 },
+    createdAt: '2026-07-31T00:00:00.400+00:00',
+  },
+]

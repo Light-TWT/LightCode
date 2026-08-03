@@ -2,7 +2,8 @@
 import { computed, onMounted, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useRealStore } from '@/stores/real.store'
-import type { RegisteredFileEntry } from '@/types/agent'
+import { providerService } from '@/services/provider.service'
+import type { ProviderStatus, RegisteredFileEntry } from '@/types/agent'
 
 const route = useRoute()
 const router = useRouter()
@@ -13,7 +14,18 @@ const searchInput = ref('')
 const taskTitle = ref('')
 const modelTaskTitle = ref('')
 
-onMounted(() => store.openWorkspace(workspaceId.value))
+/** Provider 健康状态（WP7）：degraded 时禁用新建模型任务，但保留历史/查看/审批。 */
+const providerStatus = ref<ProviderStatus | null>(null)
+const providerDegraded = computed(() => providerStatus.value === 'degraded')
+
+onMounted(async () => {
+  await store.openWorkspace(workspaceId.value)
+  try {
+    providerStatus.value = (await providerService.getHealth()).status
+  } catch {
+    providerStatus.value = null
+  }
+})
 
 const workspace = computed(
   () => store.workspaces.find((ws) => ws.id === workspaceId.value) ?? null,
@@ -169,7 +181,13 @@ async function createModelTask() {
 
         <section class="panel" aria-label="创建模型任务">
           <p class="panel-kicker">创建模型任务</p>
-          <p class="tpl-note">模型只读取目标文件并提议精确文本替换；服务端校验后生成不可变变更集，最终由你审批才写入。需服务端已配置 Provider。</p>
+          <p class="tpl-note model-disclosure" data-testid="model-disclosure">
+            启动前请知悉：被工作区守卫（Guard）允许的<strong>目标文件代码片段将发送至已配置的 Provider</strong>进行处理；
+            模型只提议精确文本替换，服务端校验后生成不可变变更集，最终由你审批才写入。UI 仅展示安全摘要，绝不暴露密钥或完整 URL。
+          </p>
+          <p v-if="providerDegraded" class="degraded-note" data-testid="model-degraded-note">
+            Provider 已降级（degraded）：已禁用新建模型任务，但历史任务、查看与已有变更集审批仍可用。
+          </p>
           <form class="task-form" @submit.prevent="createModelTask">
             <input
               v-model="modelTaskTitle"
@@ -182,7 +200,7 @@ async function createModelTask() {
               class="primary-btn model-btn"
               type="submit"
               data-testid="create-model-task-btn"
-              :disabled="store.submitting || !modelTaskTitle.trim()"
+              :disabled="store.submitting || !modelTaskTitle.trim() || providerDegraded"
             >{{ store.submitting ? '运行中…' : '创建模型任务' }}</button>
           </form>
         </section>
@@ -256,6 +274,12 @@ async function createModelTask() {
 }
 .primary-btn:disabled { opacity: .5; cursor: not-allowed; }
 .model-btn { background: rgba(45,90,122,.12); border-color: #2d5a7a; color: #2d5a7a; }
+.model-btn:disabled { opacity: .5; cursor: not-allowed; }
+.degraded-note {
+  font-size: 12px; color: #c87020; line-height: 1.6;
+  border: 1px solid rgba(200,112,32,.3); background: rgba(212,160,23,.08);
+  border-radius: 4px; padding: 8px 10px; margin-bottom: 10px;
+}
 .search-results { margin-top: 10px; display: flex; flex-direction: column; gap: 2px; }
 .hit-row {
   background: none; border: none; cursor: pointer; text-align: left; padding: 4px 6px;

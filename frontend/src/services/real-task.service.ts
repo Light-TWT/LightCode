@@ -1,4 +1,4 @@
-import { realTaskFixture } from '@/fixtures/phase1.fixture'
+import { realTaskFixture, modelTaskFixture } from '@/fixtures/phase1.fixture'
 import { isApiMode } from '@/config/runtime'
 import { requestJson } from '@/services/http'
 import { parseRealTask } from '@/contracts/real-task.schema'
@@ -23,6 +23,9 @@ export const mockRealTaskService: RealTaskService = {
     return task
   },
   async getRealTask(taskId) {
+    if (taskId === modelTaskFixture.id) {
+      return structuredClone(modelTaskFixture)
+    }
     if (taskId !== realTaskFixture.id) {
       throw new Error(`Unknown mock real task ${taskId}`)
     }
