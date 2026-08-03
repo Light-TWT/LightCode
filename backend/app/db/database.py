@@ -3,6 +3,8 @@ import sqlite3
 from pathlib import Path
 from typing import Optional
 
+from app.services.observability import Metrics
+
 SCHEMA_SQL = """
 CREATE TABLE IF NOT EXISTS workspaces (
     id TEXT PRIMARY KEY,
@@ -108,6 +110,51 @@ def _column_names(connection: sqlite3.Connection, table: str) -> set[str]:
     return {row["name"] for row in rows}
 
 
+class InstrumentedConnection:
+    """Thin wrapper that counts SQLite ``busy``/``locked`` errors as a metric.
+
+    It preserves the existing engine-level retry (``PRAGMA busy_timeout``) and
+    the context-manager protocol used throughout the codebase. Only
+    ``execute``/``executemany`` are intercepted; every other attribute (including
+    ``commit`` via the underlying ``with`` block) is delegated unchanged. No
+    schema or migration semantics are touched.
+    """
+
+    def __init__(self, conn: sqlite3.Connection) -> None:
+        self._conn = conn
+
+    def __getattr__(self, name: str):
+        # Only reached for attributes not defined on this class (row_factory,
+        # cursor, commit, close, executescript, ...).
+        return getattr(self._conn, name)
+
+    def __enter__(self) -> sqlite3.Connection:
+        return self._conn.__enter__()
+
+    def __exit__(self, *exc_info: object) -> None:
+        self._conn.__exit__(*exc_info)
+
+    @staticmethod
+    def _count_busy(exc: Exception) -> None:
+        text = str(exc).lower()
+        if "locked" in text or "busy" in text:
+            Metrics.sqlite_busy()
+
+    def execute(self, *args, **kwargs):
+        try:
+            return self._conn.execute(*args, **kwargs)
+        except sqlite3.OperationalError as exc:
+            self._count_busy(exc)
+            raise
+
+    def executemany(self, *args, **kwargs):
+        try:
+            return self._conn.executemany(*args, **kwargs)
+        except sqlite3.OperationalError as exc:
+            self._count_busy(exc)
+            raise
+
+
 def run_migrations(connection: sqlite3.Connection) -> None:
     """Idempotently upgrade a pre-existing Phase 0.5 database to the Phase 1 schema.
 
@@ -149,7 +196,7 @@ def initialize_database(database_path: Optional[Path] = None) -> sqlite3.Connect
     run_migrations(connection)
     seed_database(connection)
     connection.commit()
-    return connection
+    return InstrumentedConnection(connection)
 
 
 def seed_database(connection: sqlite3.Connection) -> None:

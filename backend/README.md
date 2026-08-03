@@ -1,13 +1,14 @@
-# LightCode 后端（Phase 0.5 Mock Runtime + Phase 1 安全变更 MVP）
+# LightCode 后端（Phase 0.5 Mock Runtime + Phase 1 安全变更 MVP + Phase 2 模型提议）
 
 ## 概述
 
-`backend/` 是基于 FastAPI 与 SQLite 的本地运行时，当前承载两条隔离的闭环：
+`backend/` 是基于 FastAPI 与 SQLite 的本地运行时，当前承载三条隔离的闭环：
 
 - **Phase 0.5 Mock Runtime**：由 `app/db/database.py` 的 `seed_database()` 确定性生成工作区、会话、任务、历史和审批状态，仅用于界面演示、服务适配与合约验证。不访问真实项目目录、不写源码、不执行命令、不调用模型、不接收或存储密钥。
 - **Phase 1 安全变更 MVP（后端）**：服务端静态注册授权工作区，提供受控只读工具（`list_files`/`read_file`/`search_files`）、服务端生成的确定性 ChangeSet、版本绑定审批，以及对单个既有 UTF-8 文本文件的原子替换与内建完整性验证。安全不变量以 `../docs/phase1-safety-contract.md` 与 `../docs/workspace-registration.md` 为准。
+- **Phase 2 模型提议（WP5–WP8，默认关闭）**：受限、默认关闭的 OpenAI-compatible Provider 子系统。模型只"提议"——计划、受限只读工具请求（`read_file`/`search_files`）与服务端独立生成的候选 ChangeSet；不写文件、不执行命令、不决定审批。可观测性、预算/并发/故障门禁与敏感数据扫描见本文「可观测性与发布门禁」一节，设计细节见 `../docs/phase2-model-provider-design.md`。
 
-两条闭环共享同一 SQLite 与 SSE 基础设施，但数据严格隔离：Phase 0.5 种子任务标记为 `kind='mock'`，Phase 1 真实任务标记为 `kind='real'`，互不可跨端点触发对方行为。
+三条闭环共享同一 SQLite 与 SSE 基础设施，但数据严格隔离：Phase 0.5 种子任务标记为 `kind='mock'`，Phase 1 真实任务标记为 `kind='real'`，Phase 2 模型任务标记为 `kind='model'`，互不可跨端点触发对方行为。
 
 ## 结构
 
@@ -30,6 +31,12 @@ app/
     phase1.py              真实任务生命周期与 6 步审批写入协议
     browse_tokens.py       HMAC-SHA256 短期浏览令牌（绑定 workspace+operation+relative_path）
     event_service.py       SSE 事件生成（重放上限/心跳/tail 续传/最大连接数）
+    model_orchestrator.py  Phase 2 LangGraph 编排与 create_model_task（模型只提议）
+    openai_compatible_provider.py  OpenAI-compatible chat 适配（信任边界/超时/预算/错误分类）
+    observability.py       WP8 单一日志/指标出口（JSON 格式、关联 ID、redact 拒绝名单、进程内 Metrics）
+config/
+    model_provider.py      ModelProviderConfig（仅环境变量、fail-closed、safe_summary 无密钥）
+llm_client.py             build_llm 工厂（trust_env=False / follow_redirects=False / max_retries=0）
   workspaces/
     registry.py            服务端静态工作区注册表（启动加载）
 tests/                    pytest 用例；每个用例使用隔离临时数据库
@@ -130,13 +137,44 @@ GET  /api/v1/real-tasks/{taskId}/events
 
 ## 禁止清单（全局）
 
-- 真实模型提供商与持续模型流；
-- Phase 1 之外的任意真实文件系统修改：新建/删除/重命名/移动、多文件事务、二进制/非 UTF-8/超限文件；
+- **不受限/持续的模型流**：Phase 2 允许的模型 Provider 必须是默认关闭、仅"提议"的——不能写文件、执行命令、调用网络工具、管理包、写 Git 或决定审批；完整约束见 `../docs/phase2-model-provider-design.md`。
+- Phase 1/Phase 2 之外的任意真实文件系统修改：新建/删除/重命名/移动、多文件事务、二进制/非 UTF-8/超限文件；
 - Shell、`subprocess`、依赖安装、网络下载与 Git 写操作；
-- API Key、密码、token 或其他密钥的接收、持久化、事件记录、前端传播、日志或截图；
+- API Key、密码、token 或其他密钥的接收、持久化、事件记录、前端传播、日志或截图；密钥仅来自后端环境变量，浏览器不输入/回显/传输；
 - Electron。
 
-Phase 1 允许的受控真实读取与单文件原子写入，必须在 `../docs/phase1-safety-contract.md` 的全部不变量下执行。
+Phase 1 允许的受控真实读取与单文件原子写入，以及 Phase 2 模型提议闭环，必须在 `../docs/phase1-safety-contract.md` 与 `../docs/phase2-model-provider-design.md` 的全部不变量下执行。
+
+## 可观测性与发布门禁（WP8）
+
+所有日志与指标只经 `app/services/observability.py`，避免多 sink 泄露敏感数据。
+
+### 日志级别
+
+- 由环境变量 `LIGHTCODE_LOG_LEVEL` 控制（默认 `WARNING`）。
+- `configure_logging()` 将 `httpx`/`httpcore`/`openai`/`langchain*` 日志器压到 `WARNING`，
+  阻断第三方库在 INFO 打印完整请求 URL（含 provider base URL）的泄露路径。
+- 每条记录为单个 JSON 对象，附关联 ID（`correlation_id`）；`exc_info` 文本被脱敏。
+
+### 指标
+
+- 进程内 `Metrics` 单例（`observability.py`）只聚合数值：任务状态转换、工具调用（名称/类别/耗时）、
+  provider 调用（provider/模型 ID/HTTP 类别/耗时/token）、预算耗尽、并发拒绝、SSE 连接/续传、SQLite busy。
+- 指标不含 prompt/response/key/header/完整路径。`Metrics.snapshot()` 仅返回计数器/gauge/耗时直方图汇总。
+- 进程内单例仅对单进程后端有效；多 worker 部署需外部聚合（不在 Phase 2 范围内）。
+
+### 敏感数据不变
+
+- 绝不记录：API Key、Authorization/Cookie、完整 prompt/response、原始代码、完整根路径、绝对路径、
+  provider 请求头、未脱敏异常栈、`sk-`/`Bearer` 形状的凭据。
+- `redact()` 对 secret/location 键与凭据形状做递归脱敏；API-mode E2E 测试断言日志与事件载荷不含
+  `test-key` / `api.example.test` / `Bearer` / `Authorization` / 真实临时路径。
+
+### 失败语义
+
+- `MODEL_BUDGET_EXCEEDED`：输入字节 / 输出 token / 每 task 请求数超预算。
+- `MODEL_CONCURRENCY_EXCEEDED`：进程内 `_ModelTaskGate` 已达 `max_concurrent_tasks=1`（Phase 1 写租约的 Phase 2 类比，无 schema 变更）。
+- `APPLY_CONFLICT` / `STALE_BASE` 沿用 Phase 1；`InstrumentedConnection` 拦截 SQLite `locked`/`busy` 并计入 `sqlite.busy` 指标（保留 `PRAGMA busy_timeout` 与上下文协议，无 schema 变更）。
 
 ## 验证
 
@@ -146,7 +184,7 @@ Phase 1 允许的受控真实读取与单文件原子写入，必须在 `../docs
 python -m pytest -q
 ```
 
-当前基线为 **117 个后端测试通过 + 2 个跳过**（跳过项为沙箱环境 `os.symlink` 静默降级导致不可检测，对应逻辑已由 monkeypatch 测试覆盖）。全量验证还应从 `frontend/` 运行 `npm run test` 与 `npm run build`：
+当前基线为 **190 个后端测试通过 + 2 个跳过**（跳过项为沙箱环境 `os.symlink` 静默降级导致不可检测，对应逻辑已由 monkeypatch 测试覆盖）。其中 WP8 新增 `test_observability.py`（9 例）与 `test_model_e2e.py`（4 例），聚焦可观测性/敏感数据扫描/API-mode E2E 共 13 例全绿。全量验证还应从 `frontend/` 运行 `npm run test` 与 `npm run build`：
 
 ```bash
 npm run test

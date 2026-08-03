@@ -6,15 +6,15 @@ LightCode 是一个独立实现的、本地优先的可视化编码智能体，�
 
 ## 当前阶段
 
-项目处于阶段 1：安全变更 MVP（后端 T1-T7/T9 与前端 T8 均已完成，处于收尾验证阶段）。Phase 0.5 Mock Runtime 保留为 legacy，仅供读取与演示。
+项目处于阶段 2：真实模型与开发者体验（WP5–WP8 / M4–M6 已完成，模型 Provider 默认关闭、仅"提议"）。Phase 0.5 Mock Runtime 保留为 legacy 仅供读取与演示；Phase 1 安全变更 MVP 为生产级闭环。
 
-- 冻结范围、安全不变量、状态机、审批写入协议与错误码以 `docs/phase1-safety-contract.md` 为准；产品总体行为以 `docs/architecture/lightcode-local-first-agent-design.md` 为准。
+- 冻结范围、安全不变量、状态机、审批写入协议与错误码以 `docs/phase1-safety-contract.md` 为准；Phase 2 模型 Provider 与可观测性以 `docs/phase2-model-provider-design.md` 与 `docs/architecture/lightcode-local-first-agent-design.md` 的 M6 状态为准。
 - 真实工作区根路径只来自服务端静态注册表（`LIGHTCODE_WORKSPACES_CONFIG` 或 `backend/workspaces.json`，已 gitignore）；公共 DTO、SSE、日志、错误一律不得返回真实根路径。
 - 每次文件访问必须经 `WorkspaceGuard`。ChangeSet 由服务端生成、持久化、版本化；审批绑定 `changeSetId + revision + diffHash`；写前重检基线哈希，冲突返回 `STALE_BASE`；单文件临时文件 + 原子替换 + 内建 UTF-8/哈希验证。
-- 浏览器只提交 `workspaceId`、任务标识、审批决定、`changeSetId`、`revision`、`diffHash`、`idempotencyKey`（Pydantic `extra="forbid"` 拒绝任何 `rootPath`/`filePath`/patch/command）。
+- 浏览器只提交 `workspaceId`、任务标识、审批决定、`changeSetId`、`revision`、`diffHash`、`idempotencyKey`（Pydantic `extra="forbid"` 拒绝任何 `rootPath`/`filePath`/patch/command）。模型任务同样只提交 `workspaceId`+`title`，绝不提交 key/baseUrl/路径/补丁。
 - 后端 API 必须保持 `/api/v1` 与 camelCase JSON。
-- 仍不得实现：真实模型/提供商 Key/密钥管理、Shell/subprocess/包管理/网络下载/Git 写操作、删除/新建/重命名/移动、多文件事务、二进制/非 UTF-8/超限文件修改、Electron、本地文件夹选择。
-- Phase 0.5 允许的能力（FastAPI、SQLite、确定性 Mock Runtime、REST、SSE、前端 HTTP/EventSource 适配器）继续保留，Mock 与真实闭环隔离。
+- 模型 Provider 为受限、默认关闭能力：仅环境变量配置、fail-closed、零密钥泄露（key 仅来自后端环境变量，浏览器不输入/回显/传输）；模型只能"提议"计划、受限只读工具请求与服务端独立生成的候选 ChangeSet，不写文件、不执行命令、不决定审批。仍不得实现：Shell/subprocess/包管理/网络下载/Git 写操作、删除/新建/重命名/移动、多文件事务、二进制/非 UTF-8/超限文件修改、Electron、本地文件夹选择、前端密钥输入/持久化、真实模型依赖在 M3 门槛前接入。
+- Phase 0.5 允许的能力（FastAPI、SQLite、确定性 Mock Runtime、REST、SSE、前端 HTTP/EventSource 适配器）继续保留，Mock 与真实闭环隔离；Phase 2 模型闭环标记为 `kind='model'`，与 `mock`/`real` 严格隔离。
 
 ## 必读文件
 
@@ -78,7 +78,7 @@ scripts/        开发与验证脚本
 前端: 87 测试通过 (17 文件), vue-tsc -b + vite build 通过 (2026-08-03)
 WP6 前端: 完成 (2026-07-31) —— 新增模型任务创建入口与 UI（RealWorkspaceView 侧栏"创建模型任务"面板 + store.createModelTask + model-task.service 双实现 + parseModelTask 契约校验 + 3 个测试文件 17 例）；复用既有 real-task 任务视图显示模型任务（get_real_task 含 kind='model'）；vite build --emptyOutDir false 通过
 WP7 (模型任务 SSE / 前端状态机 / 开发体验): 完成 (2026-08-03) —— 纯前端，无后端改动（复用 WP6 LangGraph 编排 emit 的事件 + WP3 SSE 续传通道）。新增：types/agent.ts 模型生命周期类型(ModelLifecycleStep/ModelLifecycleStage/EventConnection) + MODEL_TASK_EVENT_TYPES；contracts/real-task.schema.ts 新增 parseModelLifecycleEvent（模型事件 payload 防御性校验）；real.store.ts 新增 eventConnection 状态机(connecting/open/reconnecting/closed) + SSE sequence 缺口全量同步(_resync，带 _resyncing 防重入) + modelLifecycle getter（从事件派生有序阶段，最远到达阶段为 current，失败标记 failed）；RealWorkspaceView 强化启动前数据披露(代码片段发往已配置 Provider) + Provider degraded 门禁新建(保留历史/查看/审批)；RealTaskView 增加 kind 徽标 + 模型生命周期时间线 + awaiting_approval 策略版本与"不执行外部命令"说明 + SSE 连接态 + 失败可行动无敏感提示(精确正则拒绝 sk-+20位密钥)；phase1.fixture.ts 新增 modelTaskFixture/modelTaskEventsFixture；real-task.service mock 支持模型任务 id。验证：新增 real.store.test.ts 5 例 + RealTaskView.test.ts 6 例（共 11 例 WP7），前端全量 87 passed / 17 文件，vue-tsc -b + vite build 通过，无回归
-后端: 117 测试通过 + 2 skipped (沙箱 symlink 静默降级, 逻辑已由 monkeypatch 测试覆盖) (2026-07-30)
+后端: 190 测试通过 + 2 skipped (沙箱 symlink 静默降级, 逻辑已由 monkeypatch 测试覆盖) (2026-08-03)
 Phase 0.5 收尾: DB 路径绝对化 + Git 跟踪移除已完成; API 模式持久化验证通过 (临时 DB 审批持久化, 新库回到 awaiting_approval)
 Phase 1 后端: T1-T7 + T9 完成; API 模式 HTTP 全闭环验证 16/16 通过
   (注册工作区无根路径泄露 -> 创建真实任务 awaiting_approval -> 审批原子写 + 内建验证 completed
@@ -120,6 +120,14 @@ Phase 1R (安全收尾门禁, WP0-WP4 = M1+M2+M3): 全部完成 (2026-07-30)
 - LangChain 改造 (2026-07-31, 用户指令: 优先用成熟企业级库而非自研): 新增 `app/services/llm_client.py` (ChatOpenAI 工厂 + 加固 httpx(trust_env=False/follow_redirects=False/max_retries=0/显式超时) + 错误码映射 MODEL_*); `openai_compatible_provider.py` 改为委托该工厂 (保留 chat() 语义/预算计数/稳定错误码, 畸形响应归入 MODEL_RESPONSE_INVALID); WP5 http 17 + config 19 + health 10 全绿, 全量 165 passed/2 skipped 无回归。
 - WP6 (受限模型编排与候选 ChangeSet) 已完成 (2026-07-31): 默认无 schema 变更, 复用 tasks/changesets/task_events。新增 `app/services/model_orchestrator.py` (LangGraph StateGraph: call_model→adjudicate_tool→adjudicate_intent→END; 复用共享 llm_client 工厂 + OpenAICompatibleProvider; browse_tokens.verify 校验 fileToken; Guard 只读读取; changeset.build_model_change_set 生成不可变 ChangeSet 并持久化; 预算/轮次双重约束; fail-closed)。新增 `app/schemas/model_contracts.py` WP6 DTO (EditOp/ToolRequestMessage/CandidateEditIntent/ModelTaskCreateRequest/ModelTaskResponse, extra="forbid", 无 rootPath); `errors.py` 增 MODEL_EDIT_INVALID; `changeset.py` 增 WP6 精确唯一文本替换变换。路由: POST/GET `/api/v1/model-tasks`; `phase1.submit_approval/get_real_task/recover_incomplete_tasks` 的 kind 过滤扩展为 `('real','model')`, 模型任务复用 Phase 1 版本绑定审批 + 原子写 + 内建验证 (已测: 审批后磁盘文件真实变更)。验证: 新增 `tests/test_model_orchestrator.py` 12 例全绿 (read→candidate→awaiting_approval 且编排期不写盘; fail-closed: 伪造 token/MODEL_EDIT_INVALID、错误 baseSha256/STALE_BASE、超轮次/MODEL_BUDGET_EXCEEDED、畸形输出/MODEL_RESPONSE_INVALID、 forbidden 字段、未授权工具; 代码围栏解析; API 默认关闭/MODEL_DISABLED、API happy path、extra=forbid 拒绝 rootPath); 全量后端 177 passed / 2 skipped 无回归。前端模型任务创建 UI 已完成 (见上方"WP6 前端"): RealWorkspaceView "创建模型任务"面板 + store.createModelTask + model-task.service 双实现 (POST /api/v1/model-tasks 仅 workspaceId+title, 经 parseModelTask 校验, 拒绝含 rootPath 的畸形 DTO) + 3 个测试文件 17 例全绿; 复用既有 real-task 任务视图显示模型任务。
 - 依赖策略 (2026-07-31, 用户指令): WP6 起优先用 LangChain/LangGraph 辅助实现（尤其编排层 / 工具协议），但须保持 fail-closed、默认关闭、零密钥泄露等不变量；依赖加锁版本、隔离到编排层，不得进入前端或凭据路径；WP5 自研最小 httpx 客户端保留（不为 80 行换重型依赖）。
+- WP8 (性能、可观测性与发布门禁, M6) 已完成 (2026-08-03), **零新增第三方依赖**（stdlib logging + 进程内 Metrics + 既有 pytest/vitest；用户确认不引入 pytest-cov/eslint/prettier/coverage）:
+  - 新增 `app/services/observability.py`（单一日志/指标出口）：JSON 格式器 + `correlation_id_var: ContextVar` 关联 ID + `CorrelationFilter`；`redact(obj)` 递归脱敏（secret/location 键 + `sk-`/`Bearer` 形状）；`Metrics` 进程单例（仅聚合数值：任务转换/工具调用/provider 调用/token/预算/并发/SSE/SQLite busy，不含 prompt/response/key/路径）；`configure_logging()` 由 `LIGHTCODE_LOG_LEVEL` 控制（默认 WARNING），并把 `httpx`/`httpcore`/`openai`/`langchain*` 压到 WARNING 阻断第三方 INFO 打印完整请求 URL（含 base URL）的泄露路径。
+  - `app/main.py`：lifespan 首行 `configure_logging()`，启动只打印 provider `status`（非 key/url）；新增关联 ID 中间件（线程池同步路由经 `request.state.correlation_id` 重绑）。
+  - `app/schemas/errors.py` 增 `MODEL_CONCURRENCY_EXCEEDED`；`app/services/model_orchestrator.py` 增进程内 `_ModelTaskGate`（Phase 1 写租约的 Phase 2 类比，并发 1，无 schema 变更），满闸任务置 `failed` 落 `MODEL_CONCURRENCY_EXCEEDED` 事件；编排器埋点状态转换/工具耗时/候选 diff 生成。
+  - `app/services/openai_compatible_provider.py` `chat()`：try/except 内统一记录 `Metrics.provider_call(provider, model, http_category, latency, tokens)` 后重抛；预算超限计入 `MODEL_BUDGET_EXCEEDED`；新增 `_classify_error`（MODEL_*→timeout/rate_limit/upstream/invalid/budget/disabled/error）与 `_extract_tokens`（安全取 token_usage）。
+  - `app/services/event_service.py` 连接开/关计 `Metrics.sse_open/close`；`app/api/routes.py` 续传计 `Metrics.sse_resume` 且同步路由首行重绑关联 ID；`app/db/database.py` 新增 `InstrumentedConnection`（拦截 execute/executemany 的 locked/busy→`Metrics.sqlite_busy()`，保留 busy_timeout/WAL/上下文协议，无 schema 变更）。
+  - 新增 `tests/test_observability.py`（9 例：redact 拒绝名单/指标无密钥/SSE/并发闸/SQLite busy 仪表化/provider 错误分类）与 `tests/test_model_e2e.py`（4 例 API-mode E2E：happy path→审批→原子写→SSE 续传、恶意工具请求失败、预算耗尽、SSE 续传指标；并断言日志与事件载荷不含 test-key/api.example.test/Bearer/Authorization/真实临时路径）。
+  - 验证: 后端全量 **190 passed / 2 skipped**（含 WP8 新增 13）；WP8 聚焦 13/13 通过；前端 WP8 无代码变更，既有 87 测试 + vue-tsc -b + vite build 仍有效。设计文档见 `docs/phase2-model-provider-design.md`，架构 M6 状态见 `docs/architecture/lightcode-local-first-agent-design.md`。
 ```
 
 ## 问题修复记录

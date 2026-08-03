@@ -30,6 +30,7 @@ from app.schemas.model_contracts import (
 from app.services.browse_tokens import issue, verify
 from app.services.event_service import stream_events
 from app.services.model_orchestrator import ModelOrchestrator
+from app.services.observability import Metrics, correlation_id_var
 from app.services.phase1 import Phase1Service
 from app.services.runtime import RuntimeService
 
@@ -80,7 +81,12 @@ def _resolve_after_sequence(request: Request, after_sequence: int) -> int:
     """Honour a browser-sent Last-Event-ID for SSE resume."""
     last_event_id = request.headers.get("last-event-id")
     if last_event_id and last_event_id.isdigit():
+        # A client that supplies a resume cursor has reconnected; record it but
+        # never the payload or path it implied.
+        Metrics.sse_resume()
         return max(after_sequence, int(last_event_id))
+    if after_sequence > 0:
+        Metrics.sse_resume()
     return after_sequence
 
 
@@ -264,6 +270,9 @@ def create_model_task(payload: ModelTaskCreateRequest, request: Request) -> Mode
     ChangeSet the user can approve via the Phase 1 endpoint) or ``failed`` with a
     stable machine code. No filesystem write occurs here — only at approval.
     """
+    # FastAPI runs this sync route in a threadpool, so re-bind the correlation id
+    # set by the HTTP middleware (ContextVars do not cross into the pool thread).
+    correlation_id_var.set(getattr(request.state, "correlation_id", "-"))
     return ModelOrchestrator.from_request(request).create_model_task(
         payload.workspaceId, payload.title
     )

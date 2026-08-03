@@ -15,6 +15,8 @@ import os
 import time
 from collections.abc import Iterator
 
+from app.services.observability import Metrics
+
 SSE_REPLAY_CAP = int(os.environ.get("LIGHTCODE_SSE_REPLAY_CAP", "1000"))
 SSE_TAIL_TIMEOUT_SECONDS = int(os.environ.get("LIGHTCODE_SSE_TAIL_SECONDS", "30"))
 SSE_HEARTBEAT_INTERVAL_SECONDS = int(os.environ.get("LIGHTCODE_SSE_HEARTBEAT_SECONDS", "10"))
@@ -47,12 +49,14 @@ def acquire_connection() -> None:
     if _active_connections >= SSE_MAX_CONNECTIONS:
         raise RuntimeError("sse connection limit reached")
     _active_connections += 1
+    Metrics.sse_open()
 
 
 def release_connection() -> None:
     global _active_connections
     if _active_connections > 0:
         _active_connections -= 1
+    Metrics.sse_close()
 
 
 def active_connections() -> int:

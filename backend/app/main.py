@@ -1,5 +1,6 @@
 import os
 import sys
+import uuid
 from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
 from pathlib import Path
@@ -15,12 +16,22 @@ from app.config.model_provider import load_model_provider_config
 from app.db.database import initialize_database
 from app.schemas.errors import Phase1Error
 from app.security.guard import WorkspaceGuard
+from app.services.observability import (
+    configure_logging,
+    correlation_id_var,
+    get_logger,
+)
 from app.services.phase1 import Phase1Service
 from app.workspaces.registry import WorkspaceRegistry
+
+log = get_logger("lightcode.lifespan")
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
+    # WP8: install the structured (JSON) logger exactly once at startup.
+    configure_logging()
+
     # 默认数据库路径基于本文件位置解析为绝对路径（<repo>/backend/data/lightcode.db），
     # 不依赖启动命令当前所在目录，避免从 backend/ 启动时落到 backend/backend/data/。
     backend_dir = Path(__file__).resolve().parent.parent
@@ -49,19 +60,36 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     # Only the status is ever logged — never the key or the base URL.
     model_provider = load_model_provider_config()
     app.state.model_provider = model_provider
-    print(f"[lightcode] model provider: {model_provider.status()}")
+    log.info("model provider status resolved", extra={"status": model_provider.status()})
 
     # Startup crash recovery: reconcile any real task left mid-apply by a
     # previously crashed process (contract §失败和恢复承诺).
     recovery = Phase1Service(connection, registry, app.state.guard).recover_incomplete_tasks()
     if any(v for v in recovery.values()):
-        print(f"[lightcode] startup recovery: {recovery}")
+        log.warning("startup recovery performed", extra={"recovery": recovery})
 
     yield
     connection.close()
 
 
 app = FastAPI(title="LightCode Local Runtime", version="0.1.0", lifespan=lifespan)
+
+
+@app.middleware("http")
+async def correlation_middleware(request: Request, call_next):
+    """Assign a per-request correlation id; sync routes re-bind it locally.
+
+    FastAPI runs synchronous endpoints in a threadpool, where the ContextVar set
+    here would not propagate, so the id is also stored on ``request.state`` and
+    the instrumented sync routes re-apply it via :func:`correlation_id_var.set`.
+    """
+    cid = uuid.uuid4().hex
+    correlation_id_var.set(cid)
+    request.state.correlation_id = cid
+    try:
+        return await call_next(request)
+    finally:
+        correlation_id_var.set("-")
 
 
 @app.exception_handler(Phase1Error)

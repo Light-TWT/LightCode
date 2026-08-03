@@ -193,6 +193,18 @@ lightcode-local/
 - 先收口 Phase 1 的文件策略、审批绑定、并发租约、受控浏览、SSE、质量门禁和 API-mode E2E，再进入模型编排。
 - 命令风险分类、会话搜索、代码库问答和基本回滚只在模型边界和 Phase 1R 门禁明确后按计划分批引入；不因 Provider 接入放宽 Shell 或网络下载限制。
 
+#### 阶段 2 实现状态（M4–M6，WP5–WP8 已完成）
+
+- **M4 Provider 基础设施（WP5）**：Provider 仅由后端环境变量配置，默认关闭、fail-closed；`ModelProviderConfig` 的 `api_key` 标记 `repr=False` 且唯一序列化为 `safe_summary()`（无 key、无 header、无完整 base URL）；health 上报 `status`（disabled/unconfigured/ready/degraded）与 `status_detail`；origin allowlist、HTTPS 强制、超时与预算上限齐备。
+- **M5 模型只提议（WP6/WP7）**：LangGraph 状态机 + `create_model_task`；受限工具协议（read_file/search_files）、服务端 `build_model_change_set` 独立生成候选 ChangeSet；恶意工具请求 fail-closed；前端 8 类生命周期 UI（创建/计划/受控读取/候选 diff/审批/失败提示/SSE 时间线/连接态）已闭环。
+- **M6 Phase 2 收尾（WP8）**：可观测性、API-mode E2E、敏感数据扫描与预算/并发/故障门禁全部完成，且**零新增第三方依赖**（stdlib `logging` + 进程内指标 + 既有 pytest/vitest）。
+  - 单一可观测性出口 `app/services/observability.py`：JSON 格式器 + `ContextVar` 关联 ID + `redact()` 拒绝名单（secret/location 键与 `sk-`/`Bearer` 形状）+ 进程内 `Metrics` 单例（仅聚合数值，不存 prompt/response）。
+  - 埋点覆盖：任务/关联 ID、状态转换、工具名称/耗时/类别、provider 名称/模型 ID/HTTP 类别/耗时/token 聚合、预算、SQLite busy、SSE 连接/续传。
+  - `main.py` 关联 ID 中间件；`httpx`/`httpcore`/`openai`/`langchain*` 日志器被压到 WARNING，避免 provider base URL 经第三方 INFO 日志泄露。
+  - 失败语义稳定：`MODEL_BUDGET_EXCEEDED`（输入/输出/请求数预算）、`MODEL_CONCURRENCY_EXCEEDED`（进程内 `_ModelTaskGate` 并发 1，是 Phase 1 写租约的 Phase 2 类比，无 schema 变更）、`APPLY_CONFLICT`/`STALE_BASE` 沿用 Phase 1；`InstrumentedConnection` 拦截 `execute/executemany` 的 `locked`/`busy` 并计入 `sqlite.busy` 指标，保留 `PRAGMA busy_timeout` 与上下文协议。
+  - 敏感数据扫描：新增 `test_model_e2e.py` 断言日志与事件载荷中不含 `test-key`/`api.example.test`/`Bearer`/`Authorization`/真实临时路径；`test_observability.py` 断言 `redact()` 与指标无密钥/路径。
+  - **验证证据**：后端全量 `pytest` 190 通过 + 2 skipped（含 WP8 新增 13）；WP8 聚焦（observability + E2E）13/13 通过；无 skip/假成功。前端 WP8 无代码变更，既有 64 测试 + `vue-tsc -b` + `vite build` 仍有效。
+
 ### 阶段 3：桌面端交付
 
 - 添加 Electron shell、FastAPI sidecar 生命周期、原生文件夹选择以及打包的本地数据存储。

@@ -10,9 +10,10 @@ LightCode 是一个独立实现的、本地优先、可视化的编码智能体�
 - 后端：FastAPI、SQLite，以及两套隔离的闭环——
   - **Phase 0.5 Mock Runtime**：确定性种子数据、审批状态迁移、SQLite 持久化事件的 SSE 回放（仅供演示）。
   - **Phase 1 真实安全变更闭环**：服务端静态注册授权工作区、受控只读工具、服务端生成的确定性 ChangeSet、版本绑定审批、单个既有 UTF-8 文本文件的原子替换，以及不启动外部进程的内建完整性验证。安全不变量见 `docs/phase1-safety-contract.md`。
-- 当前验证基线：前端 64 个测试通过（13 文件），后端 117 个测试通过（2 个因 symlink 环境跳过），前端 `vue-tsc -b + vite build` 通过；Phase 1 API 模式 HTTP 全闭环验证（含 browse token 与 SSE 续传）已覆盖。
+  - **Phase 2 模型提议（WP5–WP8，M4–M6，默认关闭）**：受限、默认关闭的 OpenAI-compatible Provider 子系统——模型只"提议"计划、受限只读工具请求与服务端独立生成的候选 ChangeSet，不写文件、不执行命令、不决定审批。覆盖 Provider 基础设施（仅环境变量、fail-closed、零密钥泄露）、LangGraph 编排、API-mode E2E、可观测性、预算/并发/故障门禁与敏感数据扫描；WP8 经用户确认采用**零新增第三方依赖**策略。设计细节见 `docs/phase2-model-provider-design.md`。
+- 当前验证基线：前端 64 个测试通过（13 文件），后端 190 个测试通过（2 个因 symlink 环境跳过，含 WP8 新增 13 例），前端 `vue-tsc -b + vite build` 通过；Phase 1 API 模式 HTTP 全闭环与 Phase 2 API-mode E2E（含 browse token、SSE 续传、敏感数据扫描断言）均已覆盖。
 
-Phase 1 前端与后端均已闭环，并于 **Phase 1R（安全收尾门禁 M1+M2+M3）** 关闭全部 3 个 P0 缺陷：敏感路径逐段 casefold 拒绝、审批绑定前置校验、多进程文件级 CAS 证明；M3 进一步落地不透明浏览令牌（取代自由路径）、SSE 预算/心跳/续传、前端 token 导航与运行时 DTO 校验。下一阶段可择一推进：**Phase 2：真实模型与开发者体验**（把确定性模板 diff 替换为模型生成 diff，复用现有安全层）或先行**易用性改进**（图形化工作区选择需等到 Electron 阶段）。
+Phase 1 前端与后端均已闭环，并于 **Phase 1R（安全收尾门禁 M1+M2+M3）** 关闭全部 3 个 P0 缺陷：敏感路径逐段 casefold 拒绝、审批绑定前置校验、多进程文件级 CAS 证明；M3 进一步落地不透明浏览令牌（取代自由路径）、SSE 预算/心跳/续传、前端 token 导航与运行时 DTO 校验。**Phase 2（WP5–WP8，M4–M6）** 已完成：Provider 基础设施默认关闭且 fail-closed、模型只提议（LangGraph 编排 + 服务端 ChangeSet）、API-mode E2E、可观测性、预算/并发/故障门禁与敏感数据扫描全部落地，后端全量 190 测试通过。下一阶段可择一推进：**Phase 3：桌面端交付**（Electron shell、FastAPI sidecar、原生文件夹选择、打包本地存储）或先行**易用性改进**。
 
 ## 快速入口
 
@@ -26,7 +27,7 @@ Phase 1 前端与后端均已闭环，并于 **Phase 1R（安全收尾门禁 M1+
 
 ```text
 frontend/       Vue 应用、类型、Pinia store 与 Mock/HTTP/SSE 服务适配器
-backend/        FastAPI + SQLite：Phase 0.5 Mock Runtime 与 Phase 1 真实安全变更闭环
+backend/        FastAPI + SQLite：Phase 0.5 Mock Runtime、Phase 1 真实安全变更闭环与 Phase 2 模型提议（默认关闭）
 electron/       阶段 3 桌面 shell 预留
 docs/           架构、设计原型、阶段计划与安全契约
 scripts/        可复现的开发、验证和打包脚本预留
@@ -59,4 +60,15 @@ npm run dev
 
 ## 非目标
 
-在 Phase 2（真实模型）之前，项目不会实现真实模型、Electron、本地文件夹选择、任意 Shell、依赖安装、网络下载、Git 写操作、密钥管理、云同步或多用户协作。Phase 1 已实现的后端真实文件能力仍受 `docs/phase1-safety-contract.md` 严格约束（仅受控只读工具 + 单文件原子替换 + 内建验证）。
+Phase 2 已实现的是**受限、默认关闭、仅提议**的模型 Provider：模型不写文件、不执行命令、不调用网络工具、不管理包、不写 Git、不决定审批。项目仍**不**实现以下能力（详见 `docs/2026-07-30-phase-2-model-and-dx-plan.md` §刻意不做）：
+
+- 前端输入、持久化、同步、回显 API Key；
+- Shell、subprocess、PowerShell、cmd、pytest、npm、pip、包管理、网络工具或下载；
+- Git 写操作；
+- 删除、新建、重命名、移动、二进制或多文件 ChangeSet；
+- 自动批准、自动修复循环或模型直接写文件；
+- Electron、原生文件夹选择、远程工作区、云同步或多用户协作；
+- 模型列表自动探测、自由 Provider URL 或隐式代理；
+- 在 M3 门槛达成前接入任意真实模型依赖、端点或网络调用（M3 已于 Phase 1R 达成）。
+
+Phase 1 已实现的后端真实文件能力与 Phase 2 模型提议闭环，仍分别受 `docs/phase1-safety-contract.md` 与 `docs/phase2-model-provider-design.md` 严格约束（仅受控只读工具 + 单文件原子替换 + 内建验证 + 版本绑定审批）。

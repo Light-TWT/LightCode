@@ -27,6 +27,7 @@ Hardening (docs/2026-07-30-phase-2-model-and-dx-plan.md §WP5):
 from __future__ import annotations
 
 import json
+import time
 from typing import Any, Mapping, Sequence
 
 import httpx
@@ -41,11 +42,15 @@ from app.config.model_provider import ModelProviderConfig
 from app.schemas.errors import (
     MODEL_BUDGET_EXCEEDED,
     MODEL_DISABLED,
+    MODEL_RATE_LIMITED,
+    MODEL_RESPONSE_INVALID,
+    MODEL_TIMEOUT,
     MODEL_UNCONFIGURED,
     MODEL_UPSTREAM_ERROR,
     Phase1Error,
 )
 from app.services.llm_client import build_llm, map_llm_errors
+from app.services.observability import Metrics
 
 _ROLE_TO_MESSAGE: Mapping[str, type[BaseMessage]] = {
     "system": SystemMessage,
@@ -122,12 +127,14 @@ class OpenAICompatibleProvider:
 
     def _check_budgets(self, payload_bytes: int) -> None:
         if payload_bytes > self._config.max_input_bytes:
+            Metrics.budget_exceeded(MODEL_BUDGET_EXCEEDED)
             raise Phase1Error(
                 MODEL_BUDGET_EXCEEDED,
                 "本次请求超出单任务输入字节预算。",
                 http_status=413,
             )
         if self._requests_made >= self._config.max_requests_per_task:
+            Metrics.budget_exceeded(MODEL_BUDGET_EXCEEDED)
             raise Phase1Error(
                 MODEL_BUDGET_EXCEEDED,
                 "本任务的 Provider 请求次数已达上限。",
@@ -143,6 +150,37 @@ class OpenAICompatibleProvider:
 
     # --- Call ---
 
+    @staticmethod
+    def _classify_error(code: str) -> str:
+        """Map a stable ``MODEL_*`` code to a coarse HTTP-category label.
+
+        The label is a code, never the upstream body, headers or key.
+        """
+        return {
+            MODEL_TIMEOUT: "timeout",
+            MODEL_RATE_LIMITED: "rate_limit",
+            MODEL_UPSTREAM_ERROR: "upstream",
+            MODEL_RESPONSE_INVALID: "invalid",
+            MODEL_BUDGET_EXCEEDED: "budget",
+            MODEL_DISABLED: "disabled",
+            MODEL_UNCONFIGURED: "unconfigured",
+        }.get(code, "error")
+
+    @staticmethod
+    def _extract_tokens(ai_message: Any) -> tuple[int, int]:
+        """Safely pull token counts from the LangChain response metadata.
+
+        Only integer counts escape — never the prompt text, the response body,
+        the API key or the provider request headers.
+        """
+        try:
+            usage = (ai_message.response_metadata or {}).get("token_usage", {}) or {}
+            prompt = int(usage.get("prompt_tokens", 0) or 0)
+            completion = int(usage.get("completion_tokens", 0) or 0)
+            return prompt, completion
+        except (AttributeError, TypeError, ValueError):
+            return 0, 0
+
     def chat(
         self,
         messages: Sequence[Mapping[str, Any]],
@@ -152,29 +190,65 @@ class OpenAICompatibleProvider:
         """Send one chat completion and return the assistant text.
 
         Raises :class:`Phase1Error` with a stable code for every failure mode.
+        Records provider latency, HTTP category and token aggregation to
+        :class:`Metrics`; no prompt, response, key or header is ever measured
+        beyond opaque counts.
         """
-        self._require_ready()
+        provider = self._config.provider
+        model = self._config.model_id
+        t0 = time.monotonic()
+        try:
+            self._require_ready()
 
-        body = {
-            "model": self._config.model_id,
-            "messages": list(messages),
-            "max_tokens": max_output_tokens or self._config.max_output_tokens,
-            "stream": False,
-        }
-        encoded = json.dumps(body, ensure_ascii=False, separators=(",", ":")).encode(
-            "utf-8"
-        )
-        self._check_budgets(len(encoded))
+            body = {
+                "model": self._config.model_id,
+                "messages": list(messages),
+                "max_tokens": max_output_tokens or self._config.max_output_tokens,
+                "stream": False,
+            }
+            encoded = json.dumps(body, ensure_ascii=False, separators=(",", ":")).encode(
+                "utf-8"
+            )
+            self._check_budgets(len(encoded))
 
-        self._requests_made += 1
-        with map_llm_errors():
-            ai_message = self._llm_client().invoke(_to_langchain_messages(messages))
+            self._requests_made += 1
+            with map_llm_errors():
+                ai_message = self._llm_client().invoke(_to_langchain_messages(messages))
+        except Phase1Error as exc:
+            latency = (time.monotonic() - t0) * 1000
+            Metrics.provider_call(
+                provider=provider,
+                model=model,
+                http_category=self._classify_error(exc.code),
+                ms=latency,
+                prompt_tokens=0,
+                completion_tokens=0,
+            )
+            raise
 
+        latency = (time.monotonic() - t0) * 1000
+        prompt_tokens, completion_tokens = self._extract_tokens(ai_message)
         content = ai_message.content if isinstance(ai_message.content, str) else ""
         if not content:
+            Metrics.provider_call(
+                provider=provider,
+                model=model,
+                http_category="upstream",
+                ms=latency,
+                prompt_tokens=prompt_tokens,
+                completion_tokens=completion_tokens,
+            )
             raise Phase1Error(
                 MODEL_UPSTREAM_ERROR,
                 "Provider 响应缺少 assistant 文本。",
                 http_status=502,
             )
+        Metrics.provider_call(
+            provider=provider,
+            model=model,
+            http_category="success",
+            ms=latency,
+            prompt_tokens=prompt_tokens,
+            completion_tokens=completion_tokens,
+        )
         return content
