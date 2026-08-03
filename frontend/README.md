@@ -68,8 +68,17 @@ npm run typecheck
 npm run build
 ```
 
-当前基线为 64 个前端测试通过（13 文件），`vue-tsc -b && vite build` 通过。修改服务合约、store 或视图后，应先运行对应聚焦测试，再运行完整测试和构建。
+当前基线为 87 个前端测试通过（17 文件），`vue-tsc -b && vite build` 通过。修改服务合约、store 或视图后，应先运行对应聚焦测试，再运行完整测试和构建。
 
 ## Phase 1 前端边界（已完成 T8）
 
 Phase 1 已扩展任务状态、ChangeSet 审查与安全错误展示，并新增真实工作区闭环（`RegisteredWorkspaceService`、`RealTaskService`）。浏览与读取改为不透明令牌导航（面包屑 token 栈，后端用 `browse_tokens` 签发/校验，前端不再持有自由路径），并新增运行时 DTO 校验（`contracts/real-task.schema.ts`：拒绝含 `rootPath` 的 workspace、未知 task state、畸形事件）。仍必须保留 `TaskService`、`WorkspaceService`、`RegisteredWorkspaceService`、`RealTaskService` 与 SSE 适配器边界：View 和 Pinia store 不直接调用 `fetch`、`EventSource`，不接收真实根路径、补丁正文或命令。详细规则见 `../docs/phase1-safety-contract.md`。
+
+## Phase 2 前端（模型任务 UI，WP6–WP7，2026-08-03）
+
+Phase 2 在既有真实工作区视图之上叠加模型任务体验，模型 Provider 默认关闭、仅「提议」：
+
+- `RealWorkspaceView` 新增「创建模型任务」面板（仅提交 `workspaceId`+`title`，经 `parseModelTask` 校验，拒绝含 `rootPath` 的畸形 DTO）；`RealTaskView` 以 `kind='model'` 徽标区分，并渲染模型生命周期时间线与 SSE 连接态。
+- `stores/real.store.ts` 增加 `eventConnection` 状态机（connecting/open/reconnecting/closed）与 SSE `sequence` 缺口全量同步（`_resync`），模型生命周期从事件派生（最远到达阶段为 current，失败标记 failed）。
+- 失败提示可行动且无敏感泄露：精确正则拒绝 `sk-` + 20 位密钥；Provider 处于 degraded 时新建门禁保留历史/查看/审批。
+- 设计约束与失败语义见 `../docs/phase2-model-provider-design.md` 与 `AGENTS.md` 状态追踪。

@@ -177,7 +177,7 @@ lightcode-local/
 ### 阶段 1：安全变更 MVP（后端 + 前端 T8 已实现）
 
 - 绑定由服务端启动静态配置注册的授权工作区；浏览器只能提交 `workspaceId`，不能提交本地路径。
-- **实现状态**：后端闭环已完成 —— 静态注册、`WorkspaceGuard`、受控只读工具、确定性 ChangeSet、版本绑定审批、单文件原子替换与内建验证均已落地并通过测试；前端 T8 也已闭环，8 个 Phase 1 端点（注册工作区浏览/文件预览/搜索、真实任务创建/审批/SSE）已接入 Vue 视图并通过 64 个前端测试。浏览与读取采用不透明 browse token（HMAC 签名、绑定 workspace+operation+relative_path），浏览器不再提交自由路径；Phase 1R 又补齐 SSE 预算/心跳/续传、前端 token 导航与运行时 DTO 校验。
+- **实现状态**：后端闭环已完成 —— 静态注册、`WorkspaceGuard`、受控只读工具、确定性 ChangeSet、版本绑定审批、单文件原子替换与内建验证均已落地并通过测试；前端 T8 也已闭环，8 个 Phase 1 端点（注册工作区浏览/文件预览/搜索、真实任务创建/审批/SSE）已接入 Vue 视图并通过前端测试（当前含 Phase 2 前端共 87 个，见 `AGENTS.md` 状态追踪）。浏览与读取采用不透明 browse token（HMAC 签名、绑定 workspace+operation+relative_path），浏览器不再提交自由路径；Phase 1R 又补齐 SSE 预算/心跳/续传、前端 token 导航与运行时 DTO 校验。
 - 添加工作区守卫和只读工具，拒绝路径遍历、符号链接逃逸、秘密文件和工作区外访问。
 - 实现持久化状态机、差异审查、版本绑定审批、单个既有 UTF-8 文本文件的受控原子写入和会话持久化。
 - Phase 1 仅执行内建完整性验证，不启动 Shell、外部测试命令或命令白名单中的进程；真实命令策略与 `awaiting_command_approval` 留给后续允许受控进程执行的阶段。
@@ -203,7 +203,7 @@ lightcode-local/
   - `main.py` 关联 ID 中间件；`httpx`/`httpcore`/`openai`/`langchain*` 日志器被压到 WARNING，避免 provider base URL 经第三方 INFO 日志泄露。
   - 失败语义稳定：`MODEL_BUDGET_EXCEEDED`（输入/输出/请求数预算）、`MODEL_CONCURRENCY_EXCEEDED`（进程内 `_ModelTaskGate` 并发 1，是 Phase 1 写租约的 Phase 2 类比，无 schema 变更）、`APPLY_CONFLICT`/`STALE_BASE` 沿用 Phase 1；`InstrumentedConnection` 拦截 `execute/executemany` 的 `locked`/`busy` 并计入 `sqlite.busy` 指标，保留 `PRAGMA busy_timeout` 与上下文协议。
   - 敏感数据扫描：新增 `test_model_e2e.py` 断言日志与事件载荷中不含 `test-key`/`api.example.test`/`Bearer`/`Authorization`/真实临时路径；`test_observability.py` 断言 `redact()` 与指标无密钥/路径。
-  - **验证证据**：后端全量 `pytest` 190 通过 + 2 skipped（含 WP8 新增 13）；WP8 聚焦（observability + E2E）13/13 通过；无 skip/假成功。前端 WP8 无代码变更，既有 64 测试 + `vue-tsc -b` + `vite build` 仍有效。
+  - **验证证据**：后端全量 `pytest` 190 通过 + 2 skipped（含 WP8 新增 13）；WP8 聚焦（observability + E2E）13/13 通过；无 skip/假成功。前端 WP8 无代码变更，既有 87 测试 + `vue-tsc -b` + `vite build` 仍有效。
 
 ### 阶段 3：桌面端交付
 

@@ -36,7 +36,7 @@ LightCode 是一个独立实现的、本地优先的可视化编码智能体，�
 
 ```text
 frontend/       Vue 应用和 Mock/HTTP/SSE 服务适配器
-backend/        阶段 0.5 的 FastAPI 和 SQLite Mock Runtime
+backend/        FastAPI + SQLite：Phase 0.5 Mock Runtime、Phase 1 安全变更闭环、Phase 2 模型提议（默认关闭）
 electron/       为后续桌面 shell 保留
 docs/architecture/ 产品架构与决策
 docs/design/       已批准的 HTML 视觉原型与 UI 备注
