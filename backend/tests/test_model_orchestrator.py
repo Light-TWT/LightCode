@@ -520,3 +520,94 @@ def test_api_model_task_rejects_client_root_path(api_client) -> None:
         json={"workspaceId": "ws-demo", "title": "evil", "rootPath": "/etc"},
     )
     assert resp.status_code == 422
+
+
+# --- H-01: sensitive-text containment --------------------------------------
+
+
+def test_unknown_exception_does_not_leak_sensitive_text(env) -> None:
+    """H-01: an unexpected runtime exception must never surface its raw message
+    in the API response, the tasks row, or the SSE payload."""
+    from types import SimpleNamespace
+
+    leak = (
+        "Authorization: Bearer secret-value; "
+        "key=sk-abcdefghijklmnopqrstuvwxyz; "
+        "root=C:\\private\\project"
+    )
+
+    def boom(_state):
+        raise RuntimeError(leak)
+
+    orch = ModelOrchestrator(
+        env["db"], env["registry"], env["guard"], env["config"],
+        transport=_read_then_candidate_handler(),
+    )
+    orch._graph = SimpleNamespace(invoke=boom)
+
+    resp = orch.create_model_task(env["workspace_id"], "boom")
+    assert resp.state == "failed"
+
+    row = env["db"].execute(
+        "SELECT verification_detail, model_output FROM tasks WHERE id = ?", (resp.id,)
+    ).fetchone()
+    events = env["db"].execute(
+        "SELECT payload_json FROM task_events WHERE task_id = ?", (resp.id,)
+    ).fetchall()
+    serialized = "\n".join(
+        [resp.detail, row["verification_detail"], row["model_output"]]
+        + [e["payload_json"] for e in events]
+    )
+    # The stable machine code must survive; the raw exception text must not.
+    assert "MODEL_RESPONSE_INVALID" in serialized
+    assert "secret-value" not in serialized
+    assert "sk-abcdefghijklmnopqrstuvwxyz" not in serialized
+    assert "C:\\private\\project" not in serialized
+    assert "Authorization" not in serialized
+    assert "Bearer" not in serialized
+
+
+def test_model_context_does_not_contain_logical_path(env) -> None:
+    """H-01 (path minimisation): the system prompt and tool results sent to the
+    provider must not contain the workspace's logical relative path."""
+    seen: list[list[dict]] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        body = json.loads(request.content)
+        messages = body["messages"]
+        seen.append(messages)
+        token = _token_from_messages(messages)
+        if len(seen) == 1:
+            content = json.dumps(
+                {"kind": "tool_request", "tool": "read_file", "arguments": {"fileToken": token}}
+            )
+        else:
+            base = _base_sha_from_messages(messages)
+            content = json.dumps(
+                {
+                    "kind": "candidate_edit_intent",
+                    "fileToken": token,
+                    "baseSha256": base,
+                    "edits": [
+                        {"expectedText": "first line", "replacementText": "no-path edit"}
+                    ],
+                    "rationale": "x",
+                    "plan": ["y"],
+                }
+            )
+        return _chat_completion(content)
+
+    orch = ModelOrchestrator(
+        env["db"], env["registry"], env["guard"], env["config"],
+        transport=httpx.MockTransport(handler),
+    )
+    resp = orch.create_model_task(env["workspace_id"], "no path")
+    assert resp.state == "awaiting_approval"
+
+    for messages in seen:
+        serialized = json.dumps(messages, ensure_ascii=False)
+        assert "notes.txt" not in serialized
+        assert "relativePath" not in serialized
+        # The server-issued token, hash and content must still reach the model.
+        assert "fileToken" in serialized
+        assert "baseSha256" in serialized

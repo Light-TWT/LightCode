@@ -60,6 +60,13 @@ from app.workspaces.registry import WorkspaceRegistry
 log = get_logger("lightcode.orchestrator")
 
 
+#: Fixed message for the unexpected-exception safety net. The raw exception
+#: text must NEVER be interpolated here: it can carry provider URLs, auth
+#: headers, secrets, absolute paths or upstream response bodies, and this
+#: message is persisted to SQLite, emitted over SSE and returned via the API.
+_INTERNAL_ORCHESTRATION_FAILURE = "模型编排发生内部错误，已安全终止。"
+
+
 class _ModelTaskGate:
     """In-process logical write-lease for model tasks.
 
@@ -139,12 +146,12 @@ class _OrchState(TypedDict, total=False):
     provider: Any
 
 
-def _build_system_prompt(read_token: str, target_file: str, policy_version: str) -> str:
+def _build_system_prompt(read_token: str, policy_version: str) -> str:
     """Server-authoritative protocol prompt.
 
-    It embeds only the logical file name and the server-issued read token — never
-    the real root path, never a free-form path. The model can only echo the
-    token it was given, so it cannot name or forge a file to read.
+    It embeds only the server-issued read token — never the real root path,
+    never a logical relative path, never a free-form path. The model can only
+    echo the token it was given, so it cannot name or forge a file to read.
     """
     return f"""你是 LightCode 的本地编码智能体（模型侧）。你只能"提议"修改，由服务端校验并生成不可变变更集，最终由用户审批。
 
@@ -156,8 +163,7 @@ def _build_system_prompt(read_token: str, target_file: str, policy_version: str)
 # 唯一可请求的只读工具
 - read_file：参数仅允许 {{"fileToken": "<token>"}}，token 必须是下方给出的那个。
 
-# 你的目标文件（逻辑名，服务端权威）
-- 逻辑文件名：{target_file}
+# 你的目标文件
 - 读取它的 token：{read_token}
 
 # 输出协议（必须严格遵守：每次只输出一个 JSON 对象，不要多余解释）
@@ -320,7 +326,6 @@ class ModelOrchestrator:
         tool_result = (
             f"[tool_result read_file]\n"
             f"fileToken: {token}\n"
-            f"relativePath: {relative}\n"
             f"baseSha256: {base_sha}\n"
             f"content:\n{content}\n"
         )
@@ -500,7 +505,7 @@ class ModelOrchestrator:
         # failed task can never permanently hold the concurrency lease.
         try:
             provider = OpenAICompatibleProvider(self._config, transport=self._transport)
-            system_prompt = _build_system_prompt(read_token, target, policy_version)
+            system_prompt = _build_system_prompt(read_token, policy_version)
             initial_messages = [
                 {"role": "system", "content": system_prompt},
                 {"role": "user", "content": f"请处理任务：{title}"},
@@ -525,11 +530,11 @@ class ModelOrchestrator:
                 final = self._graph.invoke(state)
             except Phase1Error as exc:
                 final = {"outcome": "failed", "error_code": exc.code, "error_message": exc.message}
-            except Exception as exc:  # noqa: BLE001 - safety net for any runtime error
+            except Exception:  # noqa: BLE001 - safety net for any runtime error
                 final = {
                     "outcome": "failed",
                     "error_code": MODEL_RESPONSE_INVALID,
-                    "error_message": f"编排运行异常：{exc}",
+                    "error_message": _INTERNAL_ORCHESTRATION_FAILURE,
                 }
         finally:
             _gate.release()
