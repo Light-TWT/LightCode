@@ -194,6 +194,42 @@ def test_per_task_request_budget_is_enforced() -> None:
     assert exc.value.code == MODEL_BUDGET_EXCEEDED
 
 
+def test_reported_completion_tokens_over_budget_fails_closed() -> None:
+    """M-05: a non-compliant provider that ignores max_tokens and reports a
+    larger completion_tokens count must be rejected locally."""
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(
+            200,
+            json={
+                "choices": [{"message": {"role": "assistant", "content": "one two three four"}}],
+                "usage": {"prompt_tokens": 1, "completion_tokens": 4},
+            },
+        )
+
+    provider = _provider(handler, LIGHTCODE_MODEL_MAX_OUTPUT_TOKENS="1")
+    with pytest.raises(Phase1Error) as exc:
+        provider.chat(MESSAGES)
+    assert exc.value.code == MODEL_BUDGET_EXCEEDED
+
+
+def test_missing_usage_falls_back_to_conservative_byte_budget() -> None:
+    """M-05: when usage is absent, an oversized response must be rejected by a
+    conservative local byte limit instead of being treated as zero cost."""
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        # No `usage` at all; content exceeds max_output_tokens * 4 UTF-8 bytes.
+        return httpx.Response(
+            200,
+            json={"choices": [{"message": {"role": "assistant", "content": "xxxxx"}}]},
+        )
+
+    provider = _provider(handler, LIGHTCODE_MODEL_MAX_OUTPUT_TOKENS="1")
+    with pytest.raises(Phase1Error) as exc:
+        provider.chat(MESSAGES)
+    assert exc.value.code == MODEL_BUDGET_EXCEEDED
+
+
 # --- Secret containment ----------------------------------------------------
 
 

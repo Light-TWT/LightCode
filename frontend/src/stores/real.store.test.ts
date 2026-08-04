@@ -55,20 +55,28 @@ describe('real store createModelTask', () => {
 
 describe('real store 模型任务 SSE（WP7）', () => {
   let capturedOnEvent: ((event: TaskEvent) => void) | null = null
+  let capturedOptions: { afterSequence?: number; tail?: boolean; onEnd?: () => void } | null = null
   let getRealTaskCalls: number
 
   beforeEach(() => {
     setActivePinia(createPinia())
     vi.resetModules()
     capturedOnEvent = null
+    capturedOptions = null
     getRealTaskCalls = 0
 
     // API 模式下才连接 SSE
     vi.doMock('@/config/runtime', () => ({ isApiMode: true }))
     // 捕获订阅回调，便于在测试中手动注入事件帧
     vi.doMock('@/services/event.service', () => ({
-      subscribeRealTaskEvents: (_id: string, onEvent: (e: TaskEvent) => void) => {
+      subscribeRealTaskEvents: (
+        _id: string,
+        onEvent: (e: TaskEvent) => void,
+        _onError: (e: Event) => void,
+        options?: { afterSequence?: number; tail?: boolean; onEnd?: () => void },
+      ) => {
         capturedOnEvent = onEvent
+        capturedOptions = options ?? null
         return () => {}
       },
       subscribeTaskEvents: () => () => {},
@@ -118,6 +126,21 @@ describe('real store 模型任务 SSE（WP7）', () => {
     await flushPromises()
 
     expect(getRealTaskCalls).toBeGreaterThan(before)
+  })
+
+  it('订阅真实任务时启用 tail=true，stream.end 后将连接置为 closed', async () => {
+    const { useRealStore } = await import('@/stores/real.store')
+    const store = useRealStore()
+    await store.loadTask(modelTaskFixture.id)
+    await flushPromises()
+
+    // M-01: 真实任务必须持续订阅（tail=true），否则后端回放完就断开
+    expect(capturedOptions).toMatchObject({ afterSequence: 0, tail: true })
+    expect(typeof capturedOptions?.onEnd).toBe('function')
+
+    // 服务端正常结束（tail 超时或 stream.end）后连接状态必须是 closed 而非 open
+    capturedOptions!.onEnd!()
+    expect(store.eventConnection).toBe('closed')
   })
 
   it('modelLifecycle getter 从事件派生有序阶段（模型任务）', async () => {

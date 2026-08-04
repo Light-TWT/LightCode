@@ -101,7 +101,9 @@ def test_health_advertises_read_only_capabilities(tmp_path) -> None:
         capabilities = client.get("/api/v1/provider/health").json()["capabilities"]
     assert capabilities["canWriteFiles"] is False
     assert capabilities["canRunCommands"] is False
-    assert set(capabilities["tools"]) == {"read_file", "search_files"}
+    # M-04: the advertised tool list must match what the orchestrator actually
+    # wires (only `read_file`); `search_files` is not implemented for models.
+    assert capabilities["tools"] == ["read_file"]
 
 
 def test_health_advertises_budgets(tmp_path) -> None:

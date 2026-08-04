@@ -30,9 +30,11 @@ ProviderStatus = Literal["disabled", "unconfigured", "ready", "degraded"]
 #: Only OpenAI-compatible chat completions are supported in Phase 2's first cut.
 SUPPORTED_PROVIDERS = frozenset({"openai-compatible"})
 
-#: Read-only tools the model is permitted to request. Declared here so the
-#: health endpoint can advertise the boundary before WP6 wires the orchestrator.
-MODEL_ALLOWED_TOOLS = ("read_file", "search_files")
+#: Read-only tools the model is permitted to request. Kept in lockstep with
+#: what the orchestrator actually wires (`_ORCHESTRATOR_TOOLS`): only
+#: `read_file` is implemented for models; `search_files` stays reserved for a
+#: later cut and must not be advertised as available.
+MODEL_ALLOWED_TOOLS = ("read_file",)
 
 _TRUE_VALUES = frozenset({"true", "1", "yes", "on"})
 

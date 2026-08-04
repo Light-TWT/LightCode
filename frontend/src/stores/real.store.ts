@@ -309,7 +309,19 @@ export const useRealStore = defineStore('real', {
         () => {
           this.eventConnection = 'reconnecting'
         },
-        { afterSequence: this.lastSequence },
+        {
+          afterSequence: this.lastSequence,
+          // 真实任务必须持续订阅（tail=true）：后端回放完既有事件后继续轮询，
+          // 否则连接会立即以 stream.end 结束，实时状态停留在旧快照。
+          tail: true,
+          // 服务端正常结束（含 tail 超时）→ 连接关闭；仅当订阅仍属于当前任务时
+          // 更新状态，避免被新订阅/cleanup 覆盖。
+          onEnd: () => {
+            if (this.task?.id === taskId) {
+              this.eventConnection = 'closed'
+            }
+          },
+        },
       )
     },
 

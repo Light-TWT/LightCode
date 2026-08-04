@@ -14,9 +14,17 @@ const searchInput = ref('')
 const taskTitle = ref('')
 const modelTaskTitle = ref('')
 
-/** Provider 健康状态（WP7）：degraded 时禁用新建模型任务，但保留历史/查看/审批。 */
+/** Provider 健康状态（M-02）：仅 ready 时允许新建模型任务，其他状态与状态未知
+ *  一律 fail-closed 禁用，但保留历史/查看/审批。 */
 const providerStatus = ref<ProviderStatus | null>(null)
-const providerDegraded = computed(() => providerStatus.value === 'degraded')
+const providerReady = computed(() => providerStatus.value === 'ready')
+const providerStatusMessage = computed(() => {
+  if (providerStatus.value === 'disabled') return '模型能力未启用，不能创建模型任务。'
+  if (providerStatus.value === 'unconfigured') return '模型 Provider 尚未完成后端配置，不能创建模型任务。'
+  if (providerStatus.value === 'degraded') return 'Provider 配置未满足安全要求，不能创建模型任务。'
+  if (providerStatus.value === null) return '无法确认 Provider 状态，已安全禁用创建模型任务。'
+  return ''
+})
 
 onMounted(async () => {
   await store.openWorkspace(workspaceId.value)
@@ -185,8 +193,8 @@ async function createModelTask() {
             启动前请知悉：被工作区守卫（Guard）允许的<strong>目标文件代码片段将发送至已配置的 Provider</strong>进行处理；
             模型只提议精确文本替换，服务端校验后生成不可变变更集，最终由你审批才写入。UI 仅展示安全摘要，绝不暴露密钥或完整 URL。
           </p>
-          <p v-if="providerDegraded" class="degraded-note" data-testid="model-degraded-note">
-            Provider 已降级（degraded）：已禁用新建模型任务，但历史任务、查看与已有变更集审批仍可用。
+          <p v-if="!providerReady" class="degraded-note" data-testid="model-provider-note">
+            {{ providerStatusMessage }} 已禁用新建模型任务，但历史任务、查看与已有变更集审批仍可用。
           </p>
           <form class="task-form" @submit.prevent="createModelTask">
             <input
@@ -200,7 +208,7 @@ async function createModelTask() {
               class="primary-btn model-btn"
               type="submit"
               data-testid="create-model-task-btn"
-              :disabled="store.submitting || !modelTaskTitle.trim() || providerDegraded"
+              :disabled="store.submitting || !modelTaskTitle.trim() || !providerReady"
             >{{ store.submitting ? '运行中…' : '创建模型任务' }}</button>
           </form>
         </section>

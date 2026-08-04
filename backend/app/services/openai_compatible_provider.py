@@ -181,6 +181,33 @@ class OpenAICompatibleProvider:
         except (AttributeError, TypeError, ValueError):
             return 0, 0
 
+    def _check_output_budget(
+        self, content: str, completion_tokens: int, max_output_tokens: int
+    ) -> None:
+        """Enforce the output budget locally, after the provider has replied.
+
+        ``max_tokens`` in the request body is a hint, not a guarantee: a
+        non-compliant provider can ignore it. If the reported
+        ``completion_tokens`` exceeds the budget we fail closed. When usage is
+        missing or unparseable (``completion_tokens == 0``) we fall back to a
+        conservative UTF-8 byte limit (≤ 4 bytes per token) so an oversized
+        body cannot be treated as zero cost.
+        """
+        if completion_tokens > 0 and completion_tokens > max_output_tokens:
+            Metrics.budget_exceeded(MODEL_BUDGET_EXCEEDED)
+            raise Phase1Error(
+                MODEL_BUDGET_EXCEEDED,
+                "Provider 响应超出单任务输出预算。",
+                http_status=502,
+            )
+        if completion_tokens == 0 and len(content.encode("utf-8")) > max_output_tokens * 4:
+            Metrics.budget_exceeded(MODEL_BUDGET_EXCEEDED)
+            raise Phase1Error(
+                MODEL_BUDGET_EXCEEDED,
+                "Provider 响应超出单任务输出预算。",
+                http_status=502,
+            )
+
     def chat(
         self,
         messages: Sequence[Mapping[str, Any]],
@@ -197,13 +224,14 @@ class OpenAICompatibleProvider:
         provider = self._config.provider
         model = self._config.model_id
         t0 = time.monotonic()
+        effective_max_output_tokens = max_output_tokens or self._config.max_output_tokens
         try:
             self._require_ready()
 
             body = {
                 "model": self._config.model_id,
                 "messages": list(messages),
-                "max_tokens": max_output_tokens or self._config.max_output_tokens,
+                "max_tokens": effective_max_output_tokens,
                 "stream": False,
             }
             encoded = json.dumps(body, ensure_ascii=False, separators=(",", ":")).encode(
@@ -214,6 +242,19 @@ class OpenAICompatibleProvider:
             self._requests_made += 1
             with map_llm_errors():
                 ai_message = self._llm_client().invoke(_to_langchain_messages(messages))
+            prompt_tokens, completion_tokens = self._extract_tokens(ai_message)
+            content = ai_message.content if isinstance(ai_message.content, str) else ""
+            if not content:
+                raise Phase1Error(
+                    MODEL_UPSTREAM_ERROR,
+                    "Provider 响应缺少 assistant 文本。",
+                    http_status=502,
+                )
+            # Local output-budget enforcement after the provider has replied
+            # (fail-closed; the Phase1Error below is recorded via this branch).
+            self._check_output_budget(
+                content, completion_tokens, effective_max_output_tokens
+            )
         except Phase1Error as exc:
             latency = (time.monotonic() - t0) * 1000
             Metrics.provider_call(
@@ -227,22 +268,6 @@ class OpenAICompatibleProvider:
             raise
 
         latency = (time.monotonic() - t0) * 1000
-        prompt_tokens, completion_tokens = self._extract_tokens(ai_message)
-        content = ai_message.content if isinstance(ai_message.content, str) else ""
-        if not content:
-            Metrics.provider_call(
-                provider=provider,
-                model=model,
-                http_category="upstream",
-                ms=latency,
-                prompt_tokens=prompt_tokens,
-                completion_tokens=completion_tokens,
-            )
-            raise Phase1Error(
-                MODEL_UPSTREAM_ERROR,
-                "Provider 响应缺少 assistant 文本。",
-                http_status=502,
-            )
         Metrics.provider_call(
             provider=provider,
             model=model,

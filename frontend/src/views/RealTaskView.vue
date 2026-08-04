@@ -12,10 +12,17 @@ const store = useRealStore()
 const workspaceId = computed(() => route.params.id as string)
 const taskId = computed(() => route.params.taskId as string)
 
-onMounted(() => {
+onMounted(async () => {
   if (store.task?.id !== taskId.value) {
-    store.loadTask(taskId.value)
+    await store.loadTask(taskId.value)
   }
+  // M-06：校验 URL 中的工作区与任务实际归属一致；不一致时清理本地状态
+  // （含旧 SSE），并跳转到真实归属路由，避免在错误工作区上下文下展示任务。
+  const loadedTask = store.task
+  if (!loadedTask || loadedTask.workspaceId === workspaceId.value) return
+  const destination = `/real/${loadedTask.workspaceId}/task/${loadedTask.id}`
+  store.resetTask()
+  await router.replace(destination)
 })
 onUnmounted(() => store.cleanup())
 
@@ -47,13 +54,29 @@ const connectionLabels: Record<EventConnection, string> = {
   closed: '已关闭',
 }
 
-/** 模型任务失败时的可行动、无敏感信息提示（取自 SSE 的 task.failed 事件） */
+/** 稳定错误码 → 固定中文提示（M-03）。UI 绝不渲染服务端自由 message，
+ *  只展示错误码与映射后的固定、可行动文案，防止敏感内容（密钥/路径/原文）进入界面。 */
+const modelFailureMessages: Record<string, string> = {
+  MODEL_DISABLED: '模型能力未启用。',
+  MODEL_UNCONFIGURED: '后端未完成模型 Provider 配置。',
+  MODEL_TIMEOUT: '模型 Provider 响应超时。',
+  MODEL_RATE_LIMITED: '模型 Provider 当前限流。',
+  MODEL_UPSTREAM_ERROR: '模型 Provider 服务暂不可用。',
+  MODEL_RESPONSE_INVALID: '模型输出或编排结果无效，任务已安全终止。',
+  MODEL_BUDGET_EXCEEDED: '模型任务超出已配置资源预算。',
+  MODEL_CONCURRENCY_EXCEEDED: '模型任务并发上限已满。',
+  MODEL_EDIT_INVALID: '模型请求不符合受限编辑协议。',
+  STALE_BASE: '目标文件已发生外部变更，候选变更已失效。',
+}
+
+/** 模型任务失败时的可行动、无敏感信息提示（取自 SSE 的 task.failed 事件 code） */
 const modelFailed = computed(() => {
   const ev = store.events.find((e) => e.eventType === 'task.failed')
   if (!ev) return null
+  const code = String(ev.payload.code ?? '')
   return {
-    code: String(ev.payload.code ?? ''),
-    message: String(ev.payload.message ?? ''),
+    code: code || 'MODEL_RESPONSE_INVALID',
+    message: modelFailureMessages[code] ?? '模型任务失败，未展示服务端错误详情。',
   }
 })
 

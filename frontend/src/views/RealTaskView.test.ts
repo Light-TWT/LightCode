@@ -17,32 +17,6 @@ function createTestRouter(): Router {
   })
 }
 
-function providerHealthMock(status: 'ready' | 'degraded') {
-  return {
-    status,
-    provider: 'openai-compatible',
-    modelId: 'x',
-    detail: status,
-    capabilities: {
-      tools: ['read_file'],
-      canWriteFiles: false,
-      canRunCommands: false,
-      maxToolRounds: 8,
-      maxRequestsPerTask: 10,
-      maxInputBytes: 262144,
-      maxOutputTokens: 2048,
-      maxConcurrentTasks: 1,
-    },
-    security: {
-      apiKeyConfigured: true,
-      transport: 'https',
-      originAllowlisted: true,
-      followRedirects: false,
-      trustEnvProxies: false,
-    },
-  }
-}
-
 describe('RealTaskView 模型任务（WP7）', () => {
   beforeEach(() => {
     setActivePinia(createPinia())
@@ -93,11 +67,42 @@ describe('RealTaskView 模型任务（WP7）', () => {
     ]
     await flushPromises()
 
+    // M-03: 只展示稳定错误码 + 固定中文文案，不渲染服务端自由 message
     expect(wrapper.get('[data-testid="model-fail-detail"]').text()).toContain('MODEL_DISABLED')
-    expect(wrapper.get('[data-testid="model-fail-detail"]').text()).toContain('provider 未启用')
+    expect(wrapper.get('[data-testid="model-fail-detail"]').text()).toContain('模型能力未启用。')
+    expect(wrapper.get('[data-testid="model-fail-detail"]').text()).not.toContain('provider 未启用')
     // 提示不得泄露真实 API Key（OpenAI 风格 sk- + 20 位以上字母数字）；
     // 注意夹具 id "model-task-mock1" 含 "sk-" 子串，故用精确正则而非朴素子串匹配
     expect(wrapper.text()).not.toMatch(/sk-[A-Za-z0-9]{20,}/)
+  })
+
+  it('never renders a sensitive server message inside the failure detail', async () => {
+    const { wrapper } = await mountModelTask()
+    const store = useRealStore()
+    store.task = { ...structuredClone(modelTaskFixture), state: 'failed' }
+    store.events = [
+      ...structuredClone(modelTaskEventsFixture).slice(0, 3),
+      {
+        sequence: 4,
+        eventType: 'task.failed',
+        payload: {
+          code: 'MODEL_RESPONSE_INVALID',
+          message:
+            'Authorization: Bearer secret-value; sk-abcdefghijklmnopqrstuvwxyz; C:\\private\\project',
+        },
+        createdAt: '2026-07-31T00:00:00+00:00',
+      },
+    ]
+    await flushPromises()
+
+    const detail = wrapper.get('[data-testid="model-fail-detail"]').text()
+    expect(detail).toContain('MODEL_RESPONSE_INVALID')
+    expect(detail).toContain('模型输出或编排结果无效')
+    expect(detail).not.toContain('secret-value')
+    expect(detail).not.toContain('sk-abcdefghijklmnopqrstuvwxyz')
+    expect(detail).not.toContain('C:\\private\\project')
+    expect(detail).not.toContain('Authorization')
+    expect(detail).not.toContain('Bearer')
   })
 
   it('hides SSE connection badge in mock mode (API-mode gate)', async () => {
@@ -107,47 +112,39 @@ describe('RealTaskView 模型任务（WP7）', () => {
   })
 })
 
-describe('RealWorkspaceView 模型任务 degraded 门禁（WP7）', () => {
+describe('RealTaskView 路由工作区归属（M-06）', () => {
   beforeEach(() => {
     setActivePinia(createPinia())
     vi.resetModules()
   })
 
-  async function mountWorkspaceWithProvider(status: 'ready' | 'degraded') {
-    vi.doMock('@/services/provider.service', () => ({
-      providerService: { getHealth: vi.fn(async () => providerHealthMock(status)) },
+  it('URL 工作区与任务归属不一致时清理状态并跳转到真实归属路由', async () => {
+    vi.doMock('@/services/real-task.service', () => ({
+      realTaskService: {
+        getRealTask: vi.fn(async () => ({
+          ...structuredClone(modelTaskFixture),
+          workspaceId: 'workspace-a',
+        })),
+        createRealTask: vi.fn(),
+        submitApproval: vi.fn(),
+      },
     }))
-    const { default: RealWorkspaceView } = await import('./RealWorkspaceView.vue')
+    vi.doMock('@/config/runtime', () => ({ isApiMode: false }))
+    const { default: RealTaskView } = await import('./RealTaskView.vue')
     const router = createTestRouter()
-    await router.push('/real/demo-real-workspace')
+    // 故意用错误的 workspace-b 访问属于 workspace-a 的任务
+    await router.push(`/real/workspace-b/task/${modelTaskFixture.id}`)
     await router.isReady()
-    const wrapper = mount(RealWorkspaceView, { global: { plugins: [router] } })
+    mount(RealTaskView, { global: { plugins: [router] } })
     await flushPromises()
-    // 填入两个标题，使按钮仅受 providerDegraded 控制（避免空标题本身禁用）
-    const modelInput = wrapper.find('[data-testid="model-task-title-input"]')
-    if (modelInput.exists()) {
-      await modelInput.setValue('让模型追加标记')
-      await flushPromises()
-    }
-    const realInput = wrapper.find('[data-testid="task-title-input"]')
-    if (realInput.exists()) {
-      await realInput.setValue('追加标记任务')
-      await flushPromises()
-    }
-    return { wrapper, router }
-  }
 
-  it('disables new model task creation when provider is degraded, keeps real-task creation', async () => {
-    const { wrapper } = await mountWorkspaceWithProvider('degraded')
-    expect(wrapper.find('[data-testid="model-degraded-note"]').exists()).toBe(true)
-    expect(wrapper.get('[data-testid="create-model-task-btn"]').attributes('disabled')).toBeDefined()
-    // 真实任务创建不受影响
-    expect(wrapper.get('[data-testid="create-task-btn"]').attributes('disabled')).toBeUndefined()
-  })
-
-  it('enables model task creation when provider ready', async () => {
-    const { wrapper } = await mountWorkspaceWithProvider('ready')
-    expect(wrapper.find('[data-testid="model-degraded-note"]').exists()).toBe(false)
-    expect(wrapper.get('[data-testid="create-model-task-btn"]').attributes('disabled')).toBeUndefined()
+    const store = useRealStore()
+    expect(router.currentRoute.value.fullPath).toBe(
+      `/real/workspace-a/task/${modelTaskFixture.id}`,
+    )
+    // 不保留错误工作区上下文下的任务详情与连接
+    expect(store.task).toBeNull()
+    expect(store.eventConnection).toBe('idle')
   })
 })
+

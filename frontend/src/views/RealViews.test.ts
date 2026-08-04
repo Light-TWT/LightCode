@@ -1,9 +1,11 @@
 import { flushPromises, mount } from '@vue/test-utils'
 import { createPinia, setActivePinia } from 'pinia'
 import { createMemoryHistory, createRouter, type Router } from 'vue-router'
-import { beforeEach, describe, expect, it } from 'vitest'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { realTaskFixture } from '@/fixtures/phase1.fixture'
+import { providerService } from '@/services/provider.service'
 import { useRealStore } from '@/stores/real.store'
+import type { ProviderHealth } from '@/types/agent'
 import RealTaskView from './RealTaskView.vue'
 import RealWorkspaceListView from './RealWorkspaceListView.vue'
 import RealWorkspaceView from './RealWorkspaceView.vue'
@@ -18,6 +20,31 @@ function createTestRouter(): Router {
       { path: '/real/:id/task/:taskId', name: 'real-task', component: RealTaskView },
     ],
   })
+}
+
+/** M-02：模型任务创建门禁为 ready-only，集成测试需显式 mock ready 状态 */
+const readyHealth: ProviderHealth = {
+  status: 'ready',
+  provider: 'openai-compatible',
+  modelId: 'demo-model',
+  detail: 'Provider 已就绪。',
+  capabilities: {
+    tools: ['read_file'],
+    canWriteFiles: false,
+    canRunCommands: false,
+    maxToolRounds: 8,
+    maxRequestsPerTask: 10,
+    maxInputBytes: 262144,
+    maxOutputTokens: 2048,
+    maxConcurrentTasks: 1,
+  },
+  security: {
+    apiKeyConfigured: true,
+    transport: 'https',
+    originAllowlisted: true,
+    followRedirects: false,
+    trustEnvProxies: false,
+  },
 }
 
 describe('RealWorkspaceListView', () => {
@@ -114,16 +141,24 @@ describe('RealWorkspaceView', () => {
   })
 
   it('creates a model task and navigates to the task view', async () => {
-    const { wrapper, router } = await mountWorkspace()
+    // M-02：模型任务创建仅当 Provider ready；集成测试 mock 为 ready
+    const healthSpy = vi
+      .spyOn(providerService, 'getHealth')
+      .mockResolvedValue(readyHealth)
+    try {
+      const { wrapper, router } = await mountWorkspace()
 
-    await wrapper.get('[data-testid="model-task-title-input"]').setValue('让模型追加标记')
-    await wrapper.get('[data-testid="create-model-task-btn"]').trigger('submit')
-    await flushPromises()
+      await wrapper.get('[data-testid="model-task-title-input"]').setValue('让模型追加标记')
+      await wrapper.get('[data-testid="create-model-task-btn"]').trigger('submit')
+      await flushPromises()
 
-    // Mock 模式首个模型任务 id 固定为 model-task-mock1
-    expect(router.currentRoute.value.fullPath).toBe(
-      '/real/demo-real-workspace/task/model-task-mock1',
-    )
+      // Mock 模式首个模型任务 id 固定为 model-task-mock1
+      expect(router.currentRoute.value.fullPath).toBe(
+        '/real/demo-real-workspace/task/model-task-mock1',
+      )
+    } finally {
+      healthSpy.mockRestore()
+    }
   })
 })
 

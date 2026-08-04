@@ -7,6 +7,8 @@ export interface SubscribeOptions {
   afterSequence?: number
   /** 是否让后端在回放后继续 tail 轮询（对应 ?tail=true） */
   tail?: boolean
+  /** 服务端正常结束（stream.end，含 tail 超时）时回调；不用于网络错误重试 */
+  onEnd?: () => void
 }
 
 function buildEventUrl(basePath: string, options?: SubscribeOptions): string {
@@ -39,7 +41,10 @@ function subscribe(
     }
   })
   source.addEventListener('error', onError)
-  source.addEventListener('stream.end', () => source.close())
+  source.addEventListener('stream.end', () => {
+    source.close()
+    options?.onEnd?.()
+  })
   source.addEventListener('stream.error', () => {
     source.close()
     onError(new Event('stream.error'))

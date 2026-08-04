@@ -36,6 +36,20 @@ describe('subscribeTaskEvents', () => {
     expect(events).toContain('stream.end')
   })
 
+  it('closes the connection and calls onEnd on stream.end', () => {
+    const { close, addEventListener } = mockEventSource()
+    const onEnd = vi.fn()
+
+    subscribeRealTaskEvents('real-task-1', vi.fn(), vi.fn(), { tail: true, onEnd })
+
+    const endHandler = addEventListener.mock.calls.find((c: unknown[]) => c[0] === 'stream.end')?.[1]
+    expect(typeof endHandler).toBe('function')
+    ;(endHandler as () => void)()
+
+    expect(close).toHaveBeenCalledTimes(1)
+    expect(onEnd).toHaveBeenCalledTimes(1)
+  })
+
   it('connects to the real-task endpoint with resume params', () => {
     mockEventSource()
 
