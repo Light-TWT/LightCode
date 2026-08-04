@@ -12,6 +12,7 @@ windows without waiting on real time.
 from __future__ import annotations
 
 import os
+import threading
 import time
 from collections.abc import Iterator
 
@@ -24,6 +25,12 @@ SSE_POLL_INTERVAL_SECONDS = float(os.environ.get("LIGHTCODE_SSE_POLL_SECONDS", "
 SSE_MAX_CONNECTIONS = int(os.environ.get("LIGHTCODE_SSE_MAX_CONNECTIONS", "50"))
 
 _active_connections = 0
+
+#: Serialises the check-and-increment in ``acquire_connection`` so the
+#: process-wide connection cap is atomic under concurrent SSE connects
+#: (L-01). ``Metrics.sse_open/sse_close`` update the gauge in the same
+#: critical section so the count and the metric never drift.
+_connection_lock = threading.Lock()
 
 
 class EventSource:
@@ -44,23 +51,30 @@ def _heartbeat() -> str:
 
 
 def acquire_connection() -> None:
-    """Track concurrent SSE connections; raise if over the cap."""
+    """Track concurrent SSE connections; raise if over the cap.
+
+    The check and the increment are one critical section (L-01): a concurrent
+    caller can never observe a stale count and both pass the cap.
+    """
     global _active_connections
-    if _active_connections >= SSE_MAX_CONNECTIONS:
-        raise RuntimeError("sse connection limit reached")
-    _active_connections += 1
-    Metrics.sse_open()
+    with _connection_lock:
+        if _active_connections >= SSE_MAX_CONNECTIONS:
+            raise RuntimeError("sse connection limit reached")
+        _active_connections += 1
+        Metrics.sse_open()
 
 
 def release_connection() -> None:
     global _active_connections
-    if _active_connections > 0:
-        _active_connections -= 1
-    Metrics.sse_close()
+    with _connection_lock:
+        if _active_connections > 0:
+            _active_connections -= 1
+            Metrics.sse_close()
 
 
 def active_connections() -> int:
-    return _active_connections
+    with _connection_lock:
+        return _active_connections
 
 
 def stream_events(

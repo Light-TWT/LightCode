@@ -75,3 +75,56 @@ def test_connection_limit_rejects_over_cap(monkeypatch) -> None:
     text = "".join(event_service.stream_events(src, "t1", 0, tail=False))
     assert "stream.error" in text
     assert event_service.active_connections() == 0
+
+
+def test_concurrent_acquire_honors_cap(monkeypatch) -> None:
+    """L-01: the in-process connection cap must be atomic under contention.
+
+    Two threads race a cap of 1. We shrink the GIL switch interval so the
+    check-and-increment interleaves deterministically; without the lock both
+    threads pass the guard. The winner keeps holding its slot until the main
+    thread releases the gate, so the loser is guaranteed to queue on the lock
+    and observe the already-taken slot instead of a reset-to-zero counter.
+    """
+    import sys
+    import threading
+    import time
+
+    monkeypatch.setattr("app.services.event_service.SSE_MAX_CONNECTIONS", 1)
+    monkeypatch.setattr("app.services.event_service._active_connections", 0)
+
+    old_interval = sys.getswitchinterval()
+    sys.setswitchinterval(1e-6)
+    try:
+        barrier = threading.Barrier(2)
+        release_gate = threading.Event()
+        results: list[str] = []
+        results_lock = threading.Lock()
+
+        def worker() -> None:
+            barrier.wait()
+            try:
+                event_service.acquire_connection()
+                with results_lock:
+                    results.append("ok")
+                # Keep holding the slot: the other thread must queue on the
+                # lock and see the taken slot, never a reset counter.
+                release_gate.wait(timeout=5)
+                event_service.release_connection()
+            except RuntimeError:
+                with results_lock:
+                    results.append("rejected")
+
+        threads = [threading.Thread(target=worker) for _ in range(2)]
+        for t in threads:
+            t.start()
+        # Give both threads time to reach the acquire critical point.
+        time.sleep(0.05)
+        release_gate.set()
+        for t in threads:
+            t.join()
+    finally:
+        sys.setswitchinterval(old_interval)
+
+    assert sorted(results) == ["ok", "rejected"]
+    assert event_service.active_connections() == 0
