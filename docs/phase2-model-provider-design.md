@@ -52,9 +52,11 @@
 ## 2. 编排与工具边界（WP6/WP7，M5）
 
 - `ModelOrchestrator` 用 LangGraph 状态机实现 `create_model_task`；模型只能"提议"。
-- 受限工具协议：模型仅可请求 `read_file` / `search_files`（见 `MODEL_ALLOWED_TOOLS`）。
+- 受限工具协议：模型仅可请求 `read_file`（见 `MODEL_ALLOWED_TOOLS`，与编排器 `_ORCHESTRATOR_TOOLS` 一致）；`search_files` 保留给后续版本，模型请求会 fail-closed 拒绝。
+- **模型上下文最小化（2026-08-04）**：发往 Provider 的 system prompt 与 read 工具结果不含工作区根路径、逻辑相对路径或文件名，只含服务端签发的 fileToken、baseSha256 与 Guard 受控读取的文本；未知编排异常只投影为固定文案（`_INTERNAL_ORCHESTRATION_FAILURE`），异常原文不进入 SQLite/API/SSE/前端。
 - 候选编辑由服务端 `build_model_change_set` 独立生成 Difference，绝不依赖模型输出的补丁文本。
 - 恶意工具请求（含 `rootPath`/`filePath`/自由路径/超预算）fail-closed 拒绝。
+- **输出预算本地强制（2026-08-04）**：`OpenAICompatibleProvider.chat()` 在响应返回后校验已报告的 `completion_tokens`；usage 缺失时按 `max_output_tokens * 4` UTF-8 字节保守上限拒绝，超出即 `MODEL_BUDGET_EXCEEDED`，不信任上游对 `max_tokens` 的遵守。
 - 保持 Phase 1 的显式审批、单文件原子替换、内建验证与工作区隔离边界不变。
 
 ---
@@ -96,12 +98,13 @@
 
 ### 3.4 失败语义（稳定错误码）
 
-- `MODEL_BUDGET_EXCEEDED`：输入字节 / 输出 token / 每 task 请求数任一超预算（在 `_check_budgets` 内计入指标）。
+- `MODEL_BUDGET_EXCEEDED`：输入字节 / 输出 token / 每 task 请求数任一超预算（在 `_check_budgets` 内计入指标）；2026-08-04 起输出预算在响应返回后本地强制（`_check_output_budget`，含 usage 缺失的保守字节上限）。
 - `MODEL_CONCURRENCY_EXCEEDED`：进程内 `_ModelTaskGate`（Phase 1 写租约的 Phase 2 类比）已达
   `max_concurrent_tasks=1`，任务直接置 `failed` 并落 `task.failed` 事件；**无 schema 变更**。
 - `APPLY_CONFLICT` / `STALE_BASE`：沿用 Phase 1，审批写前重检基线哈希。
 - provider 侧错误经 `map_llm_errors` 映射为 `MODEL_TIMEOUT` / `MODEL_RATE_LIMITED` / `MODEL_UPSTREAM_ERROR` /
   `MODEL_RESPONSE_INVALID` 等，并在 `chat()` 的 try/except 内统一计入 `provider.call:<分类>` 指标后重抛。
+- **未知编排异常（2026-08-04）**：编排器兜底分支只持久化固定文案，不插值异常原文——异常中的密钥、Provider URL、绝对路径或响应片段绝不进入任务表、SSE payload 或 API 响应。
 
 ### 3.5 SQLite busy 仪表化（无 schema 变更）
 
@@ -110,20 +113,29 @@
 - 捕获 `sqlite3.OperationalError` 且消息含 `locked`/`busy` 时调用 `Metrics.sqlite_busy()` 后原样重抛。
 - 保留引擎级 `PRAGMA busy_timeout=5000` 与 WAL，不影响既有迁移/并发语义。
 
+### 3.6 SSE 连接上限（2026-08-04）
+
+- `event_service.acquire_connection()` / `release_connection()` / `active_connections()` 由
+  模块级 `_connection_lock` 串行化：检查与递增处于同一临界区，跨线程并发建连不会越过 `SSE_MAX_CONNECTIONS`；
+  `Metrics.sse_open/sse_close` 在临界区内更新 gauge，计数与指标不漂移。上限仍为进程级语义。
+
 ---
 
-## 4. 验证证据（WP8）
+## 4. 验证证据（WP8 + 2026-08-04 审查修复）
 
-- 后端全量 `pytest`：**190 通过 + 2 skipped**（含 WP8 新增 `test_observability.py` 9 例 +
-  `test_model_e2e.py` 4 例）。
+- 后端全量 `pytest`：**195 通过 + 2 skipped**（含 WP8 新增 `test_observability.py` 9 例 +
+  `test_model_e2e.py` 4 例，以及 2026-08-04 审查修复新增：orchestrator 敏感文本/路径最小化 2 例、
+  Provider 输出预算 2 例、SSE 并发原子性 1 例）。
 - WP8 聚焦（observability + API-mode E2E）：**13/13 通过**。
 - 敏感数据扫描：
   - `test_model_e2e.py` 断言日志与事件载荷不含 `test-key` / `api.example.test` / `Bearer` /
     `Authorization` / 真实临时路径。
   - `test_observability.py` 断言 `redact()` 与 `Metrics.snapshot()` 不含密钥/路径。
-- 故障注入覆盖：Provider timeout / 429 / 5xx / 畸形 JSON / 恶意 tool request / 预算耗尽 /
-  SQLite busy / SSE 断线续传 / 并发闸门拒绝。
-- 前端 WP8 无代码变更；既有 64 测试 + `vue-tsc -b` + `vite build` 仍有效。
+  - `test_model_orchestrator.py`（2026-08-04）断言未知异常原文与逻辑相对路径不出现在 API/SQLite/SSE 与模型请求上下文中。
+- 故障注入覆盖：Provider timeout / 429 / 5xx / 畸形 JSON / 恶意 tool request / 预算耗尽（含输出预算）/
+  SQLite busy / SSE 断线续传 / 并发闸门拒绝 / SSE 连接上限并发竞争。
+- 前端：**94 测试通过（18 文件）**，`vue-tsc -b` + `vite build --emptyOutDir false` 通过（2026-08-04，
+  含 M-01 SSE 持续订阅、M-02 Provider ready 门禁、M-03 失败 UI 错误码映射、M-06 路由归属校验）。
 - 无 skip / 假成功 / 关闭检查绕过门禁。
 
 ---
@@ -132,4 +144,5 @@
 
 - 指标为**进程内**单例，仅在单进程后端有效；多 worker 部署需外部聚合（Phase 2 不在范围内）。
 - 并发闸门是进程内锁，不是跨进程写租约；并发模型任务上限 1 在 Phase 2 下足够，跨进程互斥留给后续阶段。
+- SSE 连接上限为进程级语义，与并发闸门作用域一致。
 - 日志为 JSON 文本输出到 stderr，未接入外部日志系统（零新依赖约束）。

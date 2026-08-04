@@ -68,7 +68,7 @@ npm run typecheck
 npm run build
 ```
 
-当前基线为 87 个前端测试通过（17 文件），`vue-tsc -b && vite build` 通过。修改服务合约、store 或视图后，应先运行对应聚焦测试，再运行完整测试和构建。
+当前基线为 94 个前端测试通过（18 文件），`vue-tsc -b && vite build` 通过。修改服务合约、store 或视图后，应先运行对应聚焦测试，再运行完整测试和构建。
 
 ## Phase 1 前端边界（已完成 T8）
 
@@ -79,6 +79,6 @@ Phase 1 已扩展任务状态、ChangeSet 审查与安全错误展示，并新�
 Phase 2 在既有真实工作区视图之上叠加模型任务体验，模型 Provider 默认关闭、仅「提议」：
 
 - `RealWorkspaceView` 新增「创建模型任务」面板（仅提交 `workspaceId`+`title`，经 `parseModelTask` 校验，拒绝含 `rootPath` 的畸形 DTO）；`RealTaskView` 以 `kind='model'` 徽标区分，并渲染模型生命周期时间线与 SSE 连接态。
-- `stores/real.store.ts` 增加 `eventConnection` 状态机（connecting/open/reconnecting/closed）与 SSE `sequence` 缺口全量同步（`_resync`），模型生命周期从事件派生（最远到达阶段为 current，失败标记 failed）。
-- 失败提示可行动且无敏感泄露：精确正则拒绝 `sk-` + 20 位密钥；Provider 处于 degraded 时新建门禁保留历史/查看/审批。
+- `stores/real.store.ts` 增加 `eventConnection` 状态机（connecting/open/reconnecting/closed）与 SSE `sequence` 缺口全量同步（`_resync`），模型生命周期从事件派生（最远到达阶段为 current，失败标记 failed）。真实任务订阅持续 tail（`tail=true`），服务端 `stream.end` 后将连接置为 `closed`（2026-08-04）。
+- 失败提示可行动且无敏感泄露：按稳定错误码映射固定中文文案（M-03），不渲染服务端自由 message；Provider 仅 `ready` 时可新建模型任务（M-02），其余状态与 health 请求失败均禁用，但保留历史/查看/审批。任务详情页校验 URL 工作区与任务归属，错配时清理状态并跳转真实归属路由（M-06）。
 - 设计约束与失败语义见 `../docs/phase2-model-provider-design.md` 与 `AGENTS.md` 状态追踪。

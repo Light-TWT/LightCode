@@ -6,7 +6,7 @@
 
 - **Phase 0.5 Mock Runtime**：由 `app/db/database.py` 的 `seed_database()` 确定性生成工作区、会话、任务、历史和审批状态，仅用于界面演示、服务适配与合约验证。不访问真实项目目录、不写源码、不执行命令、不调用模型、不接收或存储密钥。
 - **Phase 1 安全变更 MVP（后端）**：服务端静态注册授权工作区，提供受控只读工具（`list_files`/`read_file`/`search_files`）、服务端生成的确定性 ChangeSet、版本绑定审批，以及对单个既有 UTF-8 文本文件的原子替换与内建完整性验证。安全不变量以 `../docs/phase1-safety-contract.md` 与 `../docs/workspace-registration.md` 为准。
-- **Phase 2 模型提议（WP5–WP8，默认关闭）**：受限、默认关闭的 OpenAI-compatible Provider 子系统。模型只"提议"——计划、受限只读工具请求（`read_file`/`search_files`）与服务端独立生成的候选 ChangeSet；不写文件、不执行命令、不决定审批。可观测性、预算/并发/故障门禁与敏感数据扫描见本文「可观测性与发布门禁」一节，设计细节见 `../docs/phase2-model-provider-design.md`。
+- **Phase 2 模型提议（WP5–WP8，默认关闭）**：受限、默认关闭的 OpenAI-compatible Provider 子系统。模型只"提议"——计划、受限只读工具请求（`read_file`）与服务端独立生成的候选 ChangeSet；不写文件、不执行命令、不决定审批。发往 Provider 的上下文不含逻辑相对路径（仅 fileToken/哈希/受控文本），未知编排异常只投影固定文案。可观测性、预算/并发/故障门禁与敏感数据扫描见本文「可观测性与发布门禁」一节，设计细节见 `../docs/phase2-model-provider-design.md`。
 
 三条闭环共享同一 SQLite 与 SSE 基础设施，但数据严格隔离：Phase 0.5 种子任务标记为 `kind='mock'`，Phase 1 真实任务标记为 `kind='real'`，Phase 2 模型任务标记为 `kind='model'`，互不可跨端点触发对方行为。
 
@@ -172,7 +172,7 @@ Phase 1 允许的受控真实读取与单文件原子写入，以及 Phase 2 模
 
 ### 失败语义
 
-- `MODEL_BUDGET_EXCEEDED`：输入字节 / 输出 token / 每 task 请求数超预算。
+- `MODEL_BUDGET_EXCEEDED`：输入字节 / 输出 token / 每 task 请求数超预算；输出预算在 Provider 响应返回后由 `_check_output_budget` 本地强制（completion_tokens 超限，或 usage 缺失时按 `max_output_tokens*4` UTF-8 字节保守上限）。
 - `MODEL_CONCURRENCY_EXCEEDED`：进程内 `_ModelTaskGate` 已达 `max_concurrent_tasks=1`（Phase 1 写租约的 Phase 2 类比，无 schema 变更）。
 - `APPLY_CONFLICT` / `STALE_BASE` 沿用 Phase 1；`InstrumentedConnection` 拦截 SQLite `locked`/`busy` 并计入 `sqlite.busy` 指标（保留 `PRAGMA busy_timeout` 与上下文协议，无 schema 变更）。
 
@@ -184,7 +184,7 @@ Phase 1 允许的受控真实读取与单文件原子写入，以及 Phase 2 模
 python -m pytest -q
 ```
 
-当前基线为 **190 个后端测试通过 + 2 个跳过**（跳过项为沙箱环境 `os.symlink` 静默降级导致不可检测，对应逻辑已由 monkeypatch 测试覆盖）。其中 WP8 新增 `test_observability.py`（9 例）与 `test_model_e2e.py`（4 例），聚焦可观测性/敏感数据扫描/API-mode E2E 共 13 例全绿。全量验证还应从 `frontend/` 运行 `npm run test` 与 `npm run build`：
+当前基线为 **195 个后端测试通过 + 2 个跳过**（跳过项为沙箱环境 `os.symlink` 静默降级导致不可检测，对应逻辑已由 monkeypatch 测试覆盖）。其中 WP8 新增 `test_observability.py`（9 例）与 `test_model_e2e.py`（4 例），聚焦可观测性/敏感数据扫描/API-mode E2E 共 13 例全绿；2026-08-04 审查修复新增 `test_model_orchestrator.py` 敏感文本/路径最小化 2 例、`test_model_provider_http.py` 输出预算 2 例、`test_event_service.py` SSE 并发原子性 1 例。全量验证还应从 `frontend/` 运行 `npm run test` 与 `npm run build`：
 
 ```bash
 npm run test

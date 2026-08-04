@@ -75,10 +75,11 @@ scripts/        开发与验证脚本
 ## 状态追踪
 
 ```text
-前端: 87 测试通过 (17 文件), vue-tsc -b + vite build 通过 (2026-08-03)
+前端: 94 测试通过 (18 文件), vue-tsc -b + vite build 通过 (2026-08-04)
+Phase 2 审查修复 (2026-08-04): 完成 —— H-01 未知编排异常不再泄露（固定错误投影, 不入 SQLite/API/SSE/UI）+ 模型上下文移除逻辑路径（仅 fileToken/哈希/受控文本）; M-01 真实任务 SSE 持续订阅 tail=true + stream.end 置 closed; M-02 Provider ready-only 新建模型任务门禁（disabled/unconfigured/degraded/未知均禁用, 保留历史/审批）; M-03 失败 UI 错误码→固定中文文案映射（不渲染服务端自由 message）; M-04 health 能力收紧为 read_file（与编排器一致）; M-05 输出 token 预算本地强制（含 usage 缺失的保守字节上限, MODEL_BUDGET_EXCEEDED）; M-06 任务详情路由工作区归属校验（错配清理并跳转真实归属）; L-01 SSE 连接上限加锁原子化（check+increment 同一临界区）。验证: 后端全量 195 passed / 2 skipped, 前端 94 passed / 18 文件, vue-tsc -b + vite build --emptyOutDir false 通过
 WP6 前端: 完成 (2026-07-31) —— 新增模型任务创建入口与 UI（RealWorkspaceView 侧栏"创建模型任务"面板 + store.createModelTask + model-task.service 双实现 + parseModelTask 契约校验 + 3 个测试文件 17 例）；复用既有 real-task 任务视图显示模型任务（get_real_task 含 kind='model'）；vite build --emptyOutDir false 通过
 WP7 (模型任务 SSE / 前端状态机 / 开发体验): 完成 (2026-08-03) —— 纯前端，无后端改动（复用 WP6 LangGraph 编排 emit 的事件 + WP3 SSE 续传通道）。新增：types/agent.ts 模型生命周期类型(ModelLifecycleStep/ModelLifecycleStage/EventConnection) + MODEL_TASK_EVENT_TYPES；contracts/real-task.schema.ts 新增 parseModelLifecycleEvent（模型事件 payload 防御性校验）；real.store.ts 新增 eventConnection 状态机(connecting/open/reconnecting/closed) + SSE sequence 缺口全量同步(_resync，带 _resyncing 防重入) + modelLifecycle getter（从事件派生有序阶段，最远到达阶段为 current，失败标记 failed）；RealWorkspaceView 强化启动前数据披露(代码片段发往已配置 Provider) + Provider degraded 门禁新建(保留历史/查看/审批)；RealTaskView 增加 kind 徽标 + 模型生命周期时间线 + awaiting_approval 策略版本与"不执行外部命令"说明 + SSE 连接态 + 失败可行动无敏感提示(精确正则拒绝 sk-+20位密钥)；phase1.fixture.ts 新增 modelTaskFixture/modelTaskEventsFixture；real-task.service mock 支持模型任务 id。验证：新增 real.store.test.ts 5 例 + RealTaskView.test.ts 6 例（共 11 例 WP7），前端全量 87 passed / 17 文件，vue-tsc -b + vite build 通过，无回归
-后端: 190 测试通过 + 2 skipped (沙箱 symlink 静默降级, 逻辑已由 monkeypatch 测试覆盖) (2026-08-03)
+后端: 195 测试通过 + 2 skipped (沙箱 symlink 静默降级, 逻辑已由 monkeypatch 测试覆盖) (2026-08-04)
 Phase 0.5 收尾: DB 路径绝对化 + Git 跟踪移除已完成; API 模式持久化验证通过 (临时 DB 审批持久化, 新库回到 awaiting_approval)
 Phase 1 后端: T1-T7 + T9 完成; API 模式 HTTP 全闭环验证 16/16 通过
   (注册工作区无根路径泄露 -> 创建真实任务 awaiting_approval -> 审批原子写 + 内建验证 completed
@@ -132,6 +133,11 @@ Phase 1R (安全收尾门禁, WP0-WP4 = M1+M2+M3): 全部完成 (2026-07-30)
 
 ## 问题修复记录
 
+- 2026-08-04: Phase 2 审查修复（修复细节与验证见 `docs/phase2-model-provider-design.md` §2/§3.6/§4）。
+  - H-01: `model_orchestrator.py` 未知 `Exception` 不再插值 `str(exc)`（固定 `_INTERNAL_ORCHESTRATION_FAILURE`），异常原文不再进入 SQLite/API/SSE/前端；`_build_system_prompt` 移除 `target_file` 逻辑名、read 工具结果移除 `relativePath`，发往 Provider 的上下文仅含 fileToken/baseSha256/受控文本。
+  - M-05: `openai_compatible_provider.py` 新增 `_check_output_budget`，响应后本地强制输出预算（completion_tokens 超限或 usage 缺失时按 `max_output_tokens*4` UTF-8 字节保守上限 → `MODEL_BUDGET_EXCEEDED`）。
+  - M-04: `model_provider.py` 的 `MODEL_ALLOWED_TOOLS` 收紧为 `("read_file",)`，health 声明与实际编排能力一致。
+  - L-01: `event_service.py` 新增 `_connection_lock`，SSE 连接上限的检查/递增/递减与 Metrics 连接计数在同一临界区（跨线程原子）。
 - 2026-07-24: Phase 1 (仅后端) 实现。新增 `app/workspaces/registry.py` (静态注册表, 从 `LIGHTCODE_WORKSPACES_CONFIG` 或 `backend/workspaces.json` 加载, 配置含 `rootPath`+`targetFile`, 已 gitignore)、`app/security/fs.py` + `guard.py` (WorkspaceGuard 统一路径守卫)、`app/schemas/errors.py` (稳定错误码)、`app/services/changeset.py` (确定性 append-marker 变换)、`app/services/atomic_write.py` (临时文件 + `os.replace` 原子替换 + 内建 UTF-8/哈希验证 + 每文件锁)、`app/services/phase1.py` (真实任务生命周期 + 6 步审批写入协议)。DB 迁移: `tasks` 增列 `kind`/`target_file`/`changeset_id`/`verification_detail` (旧 Mock 任务默认 `kind='mock'`), 新增 `changesets`/`approvals` 表 (含 `base_text`/`proposed_text` 以保证精确原子写)。新增端点 `/registered-workspaces*`、`/real-tasks*`。真实任务事件复用既有 `task_events` + SSE 端点。
 - 2026-07-24: 修复 `guard.read_text` 默认通用换行转换 (CRLF->LF) 导致 `baseSha256` 与磁盘原始字节哈希不一致、可能误判 STALE_BASE 或静默改写行尾。改为 `read_text(newline="")` 保留原始换行。
 - 2026-07-24: 修复 SQLite 默认路径为相对路径导致从 backend/ 启动落到 backend/backend/data/lightcode.db 且被 Git 跟踪。`main.py` lifespan 与 `database.py` 无参回退均改为基于文件位置的绝对路径 (`<repo>/backend/data/lightcode.db`)；env 覆盖 `LIGHTCODE_DATABASE_PATH` 的相对路径解析到 backend/ 目录。已从 Git 索引移除该 DB 并在 `.gitignore` 忽略 `backend/data/*.db` 与 `backend/backend/data/*.db`。
