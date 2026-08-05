@@ -217,6 +217,9 @@ describe('路由收敛（核心 Agent 更新阶段 A）', () => {
     await flushPromises()
     expect(wrapper.get('[data-testid="workspace-title"]').text()).toBe('Demo Workspace')
     expect(wrapper.get('[data-testid="chat-input"]').exists()).toBe(true)
+    // 会话面板默认收起，点击导航项展开
+    await wrapper.get('[data-testid="nav-btn-sessions"]').trigger('click')
+    await flushPromises()
     expect(wrapper.get('[data-testid="session-row"]').exists()).toBe(true)
     expect(m.mocks.listChatSessions).toHaveBeenCalledWith('ws-1')
   })

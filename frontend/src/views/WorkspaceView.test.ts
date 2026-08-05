@@ -234,11 +234,15 @@ describe('WorkspaceView（聊天主界面）', () => {
     })
   }
 
-  it('渲染用户（右）与助手（左）消息及会话列表', async () => {
+  it('渲染用户（右）与助手（左）消息；点击「会话」展开会话列表', async () => {
     const { wrapper } = await mountWorkspace()
     expect(wrapper.findAll('[data-testid="chat-message"]').length).toBe(2)
     expect(wrapper.find('.user-bubble').text()).toBe('请修改 NOTES.md')
     expect(wrapper.find('.assistant-bubble').text()).toBe('好的，我先看一下文件。')
+    // 会话面板默认收起，点击导航项展开
+    expect(wrapper.find('[data-testid="session-row"]').exists()).toBe(false)
+    await wrapper.get('[data-testid="nav-btn-sessions"]').trigger('click')
+    await flushPromises()
     expect(wrapper.findAll('[data-testid="session-row"]').length).toBe(1)
   })
 
@@ -317,5 +321,53 @@ describe('WorkspaceView（聊天主界面）', () => {
     expect(m.mocks.submitMessage).toHaveBeenCalledWith('chat-1', '继续')
     expect(wrapper.findAll('[data-testid="chat-message"]').length).toBe(3)
     expect(wrapper.text()).toContain('已完成审查流程。')
+  })
+
+  it('折叠侧边栏为窄图标条；点击导航项展开面板，再点一次收起', async () => {
+    m.mocks.listFiles.mockResolvedValue([{ name: 'NOTES.md', kind: 'file', token: 'tok-notes' }])
+    const { wrapper } = await mountWorkspace()
+    // 初始：导航展开，面板收起
+    expect(wrapper.find('.sidebar.collapsed').exists()).toBe(false)
+    expect(wrapper.find('[data-testid="panel-files"]').exists()).toBe(false)
+
+    // 点击箭头折叠 → 导航变窄图标条
+    await wrapper.get('[data-testid="sidebar-collapse"]').trigger('click')
+    expect(wrapper.find('.sidebar.collapsed').exists()).toBe(true)
+
+    // 点击「文件浏览」→ 面板展开
+    await wrapper.get('[data-testid="nav-btn-files"]').trigger('click')
+    await flushPromises()
+    expect(wrapper.get('[data-testid="panel-files"]').exists()).toBe(true)
+    expect(wrapper.find('[data-testid="file-entry"]').exists()).toBe(true)
+
+    // 再点一次 → 面板收起
+    await wrapper.get('[data-testid="nav-btn-files"]').trigger('click')
+    await flushPromises()
+    expect(wrapper.find('[data-testid="panel-files"]').exists()).toBe(false)
+  })
+
+  it('文件浏览面板内点击文件行展开预览，再点一次收起', async () => {
+    m.mocks.listFiles.mockResolvedValue([
+      { name: 'NOTES.md', kind: 'file', token: 'tok-notes' },
+      { name: 'src', kind: 'dir', token: 'tok-src' },
+    ])
+    m.mocks.readFile.mockResolvedValue({ content: '第一行\n第二行' })
+    const { wrapper } = await mountWorkspace()
+
+    await wrapper.get('[data-testid="nav-btn-files"]').trigger('click')
+    await flushPromises()
+    expect(wrapper.findAll('[data-testid="file-entry"]').length).toBe(2)
+
+    // 点击文件行 → 预览区展开，内容为 readFile 返回
+    await wrapper.get('[data-testid="file-entry"]').trigger('click')
+    await flushPromises()
+    expect(m.mocks.readFile).toHaveBeenCalledWith('ws-1', 'tok-notes')
+    expect(wrapper.get('[data-testid="file-preview"]').exists()).toBe(true)
+    expect(wrapper.get('[data-testid="preview-content"]').text()).toBe('第一行\n第二行')
+
+    // 再点一次同一文件 → 预览收起
+    await wrapper.get('[data-testid="file-entry"]').trigger('click')
+    await flushPromises()
+    expect(wrapper.find('[data-testid="file-preview"]').exists()).toBe(false)
   })
 })

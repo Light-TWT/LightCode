@@ -22,6 +22,28 @@ const draft = ref('')
 const newSessionTitle = ref('')
 const searchInput = ref('')
 
+/** 导航栏折叠状态：收缩为窄图标条 */
+const sidebarCollapsed = ref(false)
+/** 当前展开的内容面板；null 表示全部收起。点击导航项展开，再点一次收起 */
+type NavKey = 'workspace' | 'files' | 'sessions'
+const activeNav = ref<NavKey | null>(null)
+/** 当前预览的文件标识（文件名）；用于文件行高亮与预览区 toggle */
+const openPreviewName = ref<string | null>(null)
+
+function toggleSidebar() {
+  sidebarCollapsed.value = !sidebarCollapsed.value
+}
+
+function toggleNav(key: NavKey) {
+  activeNav.value = activeNav.value === key ? null : key
+  // 切换面板时收起旧的预览高亮
+  openPreviewName.value = null
+}
+
+function closePreview() {
+  openPreviewName.value = null
+}
+
 /** Provider 设置安全视图（getSettings：无 key、无完整 baseUrl） */
 const provider = ref<ProviderSettingsResponse | null>(null)
 const providerReady = computed(() => provider.value?.status === 'ready')
@@ -66,10 +88,23 @@ const breadcrumbs = computed(() => {
 function onEntryClick(entry: RegisteredFileEntry) {
   if (entry.kind === 'dir') {
     store.enterDirectory(entry)
+    openPreviewName.value = null
   } else if (entry.kind === 'file' && entry.token) {
+    // 再点一次同一文件：收起预览（toggle）
+    if (openPreviewName.value === entry.name) {
+      openPreviewName.value = null
+      return
+    }
+    openPreviewName.value = entry.name
     store.openFileByToken(entry.token)
   }
   // link / secret：受安全策略保护，不可读取
+}
+
+function onSearchHit(hit: { token?: string; name: string }) {
+  if (!hit.token) return
+  openPreviewName.value = hit.name
+  store.openFileByToken(hit.token)
 }
 
 function kindIcon(kind: RegisteredFileEntry['kind']): string {
@@ -185,23 +220,73 @@ onUnmounted(() => store.cleanup())
 
 <template>
   <div class="ws-page">
-    <header class="top-bar">
-      <button class="back-btn" type="button" data-testid="back-home-btn" @click="router.push('/')">← 首页</button>
-      <div class="brand">LightCode</div>
-      <span class="ws-title" data-testid="workspace-title">{{ workspace?.displayName ?? workspaceId }}</span>
-      <span
-        class="provider-badge"
-        :class="providerBadgeClass"
-        data-testid="provider-status"
-      >Provider {{ providerStatusLabel }}</span>
-      <span class="settings-link" title="设置" data-testid="settings-btn" @click="router.push('/settings')">⚙ 设置</span>
-    </header>
-
-    <div v-if="store.error" class="error-banner" data-testid="ws-error">{{ store.error }}</div>
-
     <div class="columns">
-      <aside class="sidebar">
-        <section class="panel" aria-label="工作区切换">
+      <!-- 导航栏：可折叠为窄图标条 -->
+      <aside class="sidebar" :class="{ collapsed: sidebarCollapsed }" aria-label="侧边导航">
+        <div class="brand">
+          <span class="brand-mark" aria-hidden="true">L</span>
+          <span class="brand-text">LightCode</span>
+          <button
+            type="button"
+            class="brand-arrow"
+            :title="sidebarCollapsed ? '展开侧边栏' : '折叠为图标'"
+            data-testid="sidebar-collapse"
+            @click="toggleSidebar"
+          >
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M15 6l-6 6 6 6"/></svg>
+          </button>
+        </div>
+
+        <nav class="nav">
+          <button
+            type="button"
+            class="nav-btn"
+            :class="{ active: activeNav === 'workspace' }"
+            data-testid="nav-btn-workspace"
+            @click="toggleNav('workspace')"
+          >
+            <span class="icon" aria-hidden="true"><svg viewBox="0 0 24 24"><rect x="4" y="4" width="6" height="6" rx="1"/><rect x="14" y="4" width="6" height="6" rx="1"/><rect x="4" y="14" width="6" height="6" rx="1"/><rect x="14" y="14" width="6" height="6" rx="1"/></svg></span>
+            <span class="label">工作区</span>
+          </button>
+          <button
+            type="button"
+            class="nav-btn"
+            :class="{ active: activeNav === 'files' }"
+            data-testid="nav-btn-files"
+            @click="toggleNav('files')"
+          >
+            <span class="icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M5 4.5h10l4 4V19a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V5.5a1 1 0 0 1 1-1Z"/><path d="M14 4.5V9h5"/></svg></span>
+            <span class="label">文件浏览</span>
+          </button>
+          <button
+            type="button"
+            class="nav-btn"
+            :class="{ active: activeNav === 'sessions' }"
+            data-testid="nav-btn-sessions"
+            @click="toggleNav('sessions')"
+          >
+            <span class="icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M4 5.5A1.5 1.5 0 0 1 5.5 4h13A1.5 1.5 0 0 1 20 5.5v10a1.5 1.5 0 0 1-1.5 1.5H13l-4 3v-3H5.5A1.5 1.5 0 0 1 4 15.5Z"/></svg></span>
+            <span class="label">会话</span>
+          </button>
+        </nav>
+
+        <div class="bottom">
+          <button
+            type="button"
+            class="settings"
+            title="设置"
+            data-testid="settings-btn"
+            @click="router.push('/settings')"
+          >
+            <span class="icon" aria-hidden="true"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.9l.1.1-1.7 1.7-.1-.1a1.7 1.7 0 0 0-1.9-.3 1.7 1.7 0 0 0-1 1.6v.2h-2.4v-.2a1.7 1.7 0 0 0-1-1.6 1.7 1.7 0 0 0-1.9.3l-.1.1L8 17l.1-.1a1.7 1.7 0 0 0 .3-1.9 1.7 1.7 0 0 0-1.6-1H6v-2.4h.8a1.7 1.7 0 0 0 1.6-1 1.7 1.7 0 0 0-.3-1.9L8 8.6l1.7-1.7.1.1a1.7 1.7 0 0 0 1.9.3 1.7 1.7 0 0 0 1-1.6v-.2h2.4v.2a1.7 1.7 0 0 0 1 1.6 1.7 1.7 0 0 0 1.9-.3l.1-.1 1.7 1.7-.1.1a1.7 1.7 0 0 0-.3 1.9 1.7 1.7 0 0 0 1.6 1h.2V14h-.2a1.7 1.7 0 0 0-1.6 1Z"/></svg></span>
+            <span class="label">设置</span>
+          </button>
+        </div>
+      </aside>
+
+      <!-- 内容面板：点击导航项展开，再点一次收起 -->
+      <section class="side-panel" :class="{ hidden: !activeNav }" aria-label="侧边面板">
+        <div v-if="activeNav === 'workspace'" class="panel-inner" data-testid="panel-workspace">
           <p class="panel-kicker">工作区</p>
           <div class="ws-switch">
             <button
@@ -218,9 +303,9 @@ onUnmounted(() => store.cleanup())
             </button>
             <p v-if="store.workspaces.length === 0" class="empty-hint">暂无工作区</p>
           </div>
-        </section>
+        </div>
 
-        <section class="panel files-panel" aria-label="文件浏览">
+        <div v-else-if="activeNav === 'files'" class="panel-inner" data-testid="panel-files">
           <p class="panel-kicker">文件浏览（只读 · 服务端守卫）</p>
           <nav class="breadcrumbs" aria-label="路径">
             <button
@@ -238,7 +323,7 @@ onUnmounted(() => store.cleanup())
               :key="entry.token || entry.name"
               type="button"
               class="entry-row"
-              :class="{ blocked: entry.kind === 'link' || entry.kind === 'secret' }"
+              :class="{ blocked: entry.kind === 'link' || entry.kind === 'secret', active: openPreviewName === entry.name }"
               :disabled="entry.kind === 'link' || entry.kind === 'secret'"
               data-testid="file-entry"
               @click="onEntryClick(entry)"
@@ -266,19 +351,23 @@ onUnmounted(() => store.cleanup())
               :key="hit.token || hit.name"
               type="button"
               class="hit-row"
+              :class="{ active: openPreviewName === hit.name }"
               data-testid="search-hit"
-              @click="store.openFileByToken(hit.token)"
+              @click="onSearchHit(hit)"
             >{{ hit.name }}</button>
             <p v-if="store.searchHits.length === 0" class="empty-hint">无匹配结果</p>
           </div>
-        </section>
+          <!-- 文件预览区：选中文件后在面板内展开 -->
+          <div v-if="openPreviewName && store.filePreview" class="preview" data-testid="file-preview">
+            <div class="preview-head">
+              <span class="preview-name" data-testid="preview-name">{{ openPreviewName }}</span>
+              <button type="button" class="preview-close" data-testid="preview-close" @click="closePreview">✕ 关闭预览</button>
+            </div>
+            <pre class="code-surface" data-testid="preview-content">{{ store.filePreview.content }}</pre>
+          </div>
+        </div>
 
-        <section v-if="store.filePreview" class="panel" aria-label="文件预览">
-          <p class="panel-kicker">文件预览</p>
-          <pre class="code-surface" data-testid="preview-content">{{ store.filePreview.content }}</pre>
-        </section>
-
-        <section class="panel sessions-panel" aria-label="会话列表">
+        <div v-else-if="activeNav === 'sessions'" class="panel-inner" data-testid="panel-sessions">
           <p class="panel-kicker">会话</p>
           <form class="session-new" @submit.prevent="createSession">
             <input
@@ -307,10 +396,21 @@ onUnmounted(() => store.cleanup())
             </button>
             <p v-if="store.chatSessions.length === 0" class="empty-hint">暂无会话，新建一个开始对话</p>
           </div>
-        </section>
-      </aside>
+        </div>
+      </section>
 
       <main class="chat-panel" aria-label="聊天">
+        <header class="main-head">
+          <button class="back-btn" type="button" data-testid="back-home-btn" @click="router.push('/')">← 首页</button>
+          <span class="wordmark">LightCode</span>
+          <span class="ws-title" data-testid="workspace-title">{{ workspace?.displayName ?? workspaceId }}</span>
+          <span
+            class="provider-badge"
+            :class="providerBadgeClass"
+            data-testid="provider-status"
+          >Provider {{ providerStatusLabel }}</span>
+        </header>
+        <div v-if="store.error" class="error-banner" data-testid="ws-error">{{ store.error }}</div>
         <div class="message-flow">
           <div v-if="store.messages.length === 0" class="chat-placeholder">
             <p class="ph-title">与 LightCode 聊聊这个工作区</p>
@@ -408,14 +508,19 @@ onUnmounted(() => store.cleanup())
 .ws-page {
   height: 100vh; height: 100dvh;
   display: flex; flex-direction: column;
-  padding: 16px 24px;
   background: #f5f0e8; color: #2a2a2a;
   font-family: 'Architects Daughter', cursive;
 }
-.top-bar { display: flex; align-items: center; gap: 14px; padding-bottom: 12px; border-bottom: 2px solid #2a2a2a; margin-bottom: 14px; flex-shrink: 0; }
+/* 全局直角：去掉所有圆角，保持线性风格 */
+.ws-page * { border-radius: 0; }
+.main-head {
+  height: 58px; flex-shrink: 0;
+  display: flex; align-items: center; gap: 14px;
+  padding: 0 24px; border-bottom: 1px solid #d8d0c4;
+}
 .back-btn { background: none; border: none; cursor: pointer; font-family: inherit; font-size: 13px; color: #6b7d8e; padding: 0; }
 .back-btn:hover { color: #2a2a2a; }
-.brand { font-family: 'Caveat', cursive; font-size: 22px; font-weight: 700; }
+.wordmark { font-family: 'Caveat', cursive; font-size: 22px; font-weight: 700; }
 .ws-title { font-family: 'Caveat', cursive; font-size: 18px; font-weight: 600; color: #1a1a1a; }
 .provider-badge {
   margin-left: auto;
@@ -426,21 +531,89 @@ onUnmounted(() => store.cleanup())
 .provider-badge.badge-ready { color: #2d7a3a; border-color: rgba(45,122,58,.3); background: rgba(45,122,58,.08); }
 .provider-badge.badge-unconfigured { color: #c87020; border-color: rgba(200,112,32,.3); background: rgba(212,160,23,.1); }
 .provider-badge.badge-degraded { color: #b83030; border-color: rgba(184,48,48,.25); background: rgba(184,48,48,.05); }
-.settings-link { font-family: 'JetBrains Mono', monospace; font-size: 12px; color: #6b7d8e; cursor: pointer; padding: 4px; }
-.settings-link:hover { color: #2a2a2a; }
 .error-banner {
   border: 1.5px solid rgba(184,48,48,.35); background: rgba(184,48,48,.05);
   color: #b83030; border-radius: 5px; padding: 8px 14px; margin-bottom: 10px; font-size: 13px;
 }
-.columns { flex: 1; min-height: 0; display: grid; grid-template-columns: 300px 1fr; gap: 14px; }
-.sidebar { min-height: 0; overflow-y: auto; display: flex; flex-direction: column; gap: 10px; padding-right: 4px; }
-.panel {
-  border: 1.5px solid #d8d0c4; border-radius: 6px;
-  background: rgba(255,255,255,.25); padding: 10px 12px;
+
+.columns {
+  flex: 1; min-height: 0;
+  display: flex; align-items: stretch;
 }
+
+/* ===== 导航栏 ===== */
+.sidebar {
+  width: 232px; flex: 0 0 auto; min-width: 0; min-height: 0;
+  overflow-y: auto; overflow-x: hidden;
+  display: flex; flex-direction: column;
+  background: rgba(255,255,255,.25);
+  border-right: 1.5px solid #2a2a2a;
+  transition: width .18s ease;
+}
+.sidebar.collapsed { width: 52px; flex-basis: 52px; }
+.brand {
+  height: 58px; flex-shrink: 0;
+  display: flex; align-items: center; gap: 12px;
+  padding: 0 16px;
+}
+.brand-mark {
+  width: 26px; height: 26px; flex-shrink: 0;
+  display: grid; place-items: center;
+  border-radius: 6px; background: #2a2a2a; color: #f5f0e8;
+  font-family: 'Caveat', cursive; font-weight: 700; font-size: 14px;
+}
+.brand-text { flex: 1; font-family: 'Caveat', cursive; font-size: 22px; font-weight: 700; color: #1a1a1a; white-space: nowrap; }
+.brand-arrow {
+  width: 26px; height: 26px; flex-shrink: 0;
+  display: grid; place-items: center;
+  border: 0; border-radius: 6px; background: none; cursor: pointer;
+  color: #6b7d8e; transition: transform .18s ease;
+}
+.brand-arrow:hover { background: rgba(0,0,0,.06); color: #2a2a2a; }
+.brand-arrow svg { width: 18px; height: 18px; stroke: currentColor; fill: none; stroke-width: 2.2; stroke-linecap: round; stroke-linejoin: round; }
+.sidebar.collapsed .brand-arrow svg { transform: rotate(180deg); }
+.nav { padding: 16px 10px; display: flex; flex-direction: column; gap: 6px; }
+.nav-btn {
+  height: 44px; flex-shrink: 0;
+  border: 0; border-radius: 6px; background: transparent;
+  color: #6b7d8e; display: flex; align-items: center; gap: 12px;
+  padding: 0 12px; cursor: pointer;
+  font-family: inherit; font-size: 13px; white-space: nowrap;
+}
+.nav-btn:hover { background: rgba(0,0,0,.05); color: #2a2a2a; }
+.nav-btn.active { background: rgba(212,160,23,.22); color: #c87020; border: 1.5px solid rgba(200,112,32,.4); }
+.icon { width: 20px; height: 20px; flex-shrink: 0; display: grid; place-items: center; }
+.icon svg { width: 20px; height: 20px; stroke: currentColor; fill: none; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+.bottom { margin-top: auto; padding: 12px 10px 16px; flex-shrink: 0; }
+.settings {
+  height: 44px; width: 100%;
+  border: 0; border-radius: 6px; background: transparent;
+  color: #6b7d8e; display: flex; align-items: center; gap: 12px;
+  padding: 0 12px; cursor: pointer;
+  font-family: inherit; font-size: 13px; white-space: nowrap;
+}
+.settings:hover { background: rgba(0,0,0,.05); color: #2a2a2a; }
+.sidebar.collapsed .brand { padding: 0; justify-content: center; height: 48px; }
+.sidebar.collapsed .brand-mark, .sidebar.collapsed .brand-text { display: none; }
+.sidebar.collapsed .nav { padding: 12px 0; align-items: center; }
+.sidebar.collapsed .nav-btn, .sidebar.collapsed .settings { justify-content: center; padding: 0; width: 40px; height: 40px; margin: 0 auto; }
+.sidebar.collapsed .bottom { padding: 10px 0 12px; }
+.sidebar.collapsed .label { display: none; }
+
+/* ===== 内容面板：点击导航项展开，再点一次收起 ===== */
+.side-panel {
+  width: 300px; flex-shrink: 0; min-height: 0;
+  border-right: 1px solid #d8d0c4;
+  background: rgba(255,255,255,.25);
+  padding: 12px 14px;
+  overflow-x: hidden;
+  transition: width .18s ease;
+}
+.side-panel.hidden { width: 0; padding: 0; border-right: 0; overflow: hidden; }
+.panel-inner { min-width: 268px; height: 100%; overflow-y: auto; }
 .panel-kicker {
   font-family: 'JetBrains Mono', monospace; font-size: 9px;
-  text-transform: uppercase; letter-spacing: 1.5px; color: #aaa; margin-bottom: 8px;
+  text-transform: uppercase; letter-spacing: 1.5px; color: #aaa; margin: 4px 0 10px;
 }
 .ws-switch, .entry-list, .session-list, .search-results { display: flex; flex-direction: column; gap: 2px; }
 .ws-switch-row, .entry-row, .session-row, .hit-row {
@@ -449,10 +622,9 @@ onUnmounted(() => store.cleanup())
   padding: 4px 6px; border-radius: 4px; display: flex; align-items: center; gap: 6px;
 }
 .ws-switch-row:hover:not(:disabled), .entry-row:hover:not(:disabled), .session-row:hover, .hit-row:hover { background: rgba(0,0,0,.04); }
-.ws-switch-row.active, .session-row.active { background: rgba(212,160,23,.2); border: 1.5px solid #c87020; }
+.ws-switch-row.active, .session-row.active, .entry-row.active, .hit-row.active { background: rgba(212,160,23,.2); border: 1.5px solid #c87020; }
 .ws-switch-row.disabled { color: #999; cursor: not-allowed; }
 .off-tag { font-family: 'JetBrains Mono', monospace; font-size: 9px; color: #b83030; margin-left: auto; }
-.files-panel { flex: 0 0 auto; }
 .breadcrumbs { display: flex; flex-wrap: wrap; gap: 4px; margin-bottom: 6px; }
 .crumb {
   background: none; border: none; cursor: pointer; padding: 0;
@@ -476,21 +648,30 @@ onUnmounted(() => store.cleanup())
   background: rgba(212,160,23,.15); color: #2a2a2a; flex-shrink: 0;
 }
 .mini-btn:disabled { opacity: .5; cursor: not-allowed; }
+.empty-hint { color: #999; font-size: 11px; padding: 4px 0; }
+/* 文件预览区（并入文件浏览面板） */
+.preview {
+  margin-top: 10px;
+  border: 2px solid #2a2a2a; border-radius: 6px;
+  background: rgba(255,255,255,.4); padding: 10px 12px;
+}
+.preview-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px; }
+.preview-name { font-family: 'Caveat', cursive; font-size: 15px; font-weight: 700; color: #1a1a1a; }
+.preview-close { background: none; border: 0; cursor: pointer; font-family: inherit; font-size: 11px; color: #999; padding: 0; }
+.preview-close:hover { color: #2a2a2a; }
 .code-surface {
   font-family: 'JetBrains Mono', monospace; font-size: 10px; line-height: 1.5;
   background: rgba(0,0,0,.03); border: 1px dashed #e0d8cc; border-radius: 4px;
   padding: 8px; white-space: pre-wrap; word-break: break-all;
-  max-height: 24vh; overflow-y: auto;
+  max-height: 26vh; overflow-y: auto; margin: 0;
 }
 .session-title { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .session-time { font-family: 'JetBrains Mono', monospace; font-size: 9px; color: #bbb; }
-.empty-hint { color: #999; font-size: 11px; padding: 4px 0; }
 
+/* ===== 聊天面板 ===== */
 .chat-panel {
-  min-width: 0; min-height: 0;
+  flex: 1; min-width: 0; min-height: 0;
   display: flex; flex-direction: column;
-  border: 2.5px solid #2a2a2a; border-radius: 6px;
-  background: rgba(255,255,255,.2);
 }
 .message-flow { flex: 1; min-height: 0; overflow-y: auto; padding: 16px 18px; display: flex; flex-direction: column; gap: 10px; }
 .chat-placeholder { margin: auto; text-align: center; color: #aaa; }
@@ -529,8 +710,8 @@ onUnmounted(() => store.cleanup())
 .diff-btn:disabled, .approve-btn:disabled, .reject-btn:disabled { opacity: .5; cursor: not-allowed; }
 
 .composer {
-  flex-shrink: 0; padding: 10px 14px;
-  border-top: 2.5px solid #2a2a2a;
+  flex-shrink: 0; padding: 12px 18px;
+  border-top: 1px solid #d8d0c4;
   background: rgba(212,160,23,.04);
 }
 .input-row { display: flex; gap: 8px; align-items: flex-end; }
@@ -551,8 +732,12 @@ onUnmounted(() => store.cleanup())
 .link-btn { background: none; border: none; cursor: pointer; color: #c87020; text-decoration: underline; font-size: inherit; padding: 0; }
 .pending-note { font-size: 13px; color: #555; margin-bottom: 8px; }
 .pending-actions { display: flex; gap: 8px; }
+
 @media (max-width: 900px) {
-  .columns { grid-template-columns: 1fr; }
-  .sidebar { flex-direction: row; flex-wrap: wrap; }
+  .columns { flex-direction: column; }
+  .sidebar { width: 100%; flex-direction: row; flex-wrap: wrap; border-right: 0; border-bottom: 1.5px solid #2a2a2a; }
+  .sidebar.collapsed { width: 52px; flex-direction: column; }
+  .side-panel { border-right: 0; }
+  .side-panel.hidden { display: none; }
 }
 </style>
