@@ -28,6 +28,7 @@ from app.schemas.contracts import (
     RealChangeSetResponse,
     RealTaskResponse,
     RegisteredWorkspaceResponse,
+    TaskEventResponse,
     ToolCallResponse,
     VerificationResponse,
 )
@@ -93,6 +94,24 @@ class Phase1Service:
                 policyVersion=ws.policy_version,
             )
             for ws in self._registry.list_workspaces()
+        ]
+
+    # --- SSE event source (task_events replay) ---
+
+    def list_task_events_after(self, task_id: str, after_sequence: int) -> list:
+        """EventSource protocol for :func:`stream_events`."""
+        rows = self._db.execute(
+            "SELECT * FROM task_events WHERE task_id = ? AND sequence > ? ORDER BY sequence ASC",
+            (task_id, after_sequence),
+        ).fetchall()
+        return [
+            TaskEventResponse(
+                sequence=row["sequence"],
+                eventType=row["event_type"],
+                payload=json.loads(row["payload_json"]),
+                createdAt=row["created_at"],
+            )
+            for row in rows
         ]
 
     # --- Read-only controlled tools ---

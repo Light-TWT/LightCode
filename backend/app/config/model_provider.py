@@ -31,10 +31,10 @@ ProviderStatus = Literal["disabled", "unconfigured", "ready", "degraded"]
 SUPPORTED_PROVIDERS = frozenset({"openai-compatible"})
 
 #: Read-only tools the model is permitted to request. Kept in lockstep with
-#: what the orchestrator actually wires (`_ORCHESTRATOR_TOOLS`): only
-#: `read_file` is implemented for models; `search_files` stays reserved for a
-#: later cut and must not be advertised as available.
-MODEL_ALLOWED_TOOLS = ("read_file",)
+#: what the orchestrator actually wires (`_ORCHESTRATOR_TOOLS`): `read_file`
+#: reads a server-issued fileToken; `search_files` searches workspace text and
+#: returns server-issued tokens. Both are guarded, budgeted and fail-closed.
+MODEL_ALLOWED_TOOLS = ("read_file", "search_files")
 
 _TRUE_VALUES = frozenset({"true", "1", "yes", "on"})
 
@@ -248,3 +248,62 @@ def load_model_provider_config(
         allow_insecure_http=_as_bool(get("LIGHTCODE_MODEL_ALLOW_INSECURE_HTTP")),
         api_key=get("LIGHTCODE_MODEL_API_KEY").strip(),
     )
+
+
+def build_runtime_config(
+    env_config: ModelProviderConfig,
+    credential: object,
+) -> ModelProviderConfig:
+    """Merge a runtime credential (settings form) into the env-derived config.
+
+    The runtime credential overrides provider/base URL/model id/api key and
+    forces ``enabled=True`` so a user who just saved it can chat immediately.
+    Budgets, timeouts and the origin-allowlist policy stay from the env config:
+
+    * if the env allowlist is non-empty, the runtime base URL **must** be in it
+      (fail-closed, unchanged);
+    * if the env allowlist is empty, the user-submitted origin is accepted —
+      the origin was entered explicitly by the user in the settings form, not
+      silently derived from an environment variable.
+
+    ``credential`` is duck-typed: only ``provider``/``base_url``/``model_id``/
+    ``api_key`` are read (see ``app.services.credential_store``). The API key
+    stays excluded from ``repr()`` and ``safe_summary()``.
+    """
+    origins = env_config.allowed_origins
+    if not origins:
+        origin = _origin_of(getattr(credential, "base_url", ""))
+        origins = (origin,) if origin else ()
+    return ModelProviderConfig(
+        enabled=True,
+        provider=getattr(credential, "provider", "") or env_config.provider,
+        base_url=getattr(credential, "base_url", ""),
+        model_id=getattr(credential, "model_id", ""),
+        allowed_origins=origins,
+        connect_timeout_seconds=env_config.connect_timeout_seconds,
+        read_timeout_seconds=env_config.read_timeout_seconds,
+        total_timeout_seconds=env_config.total_timeout_seconds,
+        max_tool_rounds=env_config.max_tool_rounds,
+        max_input_bytes=env_config.max_input_bytes,
+        max_output_tokens=env_config.max_output_tokens,
+        max_requests_per_task=env_config.max_requests_per_task,
+        max_concurrent_tasks=env_config.max_concurrent_tasks,
+        allow_insecure_http=env_config.allow_insecure_http,
+        api_key=getattr(credential, "api_key", ""),
+    )
+
+
+def effective_config(
+    env_config: ModelProviderConfig,
+    credential_store: object,
+) -> ModelProviderConfig:
+    """Resolve the effective provider config: runtime credential > env snapshot.
+
+    ``credential_store`` is duck-typed (``get() -> Optional[credential]``); see
+    ``app.services.credential_store``. Called by routes and services so every
+    model call sees the same merged view without caching a stale snapshot.
+    """
+    credential = credential_store.get()
+    if credential is None:
+        return env_config
+    return build_runtime_config(env_config, credential)

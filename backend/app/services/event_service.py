@@ -46,6 +46,12 @@ def _frame(event: object) -> str:
     return f"id: {event.sequence}\nevent: task.event\ndata: {data}\n\n"  # type: ignore[attr-defined]
 
 
+def _chat_frame(event: object) -> str:
+    # ``event`` is a ChatMessageResponse; serialize with camelCase aliases.
+    data = event.model_dump_json(by_alias=True)  # type: ignore[attr-defined]
+    return f"id: {event.sequence}\nevent: chat.event\ndata: {data}\n\n"  # type: ignore[attr-defined]
+
+
 def _heartbeat() -> str:
     return ": heartbeat\n\n"
 
@@ -86,16 +92,39 @@ def stream_events(
     ``tail`` it keeps polling for new events up to the tail timeout, emitting a
     heartbeat frame on the configured cadence, and finally a ``stream.end``.
     """
+    yield from _stream(service, task_id, after_sequence, tail, _frame)
+
+
+def stream_chat_events(
+    service: EventSource, session_id: str, after_sequence: int, tail: bool
+) -> Iterator[str]:
+    """SSE transport for chat messages (``chat.event`` frames).
+
+    Replays persisted ``chat_messages`` after ``after_sequence`` and optionally
+    tails for new ones, with the same connection cap / heartbeat / timeout
+    budgets as the task-event stream.
+    """
+    yield from _stream(service, session_id, after_sequence, tail, _chat_frame)
+
+
+def _stream(
+    service: EventSource,
+    key: str,
+    after_sequence: int,
+    tail: bool,
+    frame: object,
+) -> Iterator[str]:
+    """Shared replay/tail loop used by the task-event and chat-event streams."""
     try:
         acquire_connection()
     except RuntimeError:
         yield 'event: stream.error\ndata: {"reason":"connection limit reached"}\n\n'
         return
     try:
-        pending = service.list_task_events_after(task_id, after_sequence)[:SSE_REPLAY_CAP]
+        pending = service.list_task_events_after(key, after_sequence)[:SSE_REPLAY_CAP]
         last = after_sequence
         for event in pending:
-            yield _frame(event)
+            yield frame(event)
             last = event.sequence
         if not tail:
             yield "event: stream.end\ndata: {}\n\n"
@@ -103,8 +132,8 @@ def stream_events(
         deadline = time.monotonic() + SSE_TAIL_TIMEOUT_SECONDS
         last_beat = time.monotonic()
         while time.monotonic() < deadline:
-            for event in service.list_task_events_after(task_id, last):
-                yield _frame(event)
+            for event in service.list_task_events_after(key, last):
+                yield frame(event)
                 last = event.sequence
             if time.monotonic() - last_beat >= SSE_HEARTBEAT_INTERVAL_SECONDS:
                 yield _heartbeat()

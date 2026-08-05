@@ -1,47 +1,62 @@
-import { isApiMode } from '@/config/runtime'
 import { requestJson } from '@/services/http'
-import type { ProviderHealth } from '@/types/agent'
-
-/** Mock 模式下的 Provider 健康：模型默认关闭，仅描述只读能力，绝不携带 key/baseUrl */
-const mockProviderHealth: ProviderHealth = {
-  status: 'disabled',
-  provider: 'none',
-  modelId: '',
-  detail: '模型提供方未启用（默认关闭）。',
-  capabilities: {
-    tools: ['read_file', 'search_files'],
-    canWriteFiles: false,
-    canRunCommands: false,
-    maxToolRounds: 8,
-    maxRequestsPerTask: 10,
-    maxInputBytes: 262144,
-    maxOutputTokens: 2048,
-    maxConcurrentTasks: 1,
-  },
-  security: {
-    apiKeyConfigured: false,
-    transport: 'none',
-    originAllowlisted: false,
-    followRedirects: false,
-    trustEnvProxies: false,
-  },
-}
+import type {
+  ProviderHealth,
+  ProviderSettingsInput,
+  ProviderSettingsResponse,
+  ProviderTestResponse,
+} from '@/types/agent'
 
 export interface ProviderService {
   /** 读取 Provider 健康状态（config 派生，不发网络请求） */
   getHealth(): Promise<ProviderHealth>
+  /** GET /provider/settings —— 安全视图（无 key、无完整 baseUrl） */
+  getSettings(): Promise<ProviderSettingsResponse>
+  /** POST /provider/settings —— 测试并保存运行期凭据；失败返回 {code, message} 错误体 */
+  saveSettings(input: ProviderSettingsInput): Promise<ProviderSettingsResponse>
+  /** POST /provider/settings/test —— 只测试连接，不保存 */
+  testConnection(input: ProviderSettingsInput): Promise<ProviderTestResponse>
+  /** DELETE /provider/settings —— 清除运行期凭据（回退到环境变量配置） */
+  clearSettings(): Promise<ProviderSettingsResponse>
 }
 
-export const mockProviderService: ProviderService = {
-  async getHealth() {
-    return structuredClone(mockProviderHealth)
-  },
-}
-
-export const httpProviderService: ProviderService = {
+export const providerService: ProviderService = {
   getHealth() {
     return requestJson<ProviderHealth>('/provider/health')
   },
-}
 
-export const providerService = isApiMode ? httpProviderService : mockProviderService
+  getSettings() {
+    return requestJson<ProviderSettingsResponse>('/provider/settings')
+  },
+
+  saveSettings(input) {
+    // 请求体与后端 ProviderSettingsRequest 严格一致（extra=forbid），
+    // 不含 rootPath/filePath/patch/command；响应绝不含 key/baseUrl。
+    return requestJson<ProviderSettingsResponse>('/provider/settings', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        provider: input.provider,
+        baseUrl: input.baseUrl,
+        apiKey: input.apiKey,
+        modelId: input.modelId,
+      }),
+    })
+  },
+
+  testConnection(input) {
+    return requestJson<ProviderTestResponse>('/provider/settings/test', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        provider: input.provider,
+        baseUrl: input.baseUrl,
+        apiKey: input.apiKey,
+        modelId: input.modelId,
+      }),
+    })
+  },
+
+  clearSettings() {
+    return requestJson<ProviderSettingsResponse>('/provider/settings', { method: 'DELETE' })
+  },
+}

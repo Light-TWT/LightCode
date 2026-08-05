@@ -4,8 +4,9 @@ import { ContractValidationError } from '@/contracts/real-task.schema'
 export async function requestJson<T>(path: string, init?: RequestInit): Promise<T> {
   const response = await fetch(`${apiBaseUrl}${path}`, init)
   if (!response.ok) {
-    const body = await response.json().catch(() => ({ detail: response.statusText }))
-    throw new Error(body.detail ?? response.statusText)
+    const body = await response.json().catch(() => ({}))
+    const detail = (body && (body.detail ?? body.message)) ?? response.statusText
+    throw new Error(typeof detail === 'string' ? detail : response.statusText)
   }
   return response.json() as Promise<T>
 }

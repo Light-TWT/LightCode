@@ -48,7 +48,7 @@ def test_create_only_replays_readonly_lifecycle(client: TestClient) -> None:
     task = client.post(
         "/api/v1/real-tasks", json={"workspaceId": "ws-demo", "title": "t"}
     ).json()
-    resp = client.get(f"/api/v1/tasks/{task['id']}/events")
+    resp = client.get(f"/api/v1/real-tasks/{task['id']}/events")
     assert resp.status_code == 200
     events = _parse_sse(resp.text)
     types = [e["eventType"] for e in events]
@@ -80,7 +80,7 @@ def test_full_lifecycle_events_after_approval(client: TestClient) -> None:
             "idempotencyKey": "k1",
         },
     )
-    resp = client.get(f"/api/v1/tasks/{task['id']}/events")
+    resp = client.get(f"/api/v1/real-tasks/{task['id']}/events")
     events = _parse_sse(resp.text)
     types = [e["eventType"] for e in events]
     assert types == [
@@ -103,5 +103,5 @@ def test_sse_stream_ends_with_marker(client: TestClient) -> None:
     task = client.post(
         "/api/v1/real-tasks", json={"workspaceId": "ws-demo", "title": "t"}
     ).json()
-    resp = client.get(f"/api/v1/tasks/{task['id']}/events")
+    resp = client.get(f"/api/v1/real-tasks/{task['id']}/events")
     assert "event: stream.end" in resp.text

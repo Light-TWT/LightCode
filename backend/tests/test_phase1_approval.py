@@ -156,7 +156,7 @@ def test_events_persisted_through_completion(env) -> None:
     client, _ = env
     task = _create(client)
     client.post(f"/api/v1/real-tasks/{task['id']}/approval", json=_approval_body(task))
-    events = client.get(f"/api/v1/tasks/{task['id']}/events")
+    events = client.get(f"/api/v1/real-tasks/{task['id']}/events")
     assert events.status_code == 200
     body = events.text
     assert "task.applying_change" in body

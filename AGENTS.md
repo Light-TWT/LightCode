@@ -6,15 +6,15 @@ LightCode 是一个独立实现的、本地优先的可视化编码智能体，�
 
 ## 当前阶段
 
-项目处于阶段 2：真实模型与开发者体验（WP5–WP8 / M4–M6 已完成，模型 Provider 默认关闭、仅"提议"）。Phase 0.5 Mock Runtime 保留为 legacy 仅供读取与演示；Phase 1 安全变更 MVP 为生产级闭环。
+项目处于核心 Agent 更新阶段（阶段 A）：单一主工作区 + 安全聊天闭环。Mock Runtime 与 Mock 前端已移除；产品入口只有一个基于已注册真实工作区的聊天式 Agent 主界面；Provider 可在设置页测试并保存（开发期为后端进程内存凭据，Electron 阶段替换为系统密钥库）；聊天会话持久化到 SQLite；模型通过受控检索（`read_file`/`search_files`）回答自由问答或生成单文件候选 ChangeSet，写入仍走显式审批与原子替换。
 
-- 冻结范围、安全不变量、状态机、审批写入协议与错误码以 `docs/phase1-safety-contract.md` 为准；Phase 2 模型 Provider 与可观测性以 `docs/phase2-model-provider-design.md` 与 `docs/architecture/lightcode-local-first-agent-design.md` 的 M6 状态为准。
+- 冻结范围、安全不变量、状态机、审批写入协议与错误码以 `docs/phase1-safety-contract.md` 为准；模型 Provider、凭据存储与聊天编排以 `docs/phase2-model-provider-design.md` 与 `docs/architecture/lightcode-local-first-agent-design.md` 为准。
 - 真实工作区根路径只来自服务端静态注册表（`LIGHTCODE_WORKSPACES_CONFIG` 或 `backend/workspaces.json`，已 gitignore）；公共 DTO、SSE、日志、错误一律不得返回真实根路径。
 - 每次文件访问必须经 `WorkspaceGuard`。ChangeSet 由服务端生成、持久化、版本化；审批绑定 `changeSetId + revision + diffHash`；写前重检基线哈希，冲突返回 `STALE_BASE`；单文件临时文件 + 原子替换 + 内建 UTF-8/哈希验证。
-- 浏览器只提交 `workspaceId`、任务标识、审批决定、`changeSetId`、`revision`、`diffHash`、`idempotencyKey`（Pydantic `extra="forbid"` 拒绝任何 `rootPath`/`filePath`/patch/command）。模型任务同样只提交 `workspaceId`+`title`，绝不提交 key/baseUrl/路径/补丁。
+- 浏览器只提交 `workspaceId`、任务标识、会话标识、用户消息、审批决定、`changeSetId`、`revision`、`diffHash`、`idempotencyKey`（Pydantic `extra="forbid"` 拒绝任何 `rootPath`/`filePath`/patch/command/key/baseUrl）。模型任务同样只提交 `workspaceId`+`title`，绝不提交 key/baseUrl/路径/补丁。
 - 后端 API 必须保持 `/api/v1` 与 camelCase JSON。
-- 模型 Provider 为受限、默认关闭能力：仅环境变量配置、fail-closed、零密钥泄露（key 仅来自后端环境变量，浏览器不输入/回显/传输）；模型只能"提议"计划、受限只读工具请求与服务端独立生成的候选 ChangeSet，不写文件、不执行命令、不决定审批。仍不得实现：Shell/subprocess/包管理/网络下载/Git 写操作、删除/新建/重命名/移动、多文件事务、二进制/非 UTF-8/超限文件修改、Electron、本地文件夹选择、前端密钥输入/持久化、真实模型依赖在 M3 门槛前接入。
-- Phase 0.5 允许的能力（FastAPI、SQLite、确定性 Mock Runtime、REST、SSE、前端 HTTP/EventSource 适配器）继续保留，Mock 与真实闭环隔离；Phase 2 模型闭环标记为 `kind='model'`，与 `mock`/`real` 严格隔离。
+- Provider 凭据仅经本机 FastAPI 设置端点接收，送入可替换的 `ProviderCredentialStore`（开发期内存实现不落盘；Electron 阶段替换为 OS Keychain 适配器）。健康、事件、日志与 API 响应继续执行 secret/location 脱敏，禁止完整 Base URL、key、header、路径与原始上游响应；测试连接限制在配置 allowlist 的 HTTPS origin，`trust_env=False`、`follow_redirects=False`、显式超时、零重试。
+- 模型只能"提议"：自由问答直接回答，编辑任务进入计划、受控检索、服务端独立生成的候选 ChangeSet 与显式审批；模型不写文件、不执行命令、不决定审批、不接收根路径或自由文件路径。仍不得实现：Shell/subprocess/包管理/网络下载/Git 写操作、删除/新建/重命名/移动、多文件事务、二进制/非 UTF-8/超限文件修改、Electron、本地文件夹选择、前端密钥持久化（阶段 B 完整文件操作需要先建立新的安全契约与崩溃恢复协议）。
 
 ## 必读文件
 
@@ -35,8 +35,8 @@ LightCode 是一个独立实现的、本地优先的可视化编码智能体，�
 ## 目录结构
 
 ```text
-frontend/       Vue 应用和 Mock/HTTP/SSE 服务适配器
-backend/        FastAPI + SQLite：Phase 0.5 Mock Runtime、Phase 1 安全变更闭环、Phase 2 模型提议（默认关闭）
+frontend/       Vue 应用（HTTP/SSE 服务适配器，无 Mock 分支）
+backend/        FastAPI + SQLite：真实工作区安全变更闭环、模型提议、聊天闭环、Provider 运行期设置
 electron/       为后续桌面 shell 保留
 docs/architecture/ 产品架构与决策
 docs/design/       已批准的 HTML 视觉原型与 UI 备注
@@ -52,19 +52,20 @@ scripts/        开发与验证脚本
 
 ## 运行时规则
 
-### Phase 0.5 已完成范围
+### 核心 Agent 更新（阶段 A）已交付范围
 
-- FastAPI 仅暴露确定性 Mock 数据和审批状态迁移；不得宣称或模拟真实项目文件访问、源码写入、终端执行或模型调用。
-- SSE 只回放 SQLite 中已持久化的有序事件；不得伪造持续模型流。
-- 提供商 API Key 不得进入 SQLite、事件、前端状态、日志或截图。
-- Phase 0.5 的任务分解与实现记录见 `docs/2026-07-23-phase-0-5-runtime-foundation.md`；当前实现以源码和 README 为准。
+- FastAPI 是工作区访问、模型出网、审批与写入的唯一边界；不再存在 Mock Runtime 或浏览器提交路径。
+- Provider 配置：设置页可编辑（Provider/Base URL/API Key/Model ID），显式"测试并保存"；凭据只进后端进程内存（`InMemoryProviderCredentialStore`），绝不进 SQLite、前端持久化、日志、SSE 或仓库；重启后内存凭据丢失，回落为环境变量配置或 unconfigured。
+- 聊天会话与消息持久化到 SQLite（`chat_sessions`/`chat_messages`）；消息不保存 API Key、完整 Provider URL、原始异常诊断或不受控隐私数据。
+- 模型检索：`read_file` + `search_files`，均由 WorkspaceGuard、browse token、文件大小/扩展名/敏感路径策略与预算约束；模型上下文不含根路径或自由文件路径。
+- 自由问答不生成 ChangeSet；编辑任务复用 `kind='model'` 任务 + 版本绑定审批 + 原子写入 + 内建验证。
 
 ### Phase 1 实施前置规则
 
 - 实施前必须先阅读 `docs/phase1-safety-contract.md` 与 `docs/workspace-registration.md`，再更新代码或 API 合约。
 - 真实工作区根路径仅来自服务端启动静态配置；浏览器只能提交 `workspaceId`，不能提交本地路径、文件路径、补丁、文件内容或命令。
 - Phase 1 仅允许受控只读工具、服务端确定性 ChangeSet、显式版本绑定审批、单个既有 UTF-8 文本文件的原子替换和内建完整性验证。
-- Phase 1 继续禁止真实模型、Electron、Shell/外部命令、依赖安装、网络下载、Git 写操作和密钥处理。
+- 阶段 A 继续禁止：真实模型直接写文件、Electron、Shell/外部命令、依赖安装、网络下载、Git 写操作、删除/新建/重命名/移动、多文件事务与前端密钥持久化。
 
 ## 验证
 
@@ -75,7 +76,13 @@ scripts/        开发与验证脚本
 ## 状态追踪
 
 ```text
-前端: 94 测试通过 (18 文件), vue-tsc -b + vite build 通过 (2026-08-04)
+核心 Agent 更新（阶段 A）: 完成 (2026-08-04) —— 单一主工作区 + 聊天闭环 + Provider 运行期设置 + 受控检索
+  - Mock Runtime/页面/服务/fixture/种子数据已移除；前端 HTTP-only 化（删除 isApiMode 分支）
+  - ProviderCredentialStore（开发期进程内存，Electron 阶段换 OS Keychain）+ 设置 API（GET/测试/测试并保存/清除）
+  - chat_sessions/chat_messages + tasks.chat_session_id 迁移；ChatService + ChatOrchestrator（LangGraph answer/tool/intent）
+  - 模型检索扩展 read_file + search_files（受控 query/命中/snippet；模型上下文无路径）
+  - 验证: 后端全量 202 passed / 2 skipped; 前端 69 passed / 13 files; vue-tsc -b + vite build --emptyOutDir false 通过
+前端: 69 测试通过 (13 文件), vue-tsc -b + vite build 通过 (2026-08-04)
 Phase 2 审查修复 (2026-08-04): 完成 —— H-01 未知编排异常不再泄露（固定错误投影, 不入 SQLite/API/SSE/UI）+ 模型上下文移除逻辑路径（仅 fileToken/哈希/受控文本）; M-01 真实任务 SSE 持续订阅 tail=true + stream.end 置 closed; M-02 Provider ready-only 新建模型任务门禁（disabled/unconfigured/degraded/未知均禁用, 保留历史/审批）; M-03 失败 UI 错误码→固定中文文案映射（不渲染服务端自由 message）; M-04 health 能力收紧为 read_file（与编排器一致）; M-05 输出 token 预算本地强制（含 usage 缺失的保守字节上限, MODEL_BUDGET_EXCEEDED）; M-06 任务详情路由工作区归属校验（错配清理并跳转真实归属）; L-01 SSE 连接上限加锁原子化（check+increment 同一临界区）。验证: 后端全量 195 passed / 2 skipped, 前端 94 passed / 18 文件, vue-tsc -b + vite build --emptyOutDir false 通过
 WP6 前端: 完成 (2026-07-31) —— 新增模型任务创建入口与 UI（RealWorkspaceView 侧栏"创建模型任务"面板 + store.createModelTask + model-task.service 双实现 + parseModelTask 契约校验 + 3 个测试文件 17 例）；复用既有 real-task 任务视图显示模型任务（get_real_task 含 kind='model'）；vite build --emptyOutDir false 通过
 WP7 (模型任务 SSE / 前端状态机 / 开发体验): 完成 (2026-08-03) —— 纯前端，无后端改动（复用 WP6 LangGraph 编排 emit 的事件 + WP3 SSE 续传通道）。新增：types/agent.ts 模型生命周期类型(ModelLifecycleStep/ModelLifecycleStage/EventConnection) + MODEL_TASK_EVENT_TYPES；contracts/real-task.schema.ts 新增 parseModelLifecycleEvent（模型事件 payload 防御性校验）；real.store.ts 新增 eventConnection 状态机(connecting/open/reconnecting/closed) + SSE sequence 缺口全量同步(_resync，带 _resyncing 防重入) + modelLifecycle getter（从事件派生有序阶段，最远到达阶段为 current，失败标记 failed）；RealWorkspaceView 强化启动前数据披露(代码片段发往已配置 Provider) + Provider degraded 门禁新建(保留历史/查看/审批)；RealTaskView 增加 kind 徽标 + 模型生命周期时间线 + awaiting_approval 策略版本与"不执行外部命令"说明 + SSE 连接态 + 失败可行动无敏感提示(精确正则拒绝 sk-+20位密钥)；phase1.fixture.ts 新增 modelTaskFixture/modelTaskEventsFixture；real-task.service mock 支持模型任务 id。验证：新增 real.store.test.ts 5 例 + RealTaskView.test.ts 6 例（共 11 例 WP7），前端全量 87 passed / 17 文件，vue-tsc -b + vite build 通过，无回归

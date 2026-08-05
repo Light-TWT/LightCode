@@ -19,7 +19,7 @@ import httpx
 import pytest
 from fastapi.testclient import TestClient
 
-from app.config.model_provider import ModelProviderConfig
+from app.config.model_provider import ModelProviderConfig, effective_config
 from app.main import app
 from app.services.model_orchestrator import ModelOrchestrator
 from app.services.observability import Metrics
@@ -152,7 +152,9 @@ def _patch_transport(monkeypatch, transport: httpx.MockTransport) -> None:
             request.app.state.db,
             request.app.state.registry,
             request.app.state.guard,
-            request.app.state.model_provider,
+            effective_config(
+                request.app.state.env_model_provider, request.app.state.credential_store
+            ),
             transport=transport,
         )
 
@@ -247,7 +249,7 @@ def test_api_mode_e2e_happy_path(client, monkeypatch, caplog, tmp_path: Path) ->
     # Observability captured the right aggregates.
     counters = Metrics.snapshot()["counters"]
     assert counters["provider.call:openai-compatible:test-model:success"] >= 1
-    assert counters["tool.call:model_read:read_file"] >= 1
+    assert counters["tool.call:model_tool:read_file"] >= 1
     assert counters["task.transition:planning->awaiting_approval"] >= 1
     assert counters["sse.stream.started"] >= 1
 
@@ -303,7 +305,8 @@ def test_e2e_provider_request_budget_exhausted(
         allow_insecure_http=False,
         api_key="test-key",
     )
-    client.app.state.model_provider = cfg
+    client.app.state.env_model_provider = cfg
+    client.app.state.credential_store.clear()
     _patch_transport(monkeypatch, _read_then_candidate_handler())
     caplog.set_level(logging.INFO)
     Metrics.reset()

@@ -2,36 +2,54 @@ import { flushPromises, mount } from '@vue/test-utils'
 import { createMemoryHistory, createRouter } from 'vue-router'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import SettingsView from './SettingsView.vue'
-import { providerService } from '@/services/provider.service'
 
-// 用可控快照替换 provider.service，便于断言刷新调用次数与新字段渲染
+const payloads = vi.hoisted(() => {
+  const settingsPayload = {
+    configured: true,
+    status: 'ready',
+    provider: 'openai-compatible',
+    modelId: 'demo-model',
+    detail: 'Provider 已就绪。',
+    originAllowlisted: true,
+    transport: 'https',
+  }
+  const healthPayload = {
+    status: 'ready',
+    provider: 'openai-compatible',
+    modelId: 'demo-model',
+    detail: 'ok',
+    capabilities: {
+      tools: ['read_file'],
+      canWriteFiles: false,
+      canRunCommands: false,
+      maxToolRounds: 8,
+      maxRequestsPerTask: 10,
+      maxInputBytes: 262144,
+      maxOutputTokens: 2048,
+      maxConcurrentTasks: 1,
+    },
+    security: {
+      apiKeyConfigured: true,
+      transport: 'https',
+      originAllowlisted: true,
+      followRedirects: false,
+      trustEnvProxies: false,
+    },
+  }
+  return { settingsPayload, healthPayload }
+})
+
 vi.mock('@/services/provider.service', () => ({
   providerService: {
-    getHealth: vi.fn().mockResolvedValue({
-      status: 'disabled',
-      provider: 'none',
-      modelId: '',
-      detail: '模型提供方未启用（默认关闭）。',
-      capabilities: {
-        tools: ['read_file', 'search_files'],
-        canWriteFiles: false,
-        canRunCommands: false,
-        maxToolRounds: 8,
-        maxRequestsPerTask: 10,
-        maxInputBytes: 262144,
-        maxOutputTokens: 2048,
-        maxConcurrentTasks: 1,
-      },
-      security: {
-        apiKeyConfigured: false,
-        transport: 'none',
-        originAllowlisted: false,
-        followRedirects: false,
-        trustEnvProxies: false,
-      },
-    }),
+    getSettings: vi.fn().mockResolvedValue(payloads.settingsPayload),
+    getHealth: vi.fn().mockResolvedValue(payloads.healthPayload),
+    saveSettings: vi.fn().mockResolvedValue(payloads.settingsPayload),
+    testConnection: vi.fn().mockResolvedValue({ ok: true, code: '', detail: '' }),
+    clearSettings: vi.fn().mockResolvedValue({ ...payloads.settingsPayload, configured: false }),
   },
 }))
+
+import { providerService } from '@/services/provider.service'
 
 function createTestRouter() {
   return createRouter({
@@ -52,92 +70,112 @@ async function mountSettings() {
   return { wrapper, router }
 }
 
-describe('SettingsView', () => {
-  it('renders the sidebar with nav items', async () => {
-    const { wrapper } = await mountSettings()
-    expect(wrapper.text()).toContain('设置')
-    expect(wrapper.text()).toContain('通用')
-    expect(wrapper.text()).toContain('模型')
-    expect(wrapper.text()).toContain('工作区权限')
-    expect(wrapper.text()).toContain('命令策略')
-    expect(wrapper.text()).toContain('本地数据')
-    expect(wrapper.text()).toContain('LightCode v0.1.0')
+function getMock<T>(fn: unknown): T {
+  return fn as T
+}
+
+describe('SettingsView（Provider 配置表单）', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+    ;(providerService.getSettings as ReturnType<typeof vi.fn>).mockResolvedValue(
+      payloads.settingsPayload,
+    )
+    ;(providerService.getHealth as ReturnType<typeof vi.fn>).mockResolvedValue(
+      payloads.healthPayload,
+    )
+    ;(providerService.saveSettings as ReturnType<typeof vi.fn>).mockResolvedValue(
+      payloads.settingsPayload,
+    )
+    ;(providerService.testConnection as ReturnType<typeof vi.fn>).mockResolvedValue({
+      ok: true,
+      code: '',
+      detail: '',
+    })
+    ;(providerService.clearSettings as ReturnType<typeof vi.fn>).mockResolvedValue({
+      ...payloads.settingsPayload,
+      configured: false,
+    })
   })
 
-  it('shows general page content by default', async () => {
+  it('渲染配置表单字段与 getSettings 安全状态卡片', async () => {
     const { wrapper } = await mountSettings()
-    expect(wrapper.text()).toContain('Local runtime ready')
-    expect(wrapper.text()).toContain('前端 Mock 原型')
+    // 表单字段
+    expect(wrapper.get('[data-testid="input-provider"]').exists()).toBe(true)
+    expect(wrapper.get('[data-testid="input-base-url"]').exists()).toBe(true)
+    expect(wrapper.get('[data-testid="input-api-key"]').attributes('type')).toBe('password')
+    expect(wrapper.get('[data-testid="input-model-id"]').exists()).toBe(true)
+    // getSettings 状态卡片
+    expect(wrapper.get('[data-testid="settings-status"]').text()).toBe('ready')
+    expect(wrapper.get('[data-testid="configured-tag"]').text()).toContain('已配置运行期凭据')
+    expect(wrapper.get('[data-testid="settings-model"]').text()).toBe('demo-model')
+    // 安全说明文案
+    expect(wrapper.text()).toContain('仅保存在后端进程内存')
+    expect(wrapper.text()).toContain('Electron 阶段将迁移为系统密钥库')
   })
 
-  it('switches page on nav item click', async () => {
+  it('「测试连接」以表单值调用 testConnection，且响应不含 key/baseUrl', async () => {
     const { wrapper } = await mountSettings()
-    expect(wrapper.text()).toContain('Local runtime ready')
+    await wrapper.get('[data-testid="input-base-url"]').setValue('https://api.example.com/v1')
+    await wrapper.get('[data-testid="input-api-key"]').setValue('sk-super-secret-12345')
+    await wrapper.get('[data-testid="input-model-id"]').setValue('demo-model')
 
-    const navBtns = wrapper.findAll('button.nav-item')
-    expect(navBtns.length).toBe(5)
+    await wrapper.get('[data-testid="btn-test"]').trigger('click')
+    await flushPromises()
 
-    await navBtns[1].trigger('click')
-    expect(wrapper.text()).toContain('Mock Mode')
-    expect(wrapper.text()).toContain('OpenAI Compatible API')
-    expect(wrapper.text()).not.toContain('Local runtime ready')
-
-    await navBtns[2].trigger('click')
-    expect(wrapper.text()).toContain('授权根目录')
+    const testFn = getMock<ReturnType<typeof vi.fn>>(providerService.testConnection)
+    expect(testFn).toHaveBeenCalledTimes(1)
+    const body = testFn.mock.calls[0][0]
+    expect(body).toMatchObject({
+      provider: 'openai-compatible',
+      baseUrl: 'https://api.example.com/v1',
+      apiKey: 'sk-super-secret-12345',
+      modelId: 'demo-model',
+    })
+    // 测试成功提示，且状态卡片（来自响应）不渲染密钥/完整 URL
+    expect(wrapper.get('[data-testid="form-message"]').text()).toContain('连接测试成功')
+    expect(wrapper.get('[data-testid="form-message"]').text()).not.toContain('sk-super-secret-12345')
+    const statusCard = wrapper.get('[aria-label="Provider 状态"]')
+    expect(statusCard.text()).not.toContain('sk-super-secret-12345')
+    expect(statusCard.text()).not.toContain('https://api.example.com/v1')
   })
 
-  it('navigates back to home on back button click', async () => {
+  it('「测试并保存」调用 saveSettings，提交后清空 key 输入框', async () => {
+    const { wrapper } = await mountSettings()
+    await wrapper.get('[data-testid="input-base-url"]').setValue('https://api.example.com/v1')
+    await wrapper.get('[data-testid="input-api-key"]').setValue('sk-super-secret-12345')
+    await wrapper.get('[data-testid="input-model-id"]').setValue('demo-model')
+
+    // 「测试并保存」是 submit 按钮：jsdom 中按钮 click 不会触发表单 submit，
+    // 直接对 form 触发 submit（与真实浏览器行为一致）
+    await wrapper.get('[data-testid="provider-form"]').trigger('submit')
+    await flushPromises()
+
+    const saveFn = getMock<ReturnType<typeof vi.fn>>(providerService.saveSettings)
+    expect(saveFn).toHaveBeenCalledTimes(1)
+    expect(saveFn.mock.calls[0][0].apiKey).toBe('sk-super-secret-12345')
+    // 提交后清空 key 输入框，绝不把密钥留在 DOM / 前端存储
+    expect(wrapper.get('[data-testid="input-api-key"]').element as HTMLInputElement).toHaveProperty(
+      'value',
+      '',
+    )
+    expect(wrapper.text()).not.toContain('sk-super-secret-12345')
+    expect(wrapper.get('[data-testid="form-message"]').text()).toContain('已保存')
+  })
+
+  it('「清除运行期配置」调用 clearSettings 并刷新状态', async () => {
+    const { wrapper } = await mountSettings()
+    await wrapper.get('[data-testid="btn-clear"]').trigger('click')
+    await flushPromises()
+
+    const clearFn = getMock<ReturnType<typeof vi.fn>>(providerService.clearSettings)
+    expect(clearFn).toHaveBeenCalledTimes(1)
+    expect(wrapper.get('[data-testid="configured-tag"]').text()).toContain('仅环境变量')
+  })
+
+  it('返回按钮导航到首页', async () => {
     const { wrapper, router } = await mountSettings()
-
-    await wrapper.get('button.sidebar-back').trigger('click')
+    await wrapper.get('[data-testid="back-home-btn"]').trigger('click')
     await flushPromises()
-
     expect(router.currentRoute.value.fullPath).toBe('/')
-  })
-
-  it('renders live provider health (mock mode defaults to disabled)', async () => {
-    const { wrapper } = await mountSettings()
-
-    const navBtns = wrapper.findAll('button.nav-item')
-    await navBtns[1].trigger('click') // 模型
-    await flushPromises()
-
-    expect(wrapper.text()).toContain('Provider 健康状态')
-    expect(wrapper.text()).toContain('disabled')
-    expect(wrapper.text()).not.toContain('sk-')
-    expect(wrapper.text()).toContain('数据源：前端 Mock')
-  })
-
-  it('renders full capability and security fields', async () => {
-    const { wrapper } = await mountSettings()
-
-    const navBtns = wrapper.findAll('button.nav-item')
-    await navBtns[1].trigger('click')
-    await flushPromises()
-
-    const text = wrapper.text()
-    expect(text).toContain('256 KB') // maxInputBytes 格式化
-    expect(text).toContain('2048 tokens') // maxOutputTokens
-    expect(text).toContain('跟随重定向')
-    expect(text).toContain('信任环境变量代理')
-    expect(text).toContain('可写文件')
-    expect(text).toContain('可执行命令')
-  })
-
-  it('refreshes health when the refresh button is clicked', async () => {
-    const { wrapper } = await mountSettings()
-
-    const navBtns = wrapper.findAll('button.nav-item')
-    await navBtns[1].trigger('click')
-    await flushPromises()
-
-    const callsAfterMount = (providerService.getHealth as ReturnType<typeof vi.fn>).mock.calls.length
-    expect(callsAfterMount).toBeGreaterThanOrEqual(1)
-
-    await wrapper.get('button.health-refresh').trigger('click')
-    await flushPromises()
-
-    const callsAfterRefresh = (providerService.getHealth as ReturnType<typeof vi.fn>).mock.calls.length
-    expect(callsAfterRefresh).toBe(callsAfterMount + 1)
   })
 })

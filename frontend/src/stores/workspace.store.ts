@@ -1,16 +1,16 @@
 import { defineStore } from 'pinia'
-import { isApiMode } from '@/config/runtime'
-import { subscribeRealTaskEvents } from '@/services/event.service'
+import { chatService } from '@/services/chat.service'
+import { subscribeChatEvents, subscribeRealTaskEvents } from '@/services/event.service'
 import { realTaskService } from '@/services/real-task.service'
-import { modelTaskService } from '@/services/model-task.service'
 import { registeredWorkspaceService } from '@/services/registered-workspace.service'
 import { parseModelLifecycleEvent } from '@/contracts/real-task.schema'
 import type {
   ApprovalDecision,
+  ChatMessage,
+  ChatSession,
   EventConnection,
   ModelLifecycleStage,
   ModelLifecycleStep,
-  ModelTaskResponse,
   RealTask,
   RegisteredFileContent,
   RegisteredFileEntry,
@@ -26,7 +26,7 @@ function newIdempotencyKey(): string {
   return `idem-${Date.now()}-${Math.random().toString(16).slice(2)}`
 }
 
-export const useRealStore = defineStore('real', {
+export const useWorkspaceStore = defineStore('workspace', {
   state: () => ({
     // 注册工作区浏览（令牌导航，前端不持有自由路径）
     workspaces: [] as RegisteredWorkspace[],
@@ -37,17 +37,26 @@ export const useRealStore = defineStore('real', {
     filePreview: null as RegisteredFileContent | null,
     searchQuery: '',
     searchHits: [] as WorkspaceSearchHit[],
-    // 真实任务闭环
+    // 任务闭环（真实/模型任务复用 Phase 1 审批）
     task: null as RealTask | null,
     events: [] as TaskEvent[],
     lastSequence: 0,
-    /** SSE 连接状态机（WP7）：断点续传与降级可观测性 */
+    /** 任务 SSE 连接状态机：断点续传与降级可观测性 */
     eventConnection: 'idle' as EventConnection,
+    // 聊天会话（核心 Agent 更新阶段 A）
+    chatSessions: [] as ChatSession[],
+    currentSessionId: null as string | null,
+    messages: [] as ChatMessage[],
+    lastChatSequence: 0,
+    sending: false,
+    /** 聊天 SSE 连接状态机（tail 续传 + 断线重连） */
+    chatConnection: 'idle' as EventConnection,
     // 通用
     loading: false,
     submitting: false,
     error: null as string | null,
     _unsubscribeEvents: null as (() => void) | null,
+    _unsubscribeChatEvents: null as (() => void) | null,
     /** 缺口全量同步进行中的防重入标志 */
     _resyncing: false,
   }),
@@ -111,6 +120,14 @@ export const useRealStore = defineStore('real', {
       this.filePreview = null
       this.searchQuery = ''
       this.searchHits = []
+      // 切换工作区时清空旧工作区上下文：任务、聊天会话、消息与连接
+      this.resetTask()
+      this._cleanupChatEvents()
+      this.chatSessions = []
+      this.currentSessionId = null
+      this.messages = []
+      this.lastChatSequence = 0
+      this.chatConnection = 'idle'
       if (this.workspaces.length === 0) {
         await this.loadWorkspaces()
       }
@@ -182,41 +199,6 @@ export const useRealStore = defineStore('real', {
       }
     },
 
-    async createTask(workspaceId: string, title: string, templateId = 'append-marker') {
-      this.submitting = true
-      this.error = null
-      try {
-        const task = await realTaskService.createRealTask({ workspaceId, title, templateId })
-        this._setTask(task)
-        return task
-      } catch (err) {
-        this.error = err instanceof Error ? err.message : String(err)
-        return null
-      } finally {
-        this.submitting = false
-      }
-    },
-
-    /** 创建模型任务（WP6）：仅提交 workspaceId + title。服务端跑编排并生成候选
-     *  变更集；成功返回 ModelTaskResponse 供上层导航，failed/异常则设置 error 并返回 null。 */
-    async createModelTask(workspaceId: string, title: string): Promise<ModelTaskResponse | null> {
-      this.submitting = true
-      this.error = null
-      try {
-        const resp = await modelTaskService.createModelTask({ workspaceId, title })
-        if (resp.state !== 'awaiting_approval') {
-          this.error = resp.detail || '模型任务创建失败'
-          return null
-        }
-        return resp
-      } catch (err) {
-        this.error = err instanceof Error ? err.message : String(err)
-        return null
-      } finally {
-        this.submitting = false
-      }
-    },
-
     async loadTask(taskId: string) {
       this.loading = true
       this.error = null
@@ -275,11 +257,7 @@ export const useRealStore = defineStore('real', {
     },
 
     _resubscribe(taskId: string) {
-      this.cleanup()
-      if (!isApiMode) {
-        this.eventConnection = 'idle'
-        return
-      }
+      this._cleanupTaskEvents()
       this.eventConnection = 'connecting'
       this._unsubscribeEvents = subscribeRealTaskEvents(
         taskId,
@@ -335,11 +313,127 @@ export const useRealStore = defineStore('real', {
       this.error = null
     },
 
-    cleanup() {
+    // --- 核心 Agent 更新（阶段 A）：聊天会话与消息 ---
+
+    async loadChatSessions(workspaceId: string) {
+      this.error = null
+      try {
+        this.chatSessions = await chatService.listChatSessions(workspaceId)
+      } catch (err) {
+        this.error = err instanceof Error ? err.message : String(err)
+      }
+    },
+
+    /** 新建会话：服务端持久化后置为当前会话并订阅 chat.event */
+    async createChatSession(workspaceId: string, title: string): Promise<ChatSession | null> {
+      this.submitting = true
+      this.error = null
+      try {
+        const session = await chatService.createChatSession(workspaceId, title)
+        this.chatSessions = [session, ...this.chatSessions.filter((s) => s.id !== session.id)]
+        this.currentSessionId = session.id
+        this.messages = []
+        this.lastChatSequence = 0
+        this._subscribeChatEvents(session.id)
+        return session
+      } catch (err) {
+        this.error = err instanceof Error ? err.message : String(err)
+        return null
+      } finally {
+        this.submitting = false
+      }
+    },
+
+    /** 打开既有会话：拉取历史消息并按最新 sequence 续传订阅 chat.event */
+    async openChatSession(sessionId: string, workspaceId?: string) {
+      this.currentSessionId = sessionId
+      this.sending = false
+      this.error = null
+      try {
+        const detail = await chatService.getChatSession(sessionId, workspaceId)
+        this.messages = detail.messages
+        this.lastChatSequence = detail.messages.length
+          ? detail.messages[detail.messages.length - 1].sequence
+          : 0
+        this._subscribeChatEvents(sessionId)
+        // 加载最近一条 edit_summary 关联的任务，使聊天内审批卡片与底部审查栏可用
+        const pending = [...detail.messages]
+          .reverse()
+          .find((msg) => msg.kind === 'edit_summary' && msg.taskId)
+        if (pending) {
+          await this.loadTask(pending.taskId)
+        }
+      } catch (err) {
+        this.error = err instanceof Error ? err.message : String(err)
+      }
+    },
+
+    /** 提交用户消息：持久化回复直接追加；taskId 非空时加载关联任务以便审查 */
+    async submitChatMessage(content: string) {
+      if (!this.currentSessionId || this.sending) return
+      this.sending = true
+      this.error = null
+      try {
+        const resp = await chatService.submitMessage(this.currentSessionId, content)
+        this._appendChatMessage(resp.message)
+        if (resp.taskId) {
+          await this.loadTask(resp.taskId)
+        }
+      } catch (err) {
+        this.error = err instanceof Error ? err.message : String(err)
+      } finally {
+        this.sending = false
+      }
+    },
+
+    /** 追加聊天消息（按 sequence 去重；POST 返回与 SSE 帧双路径安全） */
+    _appendChatMessage(message: ChatMessage) {
+      if (message.sequence <= this.lastChatSequence) return
+      this.lastChatSequence = message.sequence
+      this.messages = [...this.messages, message]
+    },
+
+    /** 订阅当前会话的 chat.event（tail 续传；EventSource 断线自动带 Last-Event-ID 重连） */
+    _subscribeChatEvents(sessionId: string) {
+      this._cleanupChatEvents()
+      this.chatConnection = 'connecting'
+      this._unsubscribeChatEvents = subscribeChatEvents(
+        sessionId,
+        (message) => {
+          if (this.currentSessionId !== sessionId) return // 已切换会话，丢弃旧流
+          this._appendChatMessage(message)
+          this.chatConnection = 'open'
+        },
+        () => {
+          if (this.currentSessionId === sessionId) this.chatConnection = 'reconnecting'
+        },
+        {
+          afterSequence: this.lastChatSequence,
+          tail: true,
+          onEnd: () => {
+            if (this.currentSessionId === sessionId) this.chatConnection = 'closed'
+          },
+        },
+      )
+    },
+
+    _cleanupChatEvents() {
+      if (this._unsubscribeChatEvents) {
+        this._unsubscribeChatEvents()
+        this._unsubscribeChatEvents = null
+      }
+    },
+
+    _cleanupTaskEvents() {
       if (this._unsubscribeEvents) {
         this._unsubscribeEvents()
         this._unsubscribeEvents = null
       }
+    },
+
+    cleanup() {
+      this._cleanupChatEvents()
+      this._cleanupTaskEvents()
     },
   },
 })

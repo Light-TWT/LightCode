@@ -1,80 +1,52 @@
-import time
-
 from fastapi import APIRouter, Request
 from fastapi.responses import StreamingResponse
 
+from app.config.model_provider import (
+    MODEL_ALLOWED_TOOLS,
+    ModelProviderConfig,
+    build_runtime_config,
+    effective_config,
+)
 from app.schemas.contracts import (
     ApprovalRequest,
     BrowseFileContent,
     BrowseFileEntry,
     BrowseSearchHit,
     CreateRealTaskRequest,
-    HistoryTaskDetailResponse,
-    HistoryTaskEntryResponse,
     RealTaskResponse,
     RegisteredWorkspaceResponse,
-    SessionResponse,
-    TaskEventResponse,
-    TaskResponse,
-    WorkspaceEntryResponse,
-    WorkspaceResponse,
 )
-from app.config.model_provider import MODEL_ALLOWED_TOOLS, ModelProviderConfig
+from app.schemas.errors import (
+    PROVIDER_CONNECTION_FAILED,
+    PROVIDER_SETTINGS_INVALID,
+    Phase1Error,
+)
 from app.schemas.model_contracts import (
+    ChatMessageSubmitRequest,
+    ChatSessionCreateRequest,
+    ChatSessionDetailResponse,
+    ChatSessionResponse,
+    ChatSubmitResponse,
     ModelTaskCreateRequest,
     ModelTaskResponse,
     ProviderCapabilitiesResponse,
     ProviderHealthResponse,
     ProviderSecurityResponse,
+    ProviderSettingsRequest,
+    ProviderSettingsResponse,
+    ProviderTestRequest,
+    ProviderTestResponse,
 )
 from app.services.browse_tokens import issue, verify
-from app.services.event_service import stream_events
+from app.services.chat_service import ChatService
+from app.services.credential_store import ProviderRuntimeCredential
+from app.services.event_service import stream_chat_events, stream_events
 from app.services.model_orchestrator import ModelOrchestrator
 from app.services.observability import Metrics, correlation_id_var
+from app.services.openai_compatible_provider import OpenAICompatibleProvider
 from app.services.phase1 import Phase1Service
-from app.services.runtime import RuntimeService
 
 router = APIRouter(prefix="/api/v1")
-
-
-@router.get("/workspaces/recent", response_model=list[WorkspaceEntryResponse])
-def recent_workspaces(request: Request) -> list[WorkspaceEntryResponse]:
-    return RuntimeService.from_request(request).list_recent_workspaces()
-
-
-@router.get("/workspaces", response_model=list[WorkspaceEntryResponse])
-def workspaces(request: Request) -> list[WorkspaceEntryResponse]:
-    return RuntimeService.from_request(request).list_workspaces()
-
-
-@router.get("/workspaces/{workspace_id}", response_model=WorkspaceResponse)
-def workspace(workspace_id: str, request: Request) -> WorkspaceResponse:
-    return RuntimeService.from_request(request).get_workspace(workspace_id)
-
-
-@router.get("/workspaces/{workspace_id}/sessions", response_model=list[SessionResponse])
-def workspace_sessions(workspace_id: str, request: Request) -> list[SessionResponse]:
-    return RuntimeService.from_request(request).list_workspace_sessions(workspace_id)
-
-
-@router.get("/sessions/{session_id}/tasks/current", response_model=TaskResponse)
-def current_task(session_id: str, request: Request) -> TaskResponse:
-    return RuntimeService.from_request(request).get_current_task(session_id)
-
-
-@router.post("/tasks/{task_id}/changeset/approve", response_model=TaskResponse)
-def approve_changeset(task_id: str, request: Request) -> TaskResponse:
-    return RuntimeService.from_request(request).approve_changeset(task_id)
-
-
-@router.get("/workspaces/{workspace_id}/tasks/history", response_model=list[HistoryTaskEntryResponse])
-def task_history(workspace_id: str, request: Request) -> list[HistoryTaskEntryResponse]:
-    return RuntimeService.from_request(request).list_task_history(workspace_id)
-
-
-@router.get("/tasks/{task_id}", response_model=HistoryTaskDetailResponse)
-def task_detail(task_id: str, request: Request) -> HistoryTaskDetailResponse:
-    return RuntimeService.from_request(request).get_task_detail(task_id)
 
 
 def _resolve_after_sequence(request: Request, after_sequence: int) -> int:
@@ -90,21 +62,9 @@ def _resolve_after_sequence(request: Request, after_sequence: int) -> int:
     return after_sequence
 
 
-@router.get("/tasks/{task_id}/events")
-def task_events(
-    task_id: str,
-    request: Request,
-    after_sequence: int = 0,
-    tail: bool = False,
-) -> StreamingResponse:
-    """Replay persisted task events; supports resume via `?afterSequence=` or
-    the `Last-Event-ID` header, and optional tailing for live catch-up."""
-    service = RuntimeService.from_request(request)
-    after = _resolve_after_sequence(request, after_sequence)
-    return StreamingResponse(
-        stream_events(service, task_id, after, tail),
-        media_type="text/event-stream",
-    )
+def _provider_transport(request: Request):
+    """Allow tests to inject an httpx transport (None in production)."""
+    return getattr(request.app.state, "provider_transport", None)
 
 
 # ---------------------------------------------------------------------------
@@ -203,7 +163,7 @@ def real_task_events(
     """Real-task event stream (resume-capable). Reuses the same persisted
     `task_events` table as the generic endpoint; the browser connects by the
     real task id and resumes via `?afterSequence=` or `Last-Event-ID`."""
-    service = RuntimeService.from_request(request)
+    service = Phase1Service.from_request(request)
     after = _resolve_after_sequence(request, after_sequence)
     return StreamingResponse(
         stream_events(service, task_id, after, tail),
@@ -212,7 +172,7 @@ def real_task_events(
 
 
 # ---------------------------------------------------------------------------
-# Phase 2 / WP5: model provider health (default-off, config-derived, read-only)
+# Phase 2 / WP5: model provider health + runtime settings (阶段 A)
 # ---------------------------------------------------------------------------
 
 
@@ -220,12 +180,14 @@ def real_task_events(
 def provider_health(request: Request) -> ProviderHealthResponse:
     """Report the provider status without contacting the provider.
 
-    The response is derived purely from backend configuration, so calling this
-    endpoint can never open a socket, incur cost or leak a prompt. It carries
-    no API key, no Authorization header and no base URL — only the scheme, the
-    allowlist verdict and the declared budgets (safety-contract §API/事件/错误码).
+    The response is derived purely from backend configuration (env snapshot
+    merged with any runtime credential saved via the settings form), so calling
+    this endpoint can never open a socket, incur cost or leak a prompt. It
+    carries no API key, no Authorization header and no base URL.
     """
-    config: ModelProviderConfig = request.app.state.model_provider
+    config: ModelProviderConfig = effective_config(
+        request.app.state.env_model_provider, request.app.state.credential_store
+    )
     return ProviderHealthResponse(
         status=config.status(),
         provider=config.provider,
@@ -233,8 +195,6 @@ def provider_health(request: Request) -> ProviderHealthResponse:
         detail=config.status_detail(),
         capabilities=ProviderCapabilitiesResponse(
             tools=list(MODEL_ALLOWED_TOOLS),
-            # Hard product invariants, not runtime toggles: the model proposes,
-            # the server decides, the user approves.
             canWriteFiles=False,
             canRunCommands=False,
             maxToolRounds=config.max_tool_rounds,
@@ -251,6 +211,94 @@ def provider_health(request: Request) -> ProviderHealthResponse:
             trustEnvProxies=False,
         ),
     )
+
+
+def _settings_response(request: Request, configured: bool) -> ProviderSettingsResponse:
+    config: ModelProviderConfig = effective_config(
+        request.app.state.env_model_provider, request.app.state.credential_store
+    )
+    return ProviderSettingsResponse(
+        configured=configured,
+        status=config.status(),
+        provider=config.provider,
+        modelId=config.model_id,
+        detail=config.status_detail(),
+        originAllowlisted=config.origin_allowlisted,
+        transport=config.transport,
+    )
+
+
+@router.get("/provider/settings", response_model=ProviderSettingsResponse)
+def provider_settings(request: Request) -> ProviderSettingsResponse:
+    """Read the current (safe) provider settings view. No key, no full URL."""
+    store = request.app.state.credential_store
+    return _settings_response(request, store.get() is not None)
+
+
+@router.post("/provider/settings/test", response_model=ProviderTestResponse)
+def test_provider_settings(
+    payload: ProviderTestRequest, request: Request
+) -> ProviderTestResponse:
+    """Test connectivity against the submitted provider without saving.
+
+    Returns 200 with ``ok=false`` and a stable code so the UI can show the
+    error inline; never leaks the key or the full URL.
+    """
+    correlation_id_var.set(getattr(request.state, "correlation_id", "-"))
+    env_config: ModelProviderConfig = request.app.state.env_model_provider
+    credential = ProviderRuntimeCredential(
+        provider=payload.provider.strip() or "openai-compatible",
+        base_url=payload.baseUrl.strip(),
+        model_id=payload.modelId.strip(),
+        api_key=payload.apiKey.strip(),
+    )
+    config = effective_config(env_config, type("_Store", (), {"get": lambda self: credential})())
+    if config.status() != "ready":
+        return ProviderTestResponse(
+            ok=False, code=PROVIDER_SETTINGS_INVALID, detail=config.status_detail()
+        )
+    try:
+        OpenAICompatibleProvider(config, transport=_provider_transport(request)).test_connection()
+    except Phase1Error as exc:
+        return ProviderTestResponse(ok=False, code=exc.code, detail=exc.message)
+    return ProviderTestResponse(ok=True)
+
+
+@router.post("/provider/settings", response_model=ProviderSettingsResponse)
+def save_provider_settings(
+    payload: ProviderSettingsRequest, request: Request
+) -> ProviderSettingsResponse:
+    """Test the submitted provider and, on success, save it to the runtime
+    credential store (in-memory; lost on restart). Fail-closed: never saved if
+    the config is not `ready` or the connection test fails."""
+    correlation_id_var.set(getattr(request.state, "correlation_id", "-"))
+    env_config: ModelProviderConfig = request.app.state.env_model_provider
+    credential = ProviderRuntimeCredential(
+        provider=payload.provider.strip() or "openai-compatible",
+        base_url=payload.baseUrl.strip(),
+        model_id=payload.modelId.strip(),
+        api_key=payload.apiKey.strip(),
+    )
+    config = build_runtime_config(env_config, credential)
+    if config.status() != "ready":
+        raise Phase1Error(
+            PROVIDER_SETTINGS_INVALID, config.status_detail(), http_status=422
+        )
+    try:
+        OpenAICompatibleProvider(config, transport=_provider_transport(request)).test_connection()
+    except Phase1Error as exc:
+        raise Phase1Error(
+            PROVIDER_CONNECTION_FAILED, exc.message, http_status=502
+        ) from exc
+    request.app.state.credential_store.set(credential)
+    return _settings_response(request, configured=True)
+
+
+@router.delete("/provider/settings", response_model=ProviderSettingsResponse)
+def clear_provider_settings(request: Request) -> ProviderSettingsResponse:
+    """Clear the runtime credential (falls back to env config / unconfigured)."""
+    request.app.state.credential_store.clear()
+    return _settings_response(request, configured=False)
 
 
 # ---------------------------------------------------------------------------
@@ -270,8 +318,6 @@ def create_model_task(payload: ModelTaskCreateRequest, request: Request) -> Mode
     ChangeSet the user can approve via the Phase 1 endpoint) or ``failed`` with a
     stable machine code. No filesystem write occurs here — only at approval.
     """
-    # FastAPI runs this sync route in a threadpool, so re-bind the correlation id
-    # set by the HTTP middleware (ContextVars do not cross into the pool thread).
     correlation_id_var.set(getattr(request.state, "correlation_id", "-"))
     return ModelOrchestrator.from_request(request).create_model_task(
         payload.workspaceId, payload.title
@@ -281,3 +327,57 @@ def create_model_task(payload: ModelTaskCreateRequest, request: Request) -> Mode
 @router.get("/model-tasks/{task_id}", response_model=ModelTaskResponse)
 def get_model_task(task_id: str, request: Request) -> ModelTaskResponse:
     return ModelOrchestrator.from_request(request).get_model_task(task_id)
+
+
+# ---------------------------------------------------------------------------
+# 核心 Agent 更新（阶段 A）：聊天会话与消息（SQLite 持久化 + SSE 续传）
+# ---------------------------------------------------------------------------
+
+
+@router.get("/workspaces/{workspace_id}/chat-sessions", response_model=list[ChatSessionResponse])
+def chat_sessions(workspace_id: str, request: Request) -> list[ChatSessionResponse]:
+    return ChatService.from_request(request).list_sessions(workspace_id)
+
+
+@router.post("/workspaces/{workspace_id}/chat-sessions", response_model=ChatSessionResponse)
+def create_chat_session(
+    workspace_id: str, payload: ChatSessionCreateRequest, request: Request
+) -> ChatSessionResponse:
+    return ChatService.from_request(request).create_session(workspace_id, payload.title)
+
+
+@router.get("/chat-sessions/{session_id}", response_model=ChatSessionDetailResponse)
+def get_chat_session(
+    session_id: str, request: Request, workspaceId: str = ""
+) -> ChatSessionDetailResponse:
+    return ChatService.from_request(request).get_session(
+        session_id, workspaceId or None
+    )
+
+
+@router.post("/chat-sessions/{session_id}/messages", response_model=ChatSubmitResponse)
+def submit_chat_message(
+    session_id: str, payload: ChatMessageSubmitRequest, request: Request
+) -> ChatSubmitResponse:
+    """Submit a user message. The user message is persisted first, then the
+    chat orchestration runs synchronously and the assistant reply is persisted.
+    No rootPath/filePath/patch/command/key is ever accepted."""
+    correlation_id_var.set(getattr(request.state, "correlation_id", "-"))
+    return ChatService.from_request(request).submit_message(session_id, payload.content)
+
+
+@router.get("/chat-sessions/{session_id}/events")
+def chat_session_events(
+    session_id: str,
+    request: Request,
+    after_sequence: int = 0,
+    tail: bool = False,
+) -> StreamingResponse:
+    """Chat-message event stream (resume-capable via `afterSequence=` /
+    `Last-Event-ID`). Replays persisted chat_messages as `chat.event` frames."""
+    service = ChatService.from_request(request)
+    after = _resolve_after_sequence(request, after_sequence)
+    return StreamingResponse(
+        stream_chat_events(service, session_id, after, tail),
+        media_type="text/event-stream",
+    )

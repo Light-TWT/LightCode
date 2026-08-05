@@ -7,6 +7,61 @@
 > 约束：Phase 2 首版**不**实现 Shell/外部命令、包管理、网络下载、Git 写操作、删除/新建/重命名、
 > 多文件事务、二进制/非 UTF-8 修改、Electron、本地文件夹选择、自动批准或模型直接写文件。
 > WP8 经用户确认采用**零新增第三方依赖**策略（stdlib `logging` + 进程内指标 + 既有 pytest/vitest）。
+>
+> **核心 Agent 更新（阶段 A，2026-08-04+）**：Provider 配置来源扩展为「后端环境变量 +
+> 运行期设置表单（进程内存凭据）」，聊天会话持久化到 SQLite，模型检索工具扩展为
+> `read_file` + `search_files`；完整改动见 §6。
+
+---
+
+## 6. 核心 Agent 更新（阶段 A）：运行期设置、凭据存储与聊天闭环
+
+### 6.1 Provider 运行期配置与可替换凭据存储
+
+- **配置来源**：环境变量快照（`ModelProviderConfig`，启动时加载）作为部署回退；
+  设置页表单（`POST /api/v1/provider/settings`）在「测试并保存」成功后把凭据写入
+  `ProviderCredentialStore`（`app/services/credential_store.py`）。生效优先级：
+  运行期凭据 > 环境变量 > unconfigured/disabled。
+- **凭据存储协议**：`ProviderCredentialStore`（get/set/clear）——Web 开发期使用
+  `InMemoryProviderCredentialStore`（进程内存，重启后丢失，绝不落盘）；Electron 阶段
+  （阶段 C）替换为 OS Keychain 实现，设置 API/聊天/编排接口不变。这是桌面交付的迁移边界。
+- **允许名单**：`LIGHTCODE_MODEL_ALLOWED_ORIGINS` 非空时严格校验运行期 Base URL 的 origin；
+  为空时接受用户在设置表单中显式提交的 origin（用户主动输入，非静默环境派生）。
+- **连接测试**：`POST /api/v1/provider/settings/test`（不保存）与 `POST /api/v1/provider/settings`
+  （测试并保存）都经 `OpenAICompatibleProvider.test_connection()` 做最小化 round-trip；
+  失败只返回稳定错误码（`PROVIDER_SETTINGS_INVALID` / `PROVIDER_CONNECTION_FAILED`）。
+- **安全视图**：`GET /api/v1/provider/settings` 与 `GET /api/v1/provider/health` 只返回
+  `{configured, status, provider, modelId, detail, originAllowlisted, transport}`，绝不返回
+  API Key 或完整 Base URL。
+
+### 6.2 聊天会话与消息（SQLite 持久化）
+
+- 新增 `chat_sessions` / `chat_messages` 表；`tasks` 增加 `chat_session_id` 列把编辑任务
+  关联回聊天会话。消息只保存 role/content/kind/taskId/时间，不保存 API Key、完整 URL、
+  原始异常诊断或不受控隐私数据。
+- API：`/workspaces/{id}/chat-sessions`（列表/创建）、`/chat-sessions/{id}`（详情）、
+  `/chat-sessions/{id}/messages`（提交）、`/chat-sessions/{id}/events`（SSE `chat.event`）。
+- 提交消息先持久化用户消息，再由 `ChatService` + `ChatOrchestrator`（LangGraph）决定
+  自由问答（`answer`，不生成 ChangeSet）或编辑任务（`candidate_edit_intent` →
+  `kind='model'` 任务 → 版本绑定审批 → 原子写入）。单会话并发提交受进程内闸门保护
+  （`CHAT_BUSY`）。
+
+### 6.3 模型检索工具扩展
+
+- `MODEL_ALLOWED_TOOLS` / `_ORCHESTRATOR_TOOLS` 扩展为 `read_file` + `search_files`。
+- `search_files` 由模型通过严格 `SearchFilesToolRequest`（仅 `query` 文本，≤200 字符）
+  请求；服务端经 `WorkspaceGuard.search_files` 执行，命中返回 `{index, name, fileToken,
+  line, snippet}`（≤10 条、snippet 有界），模型上下文不含根路径或自由路径。
+- `read_file` 只接受服务端签发的 fileToken；聊天流程中模型只能读取检索命中的文件。
+- 编辑目标文件由 `candidate_edit_intent.fileToken` 决定，服务端校验 token 后解析路径并
+  独立构建 ChangeSet（`build_intent_changeset`），模型永远不能命名或伪造路径。
+
+### 6.4 聊天与模型任务的失败语义
+
+- 聊天编排失败只持久化固定文案（`_FAILURE_TEXT` 白名单），前端再按固定文案渲染，
+  绝不渲染服务端自由 message（延续 M-03）。
+- 自由问答失败不创建任务；编辑失败落 `kind='model'` 任务 `failed` + 稳定错误码事件。
+
 
 ---
 

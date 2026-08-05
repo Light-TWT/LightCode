@@ -208,6 +208,26 @@ class OpenAICompatibleProvider:
                 http_status=502,
             )
 
+    def test_connection(self) -> None:
+        """Minimal, budgeted round-trip to verify provider connectivity.
+
+        Fail-closed: any non-``ready`` config raises before a socket opens; a
+        missing/empty response is treated as an upstream error. Nothing is
+        persisted, logged or returned beyond a stable success/error signal.
+        """
+        self._require_ready()
+        with map_llm_errors():
+            ai_message = self._llm_client().invoke(
+                _to_langchain_messages([{"role": "user", "content": "ping"}])
+            )
+        content = ai_message.content if isinstance(ai_message.content, str) else ""
+        if not content:
+            raise Phase1Error(
+                MODEL_UPSTREAM_ERROR,
+                "Provider 响应缺少 assistant 文本。",
+                http_status=502,
+            )
+
     def chat(
         self,
         messages: Sequence[Mapping[str, Any]],

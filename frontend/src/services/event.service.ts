@@ -1,6 +1,6 @@
 import { apiBaseUrl } from '@/config/runtime'
-import { parseTaskEvent } from '@/contracts/real-task.schema'
-import type { TaskEvent } from '@/types/agent'
+import { parseChatMessage, parseTaskEvent } from '@/contracts/real-task.schema'
+import type { ChatMessage, TaskEvent } from '@/types/agent'
 
 export interface SubscribeOptions {
   /** 断点续传：只回放 sequence 大于该值的事件（对应后端 ?after_sequence=） */
@@ -23,19 +23,23 @@ function buildEventUrl(basePath: string, options?: SubscribeOptions): string {
   return `${apiBaseUrl}${basePath}${query ? `?${query}` : ''}`
 }
 
+/**
+ * 通用 SSE 订阅：监听单个命名事件 + error + stream.end/stream.error。
+ * 浏览器断线自动重连时会自带 Last-Event-ID 头（后端 SSE 帧含 id: 字段），
+ * 首次连接的续传位置通过 after_sequence 查询参数显式传入。
+ */
 function subscribe(
   basePath: string,
-  onEvent: (event: TaskEvent) => void,
+  eventName: string,
+  parse: (raw: unknown) => unknown,
+  onEvent: (payload: unknown) => void,
   onError: (error: Event) => void,
   options?: SubscribeOptions,
 ): () => void {
-  // 浏览器断线自动重连时会自带 Last-Event-ID 头（后端 SSE 帧含 id: 字段），
-  // 首次连接的续传位置通过 after_sequence 查询参数显式传入。
   const source = new EventSource(buildEventUrl(basePath, options))
-  source.addEventListener('task.event', (event: MessageEvent) => {
+  source.addEventListener(eventName, (event: MessageEvent) => {
     try {
-      const parsed = parseTaskEvent(JSON.parse(event.data))
-      onEvent(parsed as TaskEvent)
+      onEvent(parse(JSON.parse(event.data)))
     } catch {
       // 畸形事件：丢弃而非污染状态机
     }
@@ -52,16 +56,6 @@ function subscribe(
   return () => source.close()
 }
 
-/** Phase 0.5 Mock 任务事件流：GET /tasks/{id}/events */
-export function subscribeTaskEvents(
-  taskId: string,
-  onEvent: (event: TaskEvent) => void,
-  onError: (error: Event) => void,
-  options?: SubscribeOptions,
-): () => void {
-  return subscribe(`/tasks/${taskId}/events`, onEvent, onError, options)
-}
-
 /** Phase 1 真实任务事件流：GET /real-tasks/{id}/events（支持续传） */
 export function subscribeRealTaskEvents(
   taskId: string,
@@ -69,5 +63,30 @@ export function subscribeRealTaskEvents(
   onError: (error: Event) => void,
   options?: SubscribeOptions,
 ): () => void {
-  return subscribe(`/real-tasks/${taskId}/events`, onEvent, onError, options)
+  return subscribe(
+    `/real-tasks/${taskId}/events`,
+    'task.event',
+    parseTaskEvent,
+    (payload) => onEvent(payload as TaskEvent),
+    onError,
+    options,
+  )
+}
+
+/** 核心 Agent 更新（阶段 A）：聊天消息事件流 GET /chat-sessions/{id}/events
+ *  （chat.event 帧，data 为 ChatMessage JSON，帧带 id: <sequence>） */
+export function subscribeChatEvents(
+  sessionId: string,
+  onEvent: (message: ChatMessage) => void,
+  onError: (error: Event) => void,
+  options?: SubscribeOptions,
+): () => void {
+  return subscribe(
+    `/chat-sessions/${sessionId}/events`,
+    'chat.event',
+    parseChatMessage,
+    (payload) => onEvent(payload as ChatMessage),
+    onError,
+    options,
+  )
 }

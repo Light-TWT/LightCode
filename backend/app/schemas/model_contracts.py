@@ -104,3 +104,126 @@ class ModelTaskResponse(BaseModel, extra="forbid"):
     state: str
     changeSetId: str | None = Field(default=None, alias="changeSetId")
     detail: str = ""
+
+
+# ---------------------------------------------------------------------------
+# 核心 Agent 更新（阶段 A）：Provider 运行期设置。
+#
+# 这些 DTO 只在浏览器 <-> 本机 FastAPI 设置端点之间传递。API Key 与完整
+# Base URL 绝不进入 SQLite、事件、日志或仓库；响应只回安全摘要。
+# ---------------------------------------------------------------------------
+
+
+class ProviderSettingsRequest(BaseModel, extra="forbid"):
+    """Provider 设置表单。仅用于设置端点；请求体绝不落库、绝不打日志。"""
+
+    provider: str = "openai-compatible"
+    baseUrl: str = Field(alias="baseUrl")
+    apiKey: str = Field(alias="apiKey")
+    modelId: str = Field(alias="modelId")
+
+
+class ProviderSettingsResponse(BaseModel, extra="forbid", populate_by_name=True):
+    """Provider 设置的安全视图：无 key、无完整 baseUrl。"""
+
+    configured: bool
+    status: Literal["disabled", "unconfigured", "ready", "degraded"]
+    provider: str
+    modelId: str = Field(alias="modelId")
+    detail: str
+    originAllowlisted: bool = Field(alias="originAllowlisted")
+    transport: Literal["https", "http", "none"]
+
+
+class ProviderTestRequest(BaseModel, extra="forbid"):
+    """Provider 连接测试请求（不保存）。"""
+
+    provider: str = "openai-compatible"
+    baseUrl: str = Field(alias="baseUrl")
+    apiKey: str = Field(alias="apiKey")
+    modelId: str = Field(alias="modelId")
+
+
+class ProviderTestResponse(BaseModel, extra="forbid", populate_by_name=True):
+    """连接测试结果：只有 ok 布尔与稳定错误码。"""
+
+    ok: bool
+    code: str = ""
+    detail: str = ""
+
+
+# ---------------------------------------------------------------------------
+# 核心 Agent 更新（阶段 A）：聊天会话与消息。
+# ---------------------------------------------------------------------------
+
+
+class ChatSessionCreateRequest(BaseModel, extra="forbid"):
+    """浏览器只提交 workspaceId + 可选标题。绝不提交路径/内容/key。"""
+
+    workspaceId: str = Field(alias="workspaceId")
+    title: str = ""
+
+
+class ChatSessionResponse(BaseModel, extra="forbid", populate_by_name=True):
+    id: str
+    workspaceId: str = Field(alias="workspaceId")
+    title: str
+    status: str
+    createdAt: str = Field(alias="createdAt")
+    updatedAt: str = Field(alias="updatedAt")
+
+
+class ChatMessageResponse(BaseModel, extra="forbid", populate_by_name=True):
+    id: str
+    sessionId: str = Field(alias="sessionId")
+    sequence: int
+    role: Literal["user", "assistant"]
+    content: str
+    kind: str
+    taskId: str = Field(default="", alias="taskId")
+    createdAt: str = Field(alias="createdAt")
+
+
+class ChatMessageSubmitRequest(BaseModel, extra="forbid"):
+    """用户消息。仅文本内容；空白/超长由服务端拒绝。"""
+
+    content: str
+
+
+class ChatSessionDetailResponse(BaseModel, extra="forbid", populate_by_name=True):
+    session: ChatSessionResponse
+    messages: list[ChatMessageResponse]
+
+
+class ChatSubmitResponse(BaseModel, extra="forbid", populate_by_name=True):
+    """提交消息后的同步结果：持久化的 assistant 消息（或错误消息）。
+
+    ``taskId`` 非空表示本次回复关联了一个等待审批的模型任务（编辑意图）。
+    """
+
+    message: ChatMessageResponse
+    taskId: str = Field(default="", alias="taskId")
+
+
+# ---------------------------------------------------------------------------
+# 核心 Agent 更新（阶段 A）：模型侧工具/意图协议。
+# ---------------------------------------------------------------------------
+
+
+class AnswerMessage(BaseModel, extra="forbid"):
+    """自由问答输出：模型直接返回用户可见回答。"""
+
+    kind: Literal["answer"]
+    text: str
+
+
+class ReadFileToolRequest(BaseModel, extra="forbid"):
+    """模型唯一可用的读取工具参数：服务端签发的 fileToken。"""
+
+    fileToken: str = Field(alias="fileToken")
+
+
+class SearchFilesToolRequest(BaseModel, extra="forbid"):
+    """模型唯一可用的检索工具参数：纯文本查询，不含任何路径。"""
+
+    query: str

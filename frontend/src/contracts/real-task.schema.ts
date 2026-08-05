@@ -1,5 +1,5 @@
 // Runtime DTO validation for Phase 1 HTTP / SSE responses.
-import type { ModelTaskResponse } from '@/types/agent'
+import type { ChatMessage, ChatSession, ModelTaskResponse } from '@/types/agent'
 import { MODEL_TASK_EVENT_TYPES } from '@/types/agent'
 //
 // The backend is the only authority and already validates with Pydantic
@@ -161,5 +161,96 @@ export function parseModelLifecycleEvent(eventType: string, payload: Record<stri
     if (!isString(payload.code) || !isString(payload.message)) {
       throw new ContractValidationError('failed 缺少 code/message')
     }
+  }
+}
+
+// ---------------------------------------------------------------------------
+// 核心 Agent 更新（阶段 A）：聊天会话/消息契约校验。
+// 后端已用 Pydantic（extra="forbid"）校验，浏览器再校验一次：畸形载荷在
+// 服务边界被拦截，绝不把未知字段（如 rootPath/filePath/command）送进状态机。
+// ---------------------------------------------------------------------------
+
+const CHAT_ROLES = new Set(['user', 'assistant'])
+const CHAT_KINDS = new Set(['message', 'edit_summary', 'error'])
+
+export function parseChatSession(raw: unknown): ChatSession {
+  if (!isObject(raw)) throw new ContractValidationError('chat session 不是对象')
+  if (!isString(raw.id)) throw new ContractValidationError('session.id 缺失或非字符串')
+  if (!isString(raw.workspaceId)) throw new ContractValidationError('session.workspaceId 缺失')
+  if (!isString(raw.title)) throw new ContractValidationError('session.title 缺失')
+  if (!isString(raw.status)) throw new ContractValidationError('session.status 缺失')
+  if (!isString(raw.createdAt)) throw new ContractValidationError('session.createdAt 缺失')
+  if (!isString(raw.updatedAt)) throw new ContractValidationError('session.updatedAt 缺失')
+  if ('rootPath' in raw) throw new ContractValidationError('chat session 不应包含 rootPath')
+  return {
+    id: raw.id,
+    workspaceId: raw.workspaceId,
+    title: raw.title,
+    status: raw.status,
+    createdAt: raw.createdAt,
+    updatedAt: raw.updatedAt,
+  }
+}
+
+export function parseChatMessage(raw: unknown): ChatMessage {
+  if (!isObject(raw)) throw new ContractValidationError('chat message 不是对象')
+  if (!isString(raw.id)) throw new ContractValidationError('message.id 缺失')
+  if (!isString(raw.sessionId)) throw new ContractValidationError('message.sessionId 缺失')
+  if (!isNumber(raw.sequence)) throw new ContractValidationError('message.sequence 缺失或非数字')
+  if (!isString(raw.role) || !CHAT_ROLES.has(raw.role)) {
+    throw new ContractValidationError(`message.role 非法: ${String(raw.role)}`)
+  }
+  if (!isString(raw.content)) throw new ContractValidationError('message.content 缺失')
+  if (!isString(raw.kind) || !CHAT_KINDS.has(raw.kind)) {
+    throw new ContractValidationError(`message.kind 非法: ${String(raw.kind)}`)
+  }
+  if (raw.taskId !== undefined && raw.taskId !== null && !isString(raw.taskId)) {
+    throw new ContractValidationError('message.taskId 非法')
+  }
+  if (!isString(raw.createdAt)) throw new ContractValidationError('message.createdAt 缺失')
+  if ('rootPath' in raw || 'filePath' in raw || 'patch' in raw || 'command' in raw) {
+    throw new ContractValidationError('chat message 不应包含 rootPath/filePath/patch/command')
+  }
+  return {
+    id: raw.id,
+    sessionId: raw.sessionId,
+    sequence: raw.sequence,
+    role: raw.role as ChatMessage['role'],
+    content: raw.content,
+    kind: raw.kind as ChatMessage['kind'],
+    taskId: raw.taskId == null ? '' : raw.taskId,
+    createdAt: raw.createdAt,
+  }
+}
+
+export function parseChatSessionDetail(raw: unknown): {
+  session: ChatSession
+  messages: ChatMessage[]
+} {
+  if (!isObject(raw)) throw new ContractValidationError('chat session detail 不是对象')
+  if (!isObject(raw.session)) throw new ContractValidationError('detail.session 缺失')
+  if (!Array.isArray(raw.messages)) throw new ContractValidationError('detail.messages 缺失')
+  if ('rootPath' in raw || 'filePath' in raw || 'patch' in raw || 'command' in raw) {
+    throw new ContractValidationError('chat session detail 不应包含 rootPath/filePath/patch/command')
+  }
+  return {
+    session: parseChatSession(raw.session),
+    messages: raw.messages.map((m) => parseChatMessage(m)),
+  }
+}
+
+export function parseChatSubmitResponse(raw: unknown): {
+  message: ChatMessage
+  taskId: string
+} {
+  if (!isObject(raw)) throw new ContractValidationError('chat submit 不是对象')
+  if (!isObject(raw.message)) throw new ContractValidationError('submit.message 缺失')
+  if (!isString(raw.taskId)) throw new ContractValidationError('submit.taskId 缺失')
+  if ('rootPath' in raw || 'filePath' in raw || 'patch' in raw || 'command' in raw) {
+    throw new ContractValidationError('chat submit 不应包含 rootPath/filePath/patch/command')
+  }
+  return {
+    message: parseChatMessage(raw.message),
+    taskId: raw.taskId,
   }
 }

@@ -470,8 +470,9 @@ def test_api_create_model_task_happy_path(api_client, monkeypatch: pytest.Monkey
     # Make the provider ready and replace the model call with a scripted one
     # (no network). Mirrors the unit happy path.
     monkeypatch.setattr(
-        "app.main.app.state.model_provider", _ready_config()
+        "app.main.app.state.env_model_provider", _ready_config()
     )
+    api_client.app.state.credential_store.clear()
 
     state = {"n": 0}
 

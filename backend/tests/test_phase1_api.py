@@ -216,14 +216,13 @@ def test_create_real_task_unregistered_workspace(client: TestClient) -> None:
     assert resp.json()["code"] == "WORKSPACE_NOT_REGISTERED"
 
 
-def test_legacy_approve_endpoint_rejects_real_task(client: TestClient) -> None:
-    # M0.2: real Phase 1 tasks must not be approvable through the legacy
-    # Phase 0.5 endpoint. The guarded approval protocol is the only path.
+def test_legacy_approve_endpoint_removed(client: TestClient) -> None:
+    # Mock runtime（含 legacy approve 端点）已在核心 Agent 更新中移除：真实任务
+    # 只能通过受控的 Phase 1 审批端点写入，legacy 路径不再存在（404）。
     created = client.post(
         "/api/v1/real-tasks",
         json={"workspaceId": "ws-demo", "title": "must use guarded approval"},
     ).json()
     task_id = created["id"]
     resp = client.post(f"/api/v1/tasks/{task_id}/changeset/approve")
-    assert resp.status_code == 405
-    assert "Phase 1 approval endpoint" in resp.json()["detail"]
+    assert resp.status_code == 404

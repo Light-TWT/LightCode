@@ -1,102 +1,255 @@
 import { flushPromises, mount } from '@vue/test-utils'
 import { createPinia, setActivePinia } from 'pinia'
-import { createMemoryHistory, createRouter } from 'vue-router'
-import { beforeEach, describe, expect, it } from 'vitest'
-import AgentWorkspaceView from './AgentWorkspaceView.vue'
-import SessionHistoryView from './SessionHistoryView.vue'
+import { createMemoryHistory, createRouter, type Router } from 'vue-router'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import RealTaskView from './RealTaskView.vue'
 import SettingsView from './SettingsView.vue'
 import WorkspaceHomeView from './WorkspaceHomeView.vue'
+import WorkspaceView from './WorkspaceView.vue'
 
-function createAppRouter() {
+const m = vi.hoisted(() => {
+  const ws = {
+    id: 'ws-1',
+    displayName: 'Demo Workspace',
+    enabled: true,
+    capabilities: ['read', 'search'],
+    policyVersion: 'policy-v1',
+  }
+  const session = {
+    id: 'chat-1',
+    workspaceId: 'ws-1',
+    title: '新会话',
+    status: 'active',
+    createdAt: 't',
+    updatedAt: 't',
+  }
+  const message = {
+    id: 'msg-1',
+    sessionId: 'chat-1',
+    sequence: 1,
+    role: 'assistant',
+    content: '你好，我是 LightCode。',
+    kind: 'message',
+    taskId: '',
+    createdAt: 't',
+  }
+  const settings = {
+    configured: true,
+    status: 'ready',
+    provider: 'openai-compatible',
+    modelId: 'demo-model',
+    detail: 'Provider 已就绪。',
+    originAllowlisted: true,
+    transport: 'https',
+  }
+  const task = {
+    id: 'chat-task-1',
+    workspaceId: 'ws-1',
+    sessionId: 'chat-1',
+    kind: 'model',
+    state: 'awaiting_approval',
+    title: '让模型追加标记',
+    targetFile: 'NOTES.md',
+    changeSet: {
+      changeSetId: 'cs-1',
+      revision: 1,
+      diffHash: 'hash',
+      baseSha256: 'b',
+      proposedSha256: 'p',
+      logicalRelativePath: 'NOTES.md',
+      status: 'active',
+      policyVersion: 'policy-v1',
+      additions: 1,
+      deletions: 0,
+      before: ['a'],
+      after: ['a', 'b'],
+    },
+    plan: [],
+    toolCalls: [],
+    verification: { status: 'pending', command: '内建完整性验证', lines: [] },
+    createdAt: 't',
+  }
+  return {
+    mocks: {
+      listRegisteredWorkspaces: vi.fn(),
+      listFiles: vi.fn(),
+      readFile: vi.fn(),
+      search: vi.fn(),
+      listChatSessions: vi.fn(),
+      createChatSession: vi.fn(),
+      getChatSession: vi.fn(),
+      submitMessage: vi.fn(),
+      getRealTask: vi.fn(),
+      submitApproval: vi.fn(),
+      createRealTask: vi.fn(),
+      getSettings: vi.fn(),
+      getHealth: vi.fn(),
+      saveSettings: vi.fn(),
+      testConnection: vi.fn(),
+      clearSettings: vi.fn(),
+      subscribeChatEvents: vi.fn(),
+      subscribeRealTaskEvents: vi.fn(),
+    },
+    ws,
+    session,
+    message,
+    settings,
+    task,
+  }
+})
+
+vi.mock('@/services/registered-workspace.service', () => ({
+  registeredWorkspaceService: {
+    listRegisteredWorkspaces: m.mocks.listRegisteredWorkspaces,
+    listFiles: m.mocks.listFiles,
+    readFile: m.mocks.readFile,
+    search: m.mocks.search,
+  },
+}))
+vi.mock('@/services/chat.service', () => ({
+  chatService: {
+    listChatSessions: m.mocks.listChatSessions,
+    createChatSession: m.mocks.createChatSession,
+    getChatSession: m.mocks.getChatSession,
+    submitMessage: m.mocks.submitMessage,
+  },
+}))
+vi.mock('@/services/provider.service', () => ({
+  providerService: {
+    getSettings: m.mocks.getSettings,
+    getHealth: m.mocks.getHealth,
+    saveSettings: m.mocks.saveSettings,
+    testConnection: m.mocks.testConnection,
+    clearSettings: m.mocks.clearSettings,
+  },
+}))
+vi.mock('@/services/real-task.service', () => ({
+  realTaskService: {
+    getRealTask: m.mocks.getRealTask,
+    submitApproval: m.mocks.submitApproval,
+    createRealTask: m.mocks.createRealTask,
+  },
+}))
+vi.mock('@/services/event.service', () => ({
+  subscribeChatEvents: m.mocks.subscribeChatEvents,
+  subscribeRealTaskEvents: m.mocks.subscribeRealTaskEvents,
+}))
+
+function createAppRouter(): Router {
   return createRouter({
     history: createMemoryHistory(),
     routes: [
       { path: '/', name: 'home', component: WorkspaceHomeView },
-      { path: '/workspace/:id', name: 'agent-workspace', component: AgentWorkspaceView },
-      { path: '/workspace/:id/history', name: 'session-history', component: SessionHistoryView },
+      { path: '/workspace/:workspaceId', name: 'workspace', component: WorkspaceView },
+      {
+        path: '/workspace/:workspaceId/session/:sessionId',
+        name: 'workspace-session',
+        component: WorkspaceView,
+      },
+      {
+        path: '/workspace/:workspaceId/task/:taskId',
+        name: 'real-task',
+        component: RealTaskView,
+      },
       { path: '/settings', name: 'settings', component: SettingsView },
     ],
   })
 }
 
-describe('cross-page navigation', () => {
+function mountView(component: unknown, router: Router) {
+  return mount(component as never, { global: { plugins: [router] } })
+}
+
+describe('路由收敛（核心 Agent 更新阶段 A）', () => {
   beforeEach(() => {
     setActivePinia(createPinia())
+    vi.clearAllMocks()
+    m.mocks.listRegisteredWorkspaces.mockResolvedValue([m.ws])
+    m.mocks.listFiles.mockResolvedValue([])
+    m.mocks.readFile.mockResolvedValue({ content: '' })
+    m.mocks.search.mockResolvedValue([])
+    m.mocks.listChatSessions.mockResolvedValue([m.session])
+    m.mocks.createChatSession.mockResolvedValue(m.session)
+    m.mocks.getChatSession.mockResolvedValue({ session: m.session, messages: [m.message] })
+    m.mocks.submitMessage.mockResolvedValue({ message: m.message, taskId: '' })
+    m.mocks.getSettings.mockResolvedValue(m.settings)
+    m.mocks.getHealth.mockResolvedValue(null)
+    m.mocks.getRealTask.mockResolvedValue(m.task)
+    m.mocks.submitApproval.mockResolvedValue(m.task)
+    m.mocks.subscribeChatEvents.mockReturnValue(() => {})
+    m.mocks.subscribeRealTaskEvents.mockReturnValue(() => {})
+    // 任务/会话加载后 store 会订阅 SSE（HTTP-only），需桩 EventSource
+    vi.stubGlobal('EventSource', vi.fn(function () {
+      return { close: vi.fn(), addEventListener: vi.fn() }
+    }))
+  })
+  afterEach(() => {
+    vi.unstubAllGlobals()
   })
 
-  it('navigates Workspace Home -> Agent Workspace on project click', async () => {
+  it('/ 存在已注册工作区时重定向到 /workspace/{firstId}', async () => {
     const router = createAppRouter()
     await router.push('/')
     await router.isReady()
-
-    const wrapper = mount(WorkspaceHomeView, { global: { plugins: [router] } })
+    mountView(WorkspaceHomeView, router)
     await flushPromises()
-
-    const rows = wrapper.findAll('[data-testid="project-row"]')
-    expect(rows.length).toBeGreaterThanOrEqual(1)
-
-    await rows[0].trigger('click')
-    await flushPromises()
-
-    expect(router.currentRoute.value.fullPath).toMatch(/^\/workspace\//)
+    expect(router.currentRoute.value.fullPath).toBe('/workspace/ws-1')
   })
 
-  it('navigates Agent Workspace -> Task History on history link click', async () => {
+  it('/ 无工作区时显示空状态与去设置入口', async () => {
+    m.mocks.listRegisteredWorkspaces.mockResolvedValue([])
     const router = createAppRouter()
-    await router.push('/workspace/workspace-login-service')
+    await router.push('/')
     await router.isReady()
-
-    const wrapper = mount(AgentWorkspaceView, { global: { plugins: [router] } })
+    const wrapper = mountView(WorkspaceHomeView, router)
     await flushPromises()
-
-    await wrapper.get('[data-testid="task-history-link"]').trigger('click')
+    expect(wrapper.find('[data-testid="empty-state"]').exists()).toBe(true)
+    await wrapper.get('[data-testid="goto-settings"]').trigger('click')
     await flushPromises()
-
-    expect(router.currentRoute.value.fullPath).toBe('/workspace/workspace-login-service/history')
-  })
-
-  it('navigates Task History pending task -> Agent Workspace review', async () => {
-    const router = createAppRouter()
-    await router.push('/workspace/workspace-login-service/history')
-    await router.isReady()
-
-    const wrapper = mount(SessionHistoryView, { global: { plugins: [router] } })
-    await flushPromises()
-
-    const reviewBtns = wrapper.findAll('[data-testid="action-review"]')
-    expect(reviewBtns.length).toBeGreaterThanOrEqual(1)
-
-    await reviewBtns[0].trigger('click')
-    await flushPromises()
-
-    expect(router.currentRoute.value.fullPath).toBe('/workspace/workspace-login-service')
-  })
-
-  it('navigates Agent Workspace -> Settings on settings button click', async () => {
-    const router = createAppRouter()
-    await router.push('/workspace/workspace-login-service')
-    await router.isReady()
-
-    const wrapper = mount(AgentWorkspaceView, { global: { plugins: [router] } })
-    await flushPromises()
-
-    await wrapper.get('[data-testid="settings-btn"]').trigger('click')
-    await flushPromises()
-
     expect(router.currentRoute.value.fullPath).toBe('/settings')
   })
 
-  it('navigates Settings -> Home on back button click', async () => {
+  it('/workspace/:workspaceId 渲染聊天主界面', async () => {
+    const router = createAppRouter()
+    await router.push('/workspace/ws-1')
+    await router.isReady()
+    const wrapper = mountView(WorkspaceView, router)
+    await flushPromises()
+    expect(wrapper.get('[data-testid="workspace-title"]').text()).toBe('Demo Workspace')
+    expect(wrapper.get('[data-testid="chat-input"]').exists()).toBe(true)
+    expect(wrapper.get('[data-testid="session-row"]').exists()).toBe(true)
+    expect(m.mocks.listChatSessions).toHaveBeenCalledWith('ws-1')
+  })
+
+  it('/workspace/:workspaceId/session/:sessionId 打开会话并渲染消息', async () => {
+    const router = createAppRouter()
+    await router.push('/workspace/ws-1/session/chat-1')
+    await router.isReady()
+    const wrapper = mountView(WorkspaceView, router)
+    await flushPromises()
+    expect(m.mocks.getChatSession).toHaveBeenCalledWith('chat-1', 'ws-1')
+    const messages = wrapper.findAll('[data-testid="chat-message"]')
+    expect(messages.length).toBeGreaterThanOrEqual(1)
+    expect(wrapper.text()).toContain('你好，我是 LightCode。')
+  })
+
+  it('/workspace/:workspaceId/task/:taskId 渲染审查深链（RealTaskView）', async () => {
+    const router = createAppRouter()
+    await router.push('/workspace/ws-1/task/chat-task-1')
+    await router.isReady()
+    const wrapper = mountView(RealTaskView, router)
+    await flushPromises()
+    expect(m.mocks.getRealTask).toHaveBeenCalledWith('chat-task-1')
+    expect(wrapper.get('[data-testid="task-state"]').text()).toBe('等待审批')
+  })
+
+  it('/settings 渲染设置页', async () => {
     const router = createAppRouter()
     await router.push('/settings')
     await router.isReady()
-
-    const wrapper = mount(SettingsView, { global: { plugins: [router] } })
+    const wrapper = mountView(SettingsView, router)
     await flushPromises()
-
-    await wrapper.get('button.sidebar-back').trigger('click')
-    await flushPromises()
-
-    expect(router.currentRoute.value.fullPath).toBe('/')
+    expect(wrapper.get('[data-testid="provider-form"]').exists()).toBe(true)
+    expect(wrapper.get('[data-testid="input-api-key"]').exists()).toBe(true)
   })
 })

@@ -156,7 +156,30 @@ class WorkspaceGuard:
             except (UnicodeDecodeError, OSError):
                 continue
             if query in text:
+                snippet, line = _first_match_snippet(text, query)
                 results.append(
-                    {"name": path.name, "relativePath": str(rel).replace("\\", "/")}
+                    {
+                        "name": path.name,
+                        "relativePath": str(rel).replace("\\", "/"),
+                        "snippet": snippet,
+                        "line": line,
+                    }
                 )
         return results
+
+
+def _first_match_snippet(text: str, query: str, radius: int = 120) -> tuple[str, int]:
+    """Return a short, controlled snippet around the first occurrence of query.
+
+    The snippet is meant for a model's search context: it contains no path, no
+    secret, and is bounded in size. Falls back to the file head if the query
+    cannot be located (defensive).
+    """
+    index = text.find(query)
+    if index < 0:
+        return text[: radius * 2], 1
+    line = text.count("\n", 0, index) + 1
+    start = max(0, index - radius)
+    end = min(len(text), index + len(query) + radius)
+    snippet = text[start:end].strip()
+    return snippet, line

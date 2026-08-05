@@ -1,15 +1,14 @@
 <script setup lang="ts">
 import { computed, onMounted, onUnmounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { isApiMode } from '@/config/runtime'
-import { useRealStore } from '@/stores/real.store'
+import { useWorkspaceStore } from '@/stores/workspace.store'
 import type { EventConnection, RealTaskState } from '@/types/agent'
 
 const route = useRoute()
 const router = useRouter()
-const store = useRealStore()
+const store = useWorkspaceStore()
 
-const workspaceId = computed(() => route.params.id as string)
+const workspaceId = computed(() => route.params.workspaceId as string)
 const taskId = computed(() => route.params.taskId as string)
 
 onMounted(async () => {
@@ -20,7 +19,7 @@ onMounted(async () => {
   // （含旧 SSE），并跳转到真实归属路由，避免在错误工作区上下文下展示任务。
   const loadedTask = store.task
   if (!loadedTask || loadedTask.workspaceId === workspaceId.value) return
-  const destination = `/real/${loadedTask.workspaceId}/task/${loadedTask.id}`
+  const destination = `/workspace/${loadedTask.workspaceId}/task/${loadedTask.id}`
   store.resetTask()
   await router.replace(destination)
 })
@@ -88,7 +87,7 @@ function shortHash(hash: string): string {
 <template>
   <div class="real-task-page">
     <header class="top-bar">
-      <button class="back-btn" type="button" data-testid="back-real-ws-btn" @click="router.push(`/real/${workspaceId}`)">← 返回工作区</button>
+      <button class="back-btn" type="button" data-testid="back-real-ws-btn" @click="router.push(`/workspace/${workspaceId}`)">← 返回工作区</button>
       <div class="brand">
         真实任务
         <span v-if="task && isModelTask" class="kind-badge" data-testid="task-kind">模型任务</span>
@@ -170,17 +169,14 @@ function shortHash(hash: string): string {
       <section class="panel" aria-label="事件流">
         <p class="panel-kicker">
           事件流（SSE · 支持断点续传）
-          <span v-if="isApiMode" class="conn-badge" :class="store.eventConnection" data-testid="event-connection">{{ connectionLabels[store.eventConnection] }}</span>
+          <span class="conn-badge" :class="store.eventConnection" data-testid="event-connection">{{ connectionLabels[store.eventConnection] }}</span>
         </p>
-        <template v-if="isApiMode">
-          <div v-for="event in store.events" :key="event.sequence" class="event-row" data-testid="task-event">
-            <span class="event-seq">#{{ event.sequence }}</span>
-            <span class="event-type">{{ event.eventType }}</span>
-            <span class="event-time">{{ event.createdAt }}</span>
-          </div>
-          <p v-if="store.events.length === 0" class="empty-hint">暂无事件</p>
-        </template>
-        <p v-else class="empty-hint">Mock 演示模式下不连接事件流；API 模式将回放持久化事件</p>
+        <div v-for="event in store.events" :key="event.sequence" class="event-row" data-testid="task-event">
+          <span class="event-seq">#{{ event.sequence }}</span>
+          <span class="event-type">{{ event.eventType }}</span>
+          <span class="event-time">{{ event.createdAt }}</span>
+        </div>
+        <p v-if="store.events.length === 0" class="empty-hint">暂无事件</p>
       </section>
 
       <footer v-if="canDecide" class="approval-bar" data-testid="approval-bar">

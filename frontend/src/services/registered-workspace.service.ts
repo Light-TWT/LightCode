@@ -1,11 +1,4 @@
-import {
-  registeredFileContentFixture,
-  registeredFilesFixture,
-  registeredWorkspacesFixture,
-  searchHitsFixture,
-} from '@/fixtures/phase1.fixture'
-import { isApiMode } from '@/config/runtime'
-import { requestJson, requestJsonValidated } from '@/services/http'
+import { requestJson } from '@/services/http'
 import { parseRegisteredWorkspace } from '@/contracts/real-task.schema'
 import type {
   RegisteredFileContent,
@@ -23,24 +16,7 @@ export interface RegisteredWorkspaceService {
   search(workspaceId: string, query: string): Promise<WorkspaceSearchHit[]>
 }
 
-export const mockRegisteredWorkspaceService: RegisteredWorkspaceService = {
-  async listRegisteredWorkspaces() {
-    return structuredClone(registeredWorkspacesFixture)
-  },
-  async listFiles(_workspaceId, nodeToken = '') {
-    // Mock 中令牌即相对路径的占位，便于无后端时演示
-    return structuredClone(registeredFilesFixture[nodeToken] ?? registeredFilesFixture[''] ?? [])
-  },
-  async readFile(_workspaceId, fileToken) {
-    return { ...structuredClone(registeredFileContentFixture), relativePath: fileToken }
-  },
-  async search(_workspaceId, query) {
-    if (!query) return []
-    return structuredClone(searchHitsFixture)
-  },
-}
-
-export const httpRegisteredWorkspaceService: RegisteredWorkspaceService = {
+export const registeredWorkspaceService: RegisteredWorkspaceService = {
   async listRegisteredWorkspaces() {
     const raw = await requestJson<unknown[]>('/registered-workspaces')
     return raw.map((w) => parseRegisteredWorkspace(w))
@@ -62,7 +38,3 @@ export const httpRegisteredWorkspaceService: RegisteredWorkspaceService = {
     )
   },
 }
-
-export const registeredWorkspaceService = isApiMode
-  ? httpRegisteredWorkspaceService
-  : mockRegisteredWorkspaceService

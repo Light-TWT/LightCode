@@ -206,6 +206,13 @@ lightcode-local/
   - **验证证据**：后端全量 `pytest` 195 通过 + 2 skipped（含 WP8 新增 13 与 2026-08-04 审查修复新增 5）；WP8 聚焦（observability + E2E）13/13 通过；无 skip/假成功。前端 94 测试通过（18 文件）+ `vue-tsc -b` + `vite build --emptyOutDir false`。
 - **2026-08-04 审查修复（H-01/M-01~06/L-01）**：未知编排异常固定投影（不泄露密钥/路径/响应片段）、模型上下文移除逻辑相对路径、Provider 输出预算本地强制、health 能力收紧为 `read_file`、前端 SSE 持续订阅（`tail=true` + `stream.end→closed`）、Provider ready-only 新建门禁、失败 UI 错误码固定文案映射、任务详情路由工作区归属校验、SSE 连接上限加锁原子化。细节见 `../phase2-model-provider-design.md` 与 `AGENTS.md` 状态追踪。
 
+#### 阶段 A（核心 Agent 更新，2026-08-04+）
+
+- **单一主工作区**：Mock Runtime/页面/服务已移除；产品入口收敛为 `/workspace/:workspaceId` 聊天式 Agent 主界面 + `/settings`。浏览器只提交 `workspaceId`、会话标识、用户消息与审批决定；请求体经 `extra="forbid"` 拒绝 rootPath/filePath/patch/command/key。
+- **运行期 Provider 设置**：设置页可编辑（Provider/Base URL/API Key/Model ID），「测试并保存」经最小化连接测试成功后写入 `ProviderCredentialStore`（开发期为进程内存，Electron 阶段替换为 OS Keychain）。密钥绝不进 SQLite/前端持久化/日志/SSE。
+- **聊天闭环**：`chat_sessions`/`chat_messages` 持久化；`ChatService` + LangGraph `ChatOrchestrator` 分流自由问答（answer）与编辑任务（候选 ChangeSet → 版本绑定审批 → 原子写入）。模型检索扩展为 `read_file` + `search_files`，均由 WorkspaceGuard/token/策略/预算约束。
+- 详细设计见 `../phase2-model-provider-design.md` §6。
+
 ### 阶段 3：桌面端交付
 
 - 添加 Electron shell、FastAPI sidecar 生命周期、原生文件夹选择以及打包的本地数据存储。

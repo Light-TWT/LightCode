@@ -1,25 +1,4 @@
-export type TaskState = 'awaiting_approval' | 'completed'
 export type ToolStatus = 'ok' | 'pending' | 'idle'
-export type ChangeSetStatus = 'pending' | 'approved' | 'rejected'
-
-export interface WorkspaceFile {
-  id: string
-  name: string
-  kind: 'file' | 'directory'
-}
-
-export interface Workspace {
-  id: string
-  name: string
-  rootPath: string
-  files: WorkspaceFile[]
-}
-
-export interface Session {
-  id: string
-  title: string
-  status: 'running' | 'awaiting_approval' | 'completed'
-}
 
 export interface PlanStep {
   id: string
@@ -29,7 +8,7 @@ export interface PlanStep {
 
 export interface ToolCall {
   id: string
-  toolName: 'read_file' | 'search_files' | 'generate_diff' | 'run_test'
+  toolName: string
   target: string
   status: ToolStatus
   duration: string
@@ -37,101 +16,10 @@ export interface ToolCall {
   fileSummary?: { path: string; additions: number; deletions: number }
 }
 
-export interface ChangeSet {
-  id: string
-  status: ChangeSetStatus
-  filePath: string
-  additions: number
-  deletions: number
-  before: string[]
-  after: string[]
-}
-
 export interface VerificationOutput {
   status: 'pending' | 'running' | 'passed' | 'failed'
   command: string
   lines: string[]
-}
-
-export interface Task {
-  id: string
-  sessionId: string
-  title: string
-  state: TaskState
-  plan: PlanStep[]
-  toolCalls: ToolCall[]
-  modelOutput: string
-  changeSet: ChangeSet
-  verification: VerificationOutput
-}
-
-export type WorkspaceStatus = 'waiting' | 'pass' | 'fail' | 'idle'
-
-export interface WorkspaceEntry {
-  id: string
-  name: string
-  rootPath: string
-  status: WorkspaceStatus
-  tags: string[]
-  lastTask: string
-  timeAgo: string
-}
-
-export type HistoryTaskStatus = 'waiting' | 'done' | 'fail' | 'cancelled'
-export type PlanStepResult = 'done' | 'fail' | 'waiting' | 'pending'
-
-export interface HistoryFileSummary {
-  name: string
-  additions: number
-  deletions: number
-}
-
-export interface HistoryTestSummary {
-  badge: 'pass' | 'fail' | 'none'
-  text: string
-}
-
-export interface HistoryTaskEntry {
-  id: string
-  status: HistoryTaskStatus
-  title: string
-  summary: string
-  time: string
-  duration: string
-  toolCount: number
-  files: HistoryFileSummary[]
-  testResult: HistoryTestSummary
-}
-
-export interface HistoryPlanStep {
-  label: string
-  state: PlanStepResult
-}
-
-export interface HistoryToolCall {
-  icon: string
-  name: string
-  args: string
-  ok: boolean
-}
-
-export interface HistoryFileChange {
-  name: string
-  additions: number
-  deletions: number
-  diff: string
-}
-
-export interface HistoryApproval {
-  status: 'approved' | 'rejected' | 'none'
-  text: string
-  time: string
-}
-
-export interface HistoryTestResult {
-  command: string
-  result: 'pass' | 'fail' | 'none'
-  detail: string
 }
 
 export interface TaskEvent {
@@ -289,29 +177,13 @@ export const MODEL_TASK_EVENT_TYPES = [
   'task.failed',
 ] as const
 
-export interface HistoryTaskDetail {
-  id: string
-  status: HistoryTaskStatus
-  title: string
-  time: string
-  duration: string
-  toolCount: number
-  summary: string
-  plan: HistoryPlanStep[]
-  toolCalls: HistoryToolCall[]
-  files: HistoryFileChange[]
-  approval: HistoryApproval
-  test: HistoryTestResult
-  failReason?: string
-  failDetail?: string
-  rejectedCmd?: string
-  cancelInfo?: { stage: string; detail: string }
-}
-
 // --- Phase 2 / WP5：Provider 健康状态（仅展示，绝不含 key/baseUrl） ---
 
 /** `GET /api/v1/provider/health` 的状态枚举 */
 export type ProviderStatus = 'disabled' | 'unconfigured' | 'ready' | 'degraded'
+
+/** 传输层枚举（ProviderSettingsResponse.transport） */
+export type ProviderTransport = 'https' | 'http' | 'none'
 
 /** 模型被允许的能力与预算（只读，服务端校验后下发） */
 export interface ProviderCapabilities {
@@ -342,4 +214,71 @@ export interface ProviderHealth {
   detail: string
   capabilities: ProviderCapabilities
   security: ProviderSecurity
+}
+
+// --- 核心 Agent 更新（阶段 A）：Provider 运行期设置 ---
+
+/** POST /api/v1/provider/settings 请求体（ProviderSettingsRequest，extra=forbid） */
+export interface ProviderSettingsInput {
+  provider: string
+  baseUrl: string
+  apiKey: string
+  modelId: string
+}
+
+/** GET/POST/DELETE /api/v1/provider/settings 响应（安全视图：无 key、无完整 baseUrl） */
+export interface ProviderSettingsResponse {
+  configured: boolean
+  status: ProviderStatus
+  provider: string
+  modelId: string
+  detail: string
+  originAllowlisted: boolean
+  transport: ProviderTransport
+}
+
+/** POST /api/v1/provider/settings/test 响应（连接测试：只有 ok 布尔与稳定错误码） */
+export interface ProviderTestResponse {
+  ok: boolean
+  code: string
+  detail: string
+}
+
+// --- 核心 Agent 更新（阶段 A）：聊天会话与消息 ---
+
+/** 会话状态（backend chat_sessions.status，当前恒为 active） */
+export type ChatSessionStatus = 'active'
+
+/** 消息角色 */
+export type ChatRole = 'user' | 'assistant'
+
+/** 消息类型：普通回答 / 待审批编辑摘要 / 固定错误文案 */
+export type ChatMessageKind = 'message' | 'edit_summary' | 'error'
+
+/** ChatSessionResponse 对应结构 */
+export interface ChatSession {
+  id: string
+  workspaceId: string
+  title: string
+  status: string
+  createdAt: string
+  updatedAt: string
+}
+
+/** ChatMessageResponse 对应结构 */
+export interface ChatMessage {
+  id: string
+  sessionId: string
+  sequence: number
+  role: ChatRole
+  content: string
+  kind: ChatMessageKind
+  taskId: string
+  createdAt: string
+}
+
+/** ChatSubmitResponse：提交消息后的同步结果（已持久化的 assistant 消息 + 关联任务） */
+export interface ChatSubmitResponse {
+  message: ChatMessage
+  taskId: string
 }

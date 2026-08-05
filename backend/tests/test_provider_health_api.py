@@ -101,9 +101,9 @@ def test_health_advertises_read_only_capabilities(tmp_path) -> None:
         capabilities = client.get("/api/v1/provider/health").json()["capabilities"]
     assert capabilities["canWriteFiles"] is False
     assert capabilities["canRunCommands"] is False
-    # M-04: the advertised tool list must match what the orchestrator actually
-    # wires (only `read_file`); `search_files` is not implemented for models.
-    assert capabilities["tools"] == ["read_file"]
+    # 核心 Agent 更新（阶段 A）：read_file + search_files 均已由编排器接入
+    # （聊天流程），health 声明与实现保持一致。
+    assert capabilities["tools"] == ["read_file", "search_files"]
 
 
 def test_health_advertises_budgets(tmp_path) -> None:

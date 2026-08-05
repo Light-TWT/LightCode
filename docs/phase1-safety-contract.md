@@ -17,25 +17,32 @@ Phase 1 的目标不是开放任意本地编码能力，而是建立一个最小
 
 本文件是 Phase 1 的实现前置条件。若实现、原型或后续计划与本文件冲突，以本文件的安全边界为准；产品层面的总体行为仍以 `architecture/lightcode-local-first-agent-design.md` 为准。
 
+> **核心 Agent 更新（阶段 A）**：Phase 1 的审批写入协议、原子替换、基线校验与内建验证
+> 保持不变，并被聊天流程的编辑任务复用（`kind='model'` 任务仍走本契约的版本绑定审批）。
+> 阶段 A 新增的是「运行期 Provider 设置 + 聊天闭环」，其边界见
+> `phase2-model-provider-design.md` §6；Mock Runtime 与 mock-only 数据已移除。
+> 阶段 B 之前的完整文件操作（删除/新建/重命名/移动/多文件事务）仍被本契约禁止。
+
 ## 已冻结范围
 
 ### 允许
 
 - 单用户、单机、本地 FastAPI 服务，可管理多个由服务端静态配置注册的工作区。
-- 浏览器只提交 `workspaceId`、任务标识、审批决定、ChangeSet 标识、版本、哈希和幂等键。
-- 服务端受控只读工具：`list_files`、`read_file`、`search_files`。
-- 服务端受控任务模板生成确定性 ChangeSet。
+- 浏览器只提交 `workspaceId`、会话标识、用户消息文本、任务标识、审批决定、ChangeSet 标识、版本、哈希和幂等键。
+- 服务端受控只读工具：`list_files`、`read_file`、`search_files`（`search_files` 亦对模型开放，经严格 query 文本约束与命中上限）。
+- 服务端受控任务模板生成确定性 ChangeSet；模型提议经服务端独立校验生成不可变 ChangeSet。
 - 单个**既有、普通、UTF-8 文本文件**的审批后原子替换。
-- SQLite 持久化任务、工具结果、ChangeSet、审批、写入尝试、验证和有序事件。
+- SQLite 持久化任务、聊天会话与消息、工具结果、ChangeSet、审批、写入尝试、验证和有序事件。
 - 不启动外部进程的内建验证：UTF-8 校验、基线/目标 SHA-256、写入后内容哈希和 diff 摘要核对。
+- 运行期 Provider 设置：凭据仅进后端进程内存（`InMemoryProviderCredentialStore`），经最小化连接测试后方可保存。
 
 ### 不允许
 
-- 真实模型、模型工具调用、提供商 API Key 或任何密钥管理。
-- 浏览器提交任意 `rootPath`、`filePath`、补丁正文、文件内容、Shell 命令或工作区配置。
+- 浏览器提交任意 `rootPath`、`filePath`、补丁正文、文件内容、Shell 命令、API Key 或工作区配置。
 - Shell、`subprocess`、PowerShell、cmd、bash、外部测试命令、依赖安装、网络下载、Git 写操作或进程控制。
 - 删除、新建、重命名、移动文件或目录；多文件事务编辑；二进制、非 UTF-8 或超限文件修改。
-- Electron、本地文件夹选择、远程工作区、云同步、多用户或自动合并外部改动。
+- Electron、本地文件夹选择、远程工作区、云同步、多用户、自动合并外部改动、前端密钥持久化。
+- 模型直接写文件、执行命令、决定审批、或接收根路径/自由文件路径（模型只能经 fileToken 读取，且只能读取受控检索命中的文件）。
 
 ## 安全不变量
 
