@@ -1,4 +1,5 @@
 import { flushPromises, mount } from '@vue/test-utils'
+import { nextTick } from 'vue'
 import { createPinia, setActivePinia } from 'pinia'
 import { createMemoryHistory, createRouter, type Router } from 'vue-router'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
@@ -400,43 +401,78 @@ describe('WorkspaceView（聊天主界面）', () => {
     expect(wrapper.find('[data-testid="session-menu"]').exists()).toBe(false)
   })
 
-  it('重命名：回车提交新标题并同步列表', async () => {
+  it('重命名：打开独立弹窗，输入可用并回车提交后同步列表', async () => {
     const { wrapper } = await mountWorkspace()
     await wrapper.get('[data-testid="nav-btn-sessions"]').trigger('click')
     await flushPromises()
     await wrapper.get('[data-testid="session-more"]').trigger('click')
     await wrapper.get('[data-testid="session-rename"]').trigger('click')
+    await flushPromises()
 
-    const input = wrapper.get('[data-testid="session-rename-input"]')
+    expect(wrapper.find('[data-testid="session-menu"]').exists()).toBe(false)
+    expect(wrapper.get('[data-testid="rename-dialog"]').attributes('role')).toBe('dialog')
+    const input = wrapper.get('[data-testid="rename-dialog-input"]')
     expect((input.element as HTMLInputElement).value).toBe('新会话')
+    await input.trigger('focus')
     await input.setValue('新标题')
     m.mocks.renameChatSession.mockResolvedValue({ ...m.session, title: '新标题' })
-    await wrapper.get('[data-testid="session-rename-form"]').trigger('submit')
+    await wrapper.get('[data-testid="rename-dialog-form"]').trigger('submit')
     await flushPromises()
 
     expect(m.mocks.renameChatSession).toHaveBeenCalledWith('chat-1', 'ws-1', '新标题')
-    expect(wrapper.find('[data-testid="session-rename-input"]').exists()).toBe(false)
+    expect(wrapper.find('[data-testid="rename-dialog"]').exists()).toBe(false)
     expect(wrapper.get('[data-testid="session-row"]').text()).toContain('新标题')
   })
 
-  it('重命名：Escape 与空白标题不提交', async () => {
+  it('重命名：Escape、取消、遮罩和空白标题不提交', async () => {
     const { wrapper } = await mountWorkspace()
     await wrapper.get('[data-testid="nav-btn-sessions"]').trigger('click')
     await flushPromises()
 
-    // Escape 取消
     await wrapper.get('[data-testid="session-more"]').trigger('click')
     await wrapper.get('[data-testid="session-rename"]').trigger('click')
-    await wrapper.get('[data-testid="session-rename-input"]').trigger('keydown.esc')
-    expect(wrapper.find('[data-testid="session-rename-input"]').exists()).toBe(false)
+    await wrapper.get('[data-testid="rename-dialog-input"]').trigger('keydown.esc')
+    expect(wrapper.find('[data-testid="rename-dialog"]').exists()).toBe(false)
 
-    // 空白标题回车不提交
     await wrapper.get('[data-testid="session-more"]').trigger('click')
     await wrapper.get('[data-testid="session-rename"]').trigger('click')
-    await wrapper.get('[data-testid="session-rename-input"]').setValue('   ')
-    await wrapper.get('[data-testid="session-rename-form"]').trigger('submit')
+    await wrapper.get('[data-testid="rename-dialog-cancel"]').trigger('click')
+    expect(wrapper.find('[data-testid="rename-dialog"]').exists()).toBe(false)
+
+    await wrapper.get('[data-testid="session-more"]').trigger('click')
+    await wrapper.get('[data-testid="session-rename"]').trigger('click')
+    await wrapper.get('[data-testid="rename-dialog"]').trigger('click.self')
+    expect(wrapper.find('[data-testid="rename-dialog"]').exists()).toBe(false)
+
+    await wrapper.get('[data-testid="session-more"]').trigger('click')
+    await wrapper.get('[data-testid="session-rename"]').trigger('click')
+    await wrapper.get('[data-testid="rename-dialog-input"]').setValue('   ')
+    await wrapper.get('[data-testid="rename-dialog-form"]').trigger('submit')
     await flushPromises()
     expect(m.mocks.renameChatSession).not.toHaveBeenCalled()
+  })
+
+  it('重命名：请求进行中禁用输入和按钮，失败时保留弹窗与草稿', async () => {
+    const { wrapper } = await mountWorkspace()
+    await wrapper.get('[data-testid="nav-btn-sessions"]').trigger('click')
+    await flushPromises()
+    await wrapper.get('[data-testid="session-more"]').trigger('click')
+    await wrapper.get('[data-testid="session-rename"]').trigger('click')
+    const input = wrapper.get('[data-testid="rename-dialog-input"]')
+    await input.setValue('保留草稿')
+
+    let rejectRename: (reason?: unknown) => void = () => {}
+    m.mocks.renameChatSession.mockImplementation(() => new Promise((_, reject) => { rejectRename = reject }))
+    await wrapper.get('[data-testid="rename-dialog-form"]').trigger('submit')
+    await nextTick()
+    expect(wrapper.get('[data-testid="rename-dialog-input"]').attributes('disabled')).toBeDefined()
+    expect(wrapper.get('[data-testid="rename-dialog-cancel"]').attributes('disabled')).toBeDefined()
+    expect(wrapper.get('[data-testid="rename-dialog-confirm"]').text()).toContain('保存中…')
+
+    rejectRename(new Error('rename failed'))
+    await flushPromises()
+    expect(wrapper.find('[data-testid="rename-dialog"]').exists()).toBe(true)
+    expect((wrapper.get('[data-testid="rename-dialog-input"]').element as HTMLInputElement).value).toBe('保留草稿')
   })
 
   it('删除：取消不调用接口，确认后删除并从列表移除', async () => {

@@ -40,7 +40,7 @@ function toggleNav(key: NavKey) {
   // 切换面板时收起旧的预览高亮
   openPreviewName.value = null
   openMenuId.value = null
-  editingSessionId.value = null
+  cancelRename()
 }
 
 function closePreview() {
@@ -189,15 +189,16 @@ async function createSession() {
   }
 }
 
-// 会话操作：菜单、行内重命名与删除确认
+// 会话操作：菜单、重命名弹窗与删除确认
 const openMenuId = ref<string | null>(null)
-const editingSessionId = ref<string | null>(null)
+const renameTarget = ref<ChatSession | null>(null)
 const renameDraft = ref('')
 const renaming = ref(false)
 const pendingDelete = ref<ChatSession | null>(null)
 const deleting = ref(false)
 const cancelBtn = ref<HTMLButtonElement | null>(null)
 const renameInput = ref<HTMLInputElement | null>(null)
+const renameCancelButton = ref<HTMLButtonElement | null>(null)
 
 function toggleMenu(sessionId: string) {
   openMenuId.value = openMenuId.value === sessionId ? null : sessionId
@@ -209,35 +210,36 @@ function closeMenu() {
 
 function startRename(session: ChatSession) {
   closeMenu()
-  editingSessionId.value = session.id
+  renameTarget.value = session
   renameDraft.value = session.title
   nextTick(() => {
-    // v-for 内的模板 ref 在 Vue3 中收集为数组，兼容取第一个
-    const el = renameInput.value
-    const input = Array.isArray(el) ? el[0] : el
-    input?.focus()
+    if (renameInput.value) {
+      renameInput.value.focus()
+    } else {
+      renameCancelButton.value?.focus()
+    }
   })
 }
 
 function cancelRename() {
   if (renaming.value) return
-  editingSessionId.value = null
+  renameTarget.value = null
   renameDraft.value = ''
 }
 
-async function commitRename(sessionId: string) {
+async function commitRename() {
+  const target = renameTarget.value
   const title = renameDraft.value.trim()
-  if (!title) {
-    cancelRename()
-    return
-  }
+  if (!target || !title || renaming.value) return
   renaming.value = true
   try {
-    await store.renameChatSession(sessionId, title, workspaceId.value)
+    const ok = await store.renameChatSession(target.id, title, workspaceId.value)
+    if (ok) {
+      renameTarget.value = null
+      renameDraft.value = ''
+    }
   } finally {
     renaming.value = false
-    editingSessionId.value = null
-    renameDraft.value = ''
   }
 }
 
@@ -275,17 +277,22 @@ async function confirmDelete() {
 
 function onGlobalKeydown(e: KeyboardEvent) {
   if (e.key === 'Escape') {
-    cancelDelete()
-    cancelRename()
+    if (renameTarget.value) {
+      cancelRename()
+      return
+    }
+    if (pendingDelete.value) {
+      cancelDelete()
+      return
+    }
     closeMenu()
   }
 }
 
 function onGlobalClick(e: MouseEvent) {
   const target = e.target as HTMLElement
-  if (!target.closest('.session-item')) {
+  if (!target.closest('.session-item') && !target.closest('.dialog-backdrop')) {
     closeMenu()
-    cancelRename()
   }
 }
 
@@ -501,7 +508,6 @@ onUnmounted(() => {
               :class="{ active: s.id === store.currentSessionId }"
             >
               <button
-                v-if="editingSessionId !== s.id"
                 type="button"
                 class="session-row"
                 data-testid="session-row"
@@ -510,23 +516,6 @@ onUnmounted(() => {
                 <span class="session-title">{{ s.title }}</span>
                 <span class="session-time">{{ s.updatedAt }}</span>
               </button>
-              <form
-                v-else
-                class="session-rename"
-                data-testid="session-rename-form"
-                @submit.prevent="commitRename(s.id)"
-              >
-                <input
-                  ref="renameInput"
-                  v-model="renameDraft"
-                  data-testid="session-rename-input"
-                  class="text-input"
-                  type="text"
-                  :disabled="renaming"
-                  @keydown.esc.prevent="cancelRename"
-                  @blur="cancelRename"
-                >
-              </form>
               <button
                 type="button"
                 class="more-btn"
@@ -651,6 +640,30 @@ onUnmounted(() => {
           </template>
         </footer>
       </main>
+    </div>
+
+    <div v-if="renameTarget" class="dialog-backdrop" data-testid="rename-dialog" role="dialog" aria-modal="true" aria-labelledby="rename-dialog-title" @click.self="cancelRename">
+      <div class="confirm-dialog rename-dialog">
+        <h2 id="rename-dialog-title" class="dialog-title">重命名会话</h2>
+        <form data-testid="rename-dialog-form" @submit.prevent="commitRename">
+          <input
+            ref="renameInput"
+            v-model="renameDraft"
+            data-testid="rename-dialog-input"
+            class="text-input rename-dialog-input"
+            type="text"
+            :disabled="renaming"
+            aria-label="会话标题"
+            @keydown.esc.prevent="cancelRename"
+          >
+          <div class="dialog-actions">
+            <button ref="renameCancelButton" type="button" class="dialog-btn" data-testid="rename-dialog-cancel" :disabled="renaming" @click="cancelRename">取消</button>
+            <button type="submit" class="dialog-btn accent" data-testid="rename-dialog-confirm" :disabled="renaming || !renameDraft.trim()">
+              {{ renaming ? '保存中…' : '保存' }}
+            </button>
+          </div>
+        </form>
+      </div>
     </div>
 
     <div v-if="pendingDelete" class="dialog-backdrop" data-testid="delete-dialog" @click.self="cancelDelete">
@@ -875,9 +888,6 @@ onUnmounted(() => {
 .menu-item.danger { color: #b83030; }
 .menu-item.danger:hover { background: rgba(184,48,48,.08); }
 .menu-icon { width: 16px; text-align: center; flex-shrink: 0; }
-.session-rename { flex: 1; min-width: 0; padding: 5px 4px; }
-.session-rename .text-input { font-size: 13px; padding: 5px 8px; }
-
 /* ===== 删除确认对话框（项目纸张风格） ===== */
 .dialog-backdrop {
   position: fixed; inset: 0; z-index: 50;
@@ -898,9 +908,13 @@ onUnmounted(() => {
   border: 1.5px solid #2a2a2a; border-radius: 4px; padding: 6px 14px;
   background: transparent; color: #2a2a2a;
 }
+.dialog-btn.accent { border-color: #c87020; color: #c87020; background: rgba(212,160,23,.12); }
+.dialog-btn.accent:hover { background: rgba(212,160,23,.22); }
 .dialog-btn.danger { border-color: #b83030; color: #b83030; }
 .dialog-btn.danger:hover { background: rgba(184,48,48,.08); }
 .dialog-btn:disabled { opacity: .5; cursor: not-allowed; }
+.rename-dialog-input { display: block; width: 100%; box-sizing: border-box; font-size: 14px; padding: 8px 10px; margin-bottom: 16px; }
+.rename-dialog-input:focus { outline: 1.5px solid #c87020; outline-offset: 1px; }
 
 /* ===== 聊天面板 ===== */
 .chat-panel {
