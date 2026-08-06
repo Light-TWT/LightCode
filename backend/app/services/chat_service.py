@@ -32,6 +32,7 @@ from app.schemas.errors import (
     CHAT_MESSAGE_TOO_LONG,
     CHAT_MODEL_OUTPUT_INVALID,
     CHAT_SESSION_NOT_FOUND,
+    CHAT_SESSION_TITLE_EMPTY,
     MODEL_RESPONSE_INVALID,
     Phase1Error,
 )
@@ -203,6 +204,35 @@ class ChatService:
                 (session_id, workspace_id, display_title, now, now),
             )
         return self.get_session(session_id, workspace_id).session
+
+    def rename_session(self, session_id: str, title: str) -> ChatSessionResponse:
+        """重命名会话标题；空白标题拒绝（不回退为新会话）。"""
+        self.get_session(session_id)  # 会话存在性校验（404）
+        text = title.strip()
+        if not text:
+            raise Phase1Error(CHAT_SESSION_TITLE_EMPTY, "会话标题不能为空。")
+        now = _now()
+        with self._db:
+            self._db.execute(
+                "UPDATE chat_sessions SET title = ?, updated_at = ? WHERE id = ?",
+                (text, now, session_id),
+            )
+        return self.get_session(session_id).session
+
+    def delete_session(self, session_id: str, workspace_id: str) -> None:
+        """永久删除会话：归属校验 → 解除任务关联 → 删消息 → 删会话（事务）。"""
+        self.get_session(session_id, workspace_id)  # 归属校验，不匹配 404
+        with self._db:
+            self._db.execute(
+                "UPDATE tasks SET chat_session_id = '' WHERE chat_session_id = ?",
+                (session_id,),
+            )
+            self._db.execute(
+                "DELETE FROM chat_messages WHERE session_id = ?", (session_id,)
+            )
+            self._db.execute(
+                "DELETE FROM chat_sessions WHERE id = ?", (session_id,)
+            )
 
     def get_session(
         self, session_id: str, workspace_id: Optional[str] = None

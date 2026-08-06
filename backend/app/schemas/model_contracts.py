@@ -164,6 +164,12 @@ class ChatSessionCreateRequest(BaseModel, extra="forbid"):
     title: str = ""
 
 
+class ChatSessionUpdateRequest(BaseModel, extra="forbid"):
+    """会话重命名：只允许标题，绝不携带路径/补丁/命令/密钥。"""
+
+    title: str
+
+
 class ChatSessionResponse(BaseModel, extra="forbid", populate_by_name=True):
     id: str
     workspaceId: str = Field(alias="workspaceId")
@@ -193,6 +199,10 @@ class ChatMessageSubmitRequest(BaseModel, extra="forbid"):
 class ChatSessionDetailResponse(BaseModel, extra="forbid", populate_by_name=True):
     session: ChatSessionResponse
     messages: list[ChatMessageResponse]
+
+
+class ChatSessionDeleteResponse(BaseModel, extra="forbid", populate_by_name=True):
+    ok: bool
 
 
 class ChatSubmitResponse(BaseModel, extra="forbid", populate_by_name=True):
