@@ -205,9 +205,11 @@ class ChatService:
             )
         return self.get_session(session_id, workspace_id).session
 
-    def rename_session(self, session_id: str, title: str) -> ChatSessionResponse:
-        """重命名会话标题；空白标题拒绝（不回退为新会话）。"""
-        self.get_session(session_id)  # 会话存在性校验（404）
+    def rename_session(
+        self, session_id: str, workspace_id: str, title: str
+    ) -> ChatSessionResponse:
+        """重命名会话标题；先校验会话归属（404），空白标题拒绝（不回退为新会话）。"""
+        self.get_session(session_id, workspace_id)  # 存在性 + 工作区归属校验（404）
         text = title.strip()
         if not text:
             raise Phase1Error(CHAT_SESSION_TITLE_EMPTY, "会话标题不能为空。")
@@ -217,7 +219,7 @@ class ChatService:
                 "UPDATE chat_sessions SET title = ?, updated_at = ? WHERE id = ?",
                 (text, now, session_id),
             )
-        return self.get_session(session_id).session
+        return self.get_session(session_id, workspace_id).session
 
     def delete_session(self, session_id: str, workspace_id: str) -> None:
         """永久删除会话：归属校验 → 解除任务关联 → 删消息 → 删会话（事务）。"""
