@@ -87,6 +87,8 @@ const m = vi.hoisted(() => {
       createChatSession: vi.fn(),
       getChatSession: vi.fn(),
       submitMessage: vi.fn(),
+      renameChatSession: vi.fn(),
+      deleteChatSession: vi.fn(),
       getRealTask: vi.fn(),
       submitApproval: vi.fn(),
       createRealTask: vi.fn(),
@@ -118,6 +120,8 @@ vi.mock('@/services/chat.service', () => ({
     createChatSession: m.mocks.createChatSession,
     getChatSession: m.mocks.getChatSession,
     submitMessage: m.mocks.submitMessage,
+    renameChatSession: m.mocks.renameChatSession,
+    deleteChatSession: m.mocks.deleteChatSession,
   },
 }))
 vi.mock('@/services/provider.service', () => ({
@@ -182,11 +186,15 @@ function createTestRouter(): Router {
   })
 }
 
-async function mountWorkspace() {
+async function mountWorkspace(attachToBody = false) {
   const router = createTestRouter()
   await router.push('/workspace/ws-1/session/chat-1')
   await router.isReady()
-  const wrapper = mount(WorkspaceView, { global: { plugins: [router] } })
+  const wrapper = mount(WorkspaceView, {
+    global: { plugins: [router] },
+    // 断言 document.activeElement 时需真实挂载到 document（默认挂载在游离节点上，focus 不生效）
+    ...(attachToBody ? { attachTo: document.body } : {}),
+  })
   await flushPromises()
   return { wrapper, router }
 }
@@ -210,6 +218,8 @@ describe('WorkspaceView（聊天主界面）', () => {
       message: { ...m.assistantMsg, sequence: 4, id: 'msg-4', content: '已完成审查流程。' },
       taskId: '',
     })
+    m.mocks.renameChatSession.mockResolvedValue({ ...m.session, title: '新标题' })
+    m.mocks.deleteChatSession.mockResolvedValue({ ok: true })
     m.mocks.getSettings.mockResolvedValue(readySettings)
     m.mocks.getRealTask.mockResolvedValue(m.task)
     m.mocks.submitApproval.mockResolvedValue({
@@ -369,5 +379,115 @@ describe('WorkspaceView（聊天主界面）', () => {
     await wrapper.get('[data-testid="file-entry"]').trigger('click')
     await flushPromises()
     expect(wrapper.find('[data-testid="file-preview"]').exists()).toBe(false)
+  })
+
+  it('三点菜单：点击打开，再次点击关闭，Escape 关闭', async () => {
+    const { wrapper } = await mountWorkspace()
+    await wrapper.get('[data-testid="nav-btn-sessions"]').trigger('click')
+    await flushPromises()
+    const more = wrapper.get('[data-testid="session-more"]')
+    expect(wrapper.find('[data-testid="session-menu"]').exists()).toBe(false)
+
+    await more.trigger('click')
+    expect(wrapper.find('[data-testid="session-menu"]').exists()).toBe(true)
+
+    await more.trigger('click')
+    expect(wrapper.find('[data-testid="session-menu"]').exists()).toBe(false)
+
+    await more.trigger('click')
+    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))
+    await flushPromises()
+    expect(wrapper.find('[data-testid="session-menu"]').exists()).toBe(false)
+  })
+
+  it('重命名：回车提交新标题并同步列表', async () => {
+    const { wrapper } = await mountWorkspace()
+    await wrapper.get('[data-testid="nav-btn-sessions"]').trigger('click')
+    await flushPromises()
+    await wrapper.get('[data-testid="session-more"]').trigger('click')
+    await wrapper.get('[data-testid="session-rename"]').trigger('click')
+
+    const input = wrapper.get('[data-testid="session-rename-input"]')
+    expect((input.element as HTMLInputElement).value).toBe('新会话')
+    await input.setValue('新标题')
+    m.mocks.renameChatSession.mockResolvedValue({ ...m.session, title: '新标题' })
+    await wrapper.get('[data-testid="session-rename-form"]').trigger('submit')
+    await flushPromises()
+
+    expect(m.mocks.renameChatSession).toHaveBeenCalledWith('chat-1', 'ws-1', '新标题')
+    expect(wrapper.find('[data-testid="session-rename-input"]').exists()).toBe(false)
+    expect(wrapper.get('[data-testid="session-row"]').text()).toContain('新标题')
+  })
+
+  it('重命名：Escape 与空白标题不提交', async () => {
+    const { wrapper } = await mountWorkspace()
+    await wrapper.get('[data-testid="nav-btn-sessions"]').trigger('click')
+    await flushPromises()
+
+    // Escape 取消
+    await wrapper.get('[data-testid="session-more"]').trigger('click')
+    await wrapper.get('[data-testid="session-rename"]').trigger('click')
+    await wrapper.get('[data-testid="session-rename-input"]').trigger('keydown.esc')
+    expect(wrapper.find('[data-testid="session-rename-input"]').exists()).toBe(false)
+
+    // 空白标题回车不提交
+    await wrapper.get('[data-testid="session-more"]').trigger('click')
+    await wrapper.get('[data-testid="session-rename"]').trigger('click')
+    await wrapper.get('[data-testid="session-rename-input"]').setValue('   ')
+    await wrapper.get('[data-testid="session-rename-form"]').trigger('submit')
+    await flushPromises()
+    expect(m.mocks.renameChatSession).not.toHaveBeenCalled()
+  })
+
+  it('删除：取消不调用接口，确认后删除并从列表移除', async () => {
+    m.mocks.listChatSessions.mockResolvedValue([
+      m.session,
+      { ...m.session, id: 'chat-2', title: '第二个' },
+    ])
+    const { wrapper } = await mountWorkspace(true)
+    await wrapper.get('[data-testid="nav-btn-sessions"]').trigger('click')
+    await flushPromises()
+    expect(wrapper.findAll('[data-testid="session-row"]').length).toBe(2)
+
+    // 打开菜单 → 删除 → 取消
+    await wrapper.get('[data-testid="session-more"]').trigger('click')
+    await wrapper.get('[data-testid="session-delete"]').trigger('click')
+    expect(wrapper.find('[data-testid="delete-dialog"]').exists()).toBe(true)
+    // 默认焦点落在「取消」按钮（规格要求）
+    await flushPromises()
+    expect(document.activeElement).toBe(wrapper.get('[data-testid="delete-cancel"]').element)
+    await wrapper.get('[data-testid="delete-cancel"]').trigger('click')
+    expect(wrapper.find('[data-testid="delete-dialog"]').exists()).toBe(false)
+    expect(m.mocks.deleteChatSession).not.toHaveBeenCalled()
+
+    // 再次删除 → 确认
+    await wrapper.get('[data-testid="session-more"]').trigger('click')
+    await wrapper.get('[data-testid="session-delete"]').trigger('click')
+    await wrapper.get('[data-testid="delete-confirm"]').trigger('click')
+    await flushPromises()
+
+    expect(m.mocks.deleteChatSession).toHaveBeenCalledWith('chat-1', 'ws-1')
+    expect(wrapper.findAll('[data-testid="session-row"]').length).toBe(1)
+  })
+
+  it('删除进行中禁用两个对话框按钮', async () => {
+    const { wrapper } = await mountWorkspace()
+    await wrapper.get('[data-testid="nav-btn-sessions"]').trigger('click')
+    await flushPromises()
+    await wrapper.get('[data-testid="session-more"]').trigger('click')
+    await wrapper.get('[data-testid="session-delete"]').trigger('click')
+
+    let resolveDelete: (v: { ok: boolean }) => void = () => {}
+    m.mocks.deleteChatSession.mockImplementation(
+      () => new Promise((r) => { resolveDelete = r }),
+    )
+    await wrapper.get('[data-testid="delete-confirm"]').trigger('click')
+    await flushPromises()
+
+    expect(wrapper.get('[data-testid="delete-confirm"]').attributes('disabled')).toBeDefined()
+    expect(wrapper.get('[data-testid="delete-cancel"]').attributes('disabled')).toBeDefined()
+
+    resolveDelete({ ok: true })
+    await flushPromises()
   })
 })

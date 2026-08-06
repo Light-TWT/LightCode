@@ -263,6 +263,9 @@ describe('workspace store：聊天会话与消息（核心 Agent 更新阶段 A�
     store.chatSessions = [chatSession()]
     store.currentSessionId = 'chat-1'
     store.messages = [chatMessage(1)]
+    store.lastChatSequence = 1
+    store.task = structuredClone(modelTaskFixture)
+    store.sending = true
 
     const ok = await store.deleteChatSession('chat-1', 'ws-1')
 
@@ -270,6 +273,10 @@ describe('workspace store：聊天会话与消息（核心 Agent 更新阶段 A�
     expect(store.chatSessions).toHaveLength(0)
     expect(store.currentSessionId).toBeNull()
     expect(store.messages).toHaveLength(0)
+    expect(store.lastChatSequence).toBe(0)
+    expect(store.chatConnection).toBe('idle')
+    expect(store.task).toBeNull()
+    expect(store.sending).toBe(false)
   })
 
   it('deleteChatSession 删除非当前会话不影响当前消息', async () => {

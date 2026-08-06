@@ -376,7 +376,9 @@ export const useWorkspaceStore = defineStore('workspace', {
       const wasCurrent = this.currentSessionId === sessionId
       this.chatSessions = this.chatSessions.filter((s) => s.id !== sessionId)
       if (wasCurrent) {
-        this._cleanupChatEvents()
+        // 清理已删除会话的任务/审批状态与会话订阅（含在途发送标志）
+        this.resetTask()
+        this.sending = false
         this.currentSessionId = null
         this.messages = []
         this.lastChatSequence = 0

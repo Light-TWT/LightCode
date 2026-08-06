@@ -1,11 +1,12 @@
 <script setup lang="ts">
-import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
+import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useWorkspaceStore } from '@/stores/workspace.store'
 import { providerService } from '@/services/provider.service'
 import type {
   ApprovalDecision,
   ChatMessage,
+  ChatSession,
   ProviderStatus,
   ProviderSettingsResponse,
   RegisteredFileEntry,
@@ -38,6 +39,8 @@ function toggleNav(key: NavKey) {
   activeNav.value = activeNav.value === key ? null : key
   // 切换面板时收起旧的预览高亮
   openPreviewName.value = null
+  openMenuId.value = null
+  editingSessionId.value = null
 }
 
 function closePreview() {
@@ -186,6 +189,106 @@ async function createSession() {
   }
 }
 
+// 会话操作：菜单、行内重命名与删除确认
+const openMenuId = ref<string | null>(null)
+const editingSessionId = ref<string | null>(null)
+const renameDraft = ref('')
+const renaming = ref(false)
+const pendingDelete = ref<ChatSession | null>(null)
+const deleting = ref(false)
+const cancelBtn = ref<HTMLButtonElement | null>(null)
+const renameInput = ref<HTMLInputElement | null>(null)
+
+function toggleMenu(sessionId: string) {
+  openMenuId.value = openMenuId.value === sessionId ? null : sessionId
+}
+
+function closeMenu() {
+  openMenuId.value = null
+}
+
+function startRename(session: ChatSession) {
+  closeMenu()
+  editingSessionId.value = session.id
+  renameDraft.value = session.title
+  nextTick(() => {
+    // v-for 内的模板 ref 在 Vue3 中收集为数组，兼容取第一个
+    const el = renameInput.value
+    const input = Array.isArray(el) ? el[0] : el
+    input?.focus()
+  })
+}
+
+function cancelRename() {
+  if (renaming.value) return
+  editingSessionId.value = null
+  renameDraft.value = ''
+}
+
+async function commitRename(sessionId: string) {
+  const title = renameDraft.value.trim()
+  if (!title) {
+    cancelRename()
+    return
+  }
+  renaming.value = true
+  try {
+    await store.renameChatSession(sessionId, title, workspaceId.value)
+  } finally {
+    renaming.value = false
+    editingSessionId.value = null
+    renameDraft.value = ''
+  }
+}
+
+function requestDelete(session: ChatSession) {
+  closeMenu()
+  pendingDelete.value = session
+  nextTick(() => cancelBtn.value?.focus())
+}
+
+function cancelDelete() {
+  if (deleting.value) return
+  pendingDelete.value = null
+}
+
+async function confirmDelete() {
+  const target = pendingDelete.value
+  if (!target || deleting.value) return
+  deleting.value = true
+  try {
+    const wasCurrent = target.id === store.currentSessionId
+    const ok = await store.deleteChatSession(target.id, workspaceId.value)
+    if (ok && wasCurrent) {
+      const next = store.currentSessionId
+      if (next) {
+        router.push(`/workspace/${workspaceId.value}/session/${next}`)
+      } else {
+        router.push(`/workspace/${workspaceId.value}`)
+      }
+    }
+  } finally {
+    deleting.value = false
+    pendingDelete.value = null
+  }
+}
+
+function onGlobalKeydown(e: KeyboardEvent) {
+  if (e.key === 'Escape') {
+    cancelDelete()
+    cancelRename()
+    closeMenu()
+  }
+}
+
+function onGlobalClick(e: MouseEvent) {
+  const target = e.target as HTMLElement
+  if (!target.closest('.session-item')) {
+    closeMenu()
+    cancelRename()
+  }
+}
+
 onMounted(async () => {
   await store.openWorkspace(workspaceId.value)
   await store.loadChatSessions(workspaceId.value)
@@ -215,7 +318,16 @@ watch(
   },
 )
 
-onUnmounted(() => store.cleanup())
+onMounted(() => {
+  document.addEventListener('keydown', onGlobalKeydown)
+  document.addEventListener('click', onGlobalClick)
+})
+
+onUnmounted(() => {
+  store.cleanup()
+  document.removeEventListener('keydown', onGlobalKeydown)
+  document.removeEventListener('click', onGlobalClick)
+})
 </script>
 
 <template>
@@ -382,18 +494,57 @@ onUnmounted(() => store.cleanup())
             </button>
           </form>
           <div class="session-list">
-            <button
+            <div
               v-for="s in store.chatSessions"
               :key="s.id"
-              type="button"
-              class="session-row"
+              class="session-item"
               :class="{ active: s.id === store.currentSessionId }"
-              data-testid="session-row"
-              @click="openSession(s.id)"
             >
-              <span class="session-title">{{ s.title }}</span>
-              <span class="session-time">{{ s.updatedAt }}</span>
-            </button>
+              <button
+                v-if="editingSessionId !== s.id"
+                type="button"
+                class="session-row"
+                data-testid="session-row"
+                @click="openSession(s.id)"
+              >
+                <span class="session-title">{{ s.title }}</span>
+                <span class="session-time">{{ s.updatedAt }}</span>
+              </button>
+              <form
+                v-else
+                class="session-rename"
+                data-testid="session-rename-form"
+                @submit.prevent="commitRename(s.id)"
+              >
+                <input
+                  ref="renameInput"
+                  v-model="renameDraft"
+                  data-testid="session-rename-input"
+                  class="text-input"
+                  type="text"
+                  :disabled="renaming"
+                  @keydown.esc.prevent="cancelRename"
+                  @blur="cancelRename"
+                >
+              </form>
+              <button
+                type="button"
+                class="more-btn"
+                :class="{ open: openMenuId === s.id }"
+                data-testid="session-more"
+                :aria-expanded="openMenuId === s.id ? 'true' : 'false'"
+                aria-label="会话操作"
+                @click.stop="toggleMenu(s.id)"
+              >⋮</button>
+              <div v-if="openMenuId === s.id" class="session-menu" data-testid="session-menu">
+                <button type="button" class="menu-item" data-testid="session-rename" @click="startRename(s)">
+                  <span class="menu-icon" aria-hidden="true">✎</span>重命名
+                </button>
+                <button type="button" class="menu-item danger" data-testid="session-delete" @click="requestDelete(s)">
+                  <span class="menu-icon" aria-hidden="true">⌫</span>删除会话
+                </button>
+              </div>
+            </div>
             <p v-if="store.chatSessions.length === 0" class="empty-hint">暂无会话，新建一个开始对话</p>
           </div>
         </div>
@@ -500,6 +651,19 @@ onUnmounted(() => store.cleanup())
           </template>
         </footer>
       </main>
+    </div>
+
+    <div v-if="pendingDelete" class="dialog-backdrop" data-testid="delete-dialog" @click.self="cancelDelete">
+      <div class="confirm-dialog" role="dialog" aria-modal="true" aria-labelledby="delete-dialog-title">
+        <h2 id="delete-dialog-title" class="dialog-title">删除此会话？</h2>
+        <p class="dialog-copy">这会永久删除会话「{{ pendingDelete.title }}」及其中的全部消息，且无法恢复。</p>
+        <div class="dialog-actions">
+          <button ref="cancelBtn" type="button" class="dialog-btn" data-testid="delete-cancel" :disabled="deleting" @click="cancelDelete">取消</button>
+          <button type="button" class="dialog-btn danger" data-testid="delete-confirm" :disabled="deleting" @click="confirmDelete">
+            {{ deleting ? '删除中…' : '删除会话' }}
+          </button>
+        </div>
+      </div>
     </div>
   </div>
 </template>
@@ -665,8 +829,78 @@ onUnmounted(() => store.cleanup())
   padding: 8px; white-space: pre-wrap; word-break: break-all;
   max-height: 26vh; overflow-y: auto; margin: 0;
 }
-.session-title { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.session-time { font-family: 'JetBrains Mono', monospace; font-size: 9px; color: #bbb; }
+
+/* ===== 会话操作：列表间距、更大行高、菜单与确认框 ===== */
+.session-list { gap: 6px; margin-top: 12px; padding-top: 8px; border-top: 1px solid #d8d0c4; }
+.session-item {
+  position: relative;
+  display: flex; align-items: center; gap: 2px;
+  border-radius: 4px; border: 1.5px solid transparent;
+}
+.session-item.active { background: rgba(212,160,23,.2); border-color: #c87020; }
+.session-row {
+  flex: 1; min-width: 0;
+  padding: 8px 10px; font-size: 13px; gap: 8px;
+  background: none; border: none; cursor: pointer; text-align: left;
+  font-family: inherit; color: #2a2a2a;
+  display: flex; align-items: center;
+}
+.session-item:hover .session-row { background: rgba(0,0,0,.04); }
+.session-title { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 500; }
+.session-time { font-family: 'JetBrains Mono', monospace; font-size: 10px; color: #aaa; flex-shrink: 0; }
+.more-btn {
+  width: 28px; height: 28px; flex-shrink: 0;
+  display: grid; place-items: center;
+  border: 0; background: none; cursor: pointer;
+  font-family: inherit; font-size: 14px; line-height: 1; color: #999;
+  opacity: 0; border-radius: 4px;
+}
+.session-item:hover .more-btn, .more-btn:focus-visible, .more-btn.open { opacity: 1; color: #2a2a2a; }
+.more-btn:hover { background: rgba(0,0,0,.05); }
+.more-btn:focus-visible { outline: 1.5px solid #c87020; outline-offset: 1px; }
+.session-menu {
+  position: absolute; right: 0; top: calc(100% + 4px); z-index: 20;
+  min-width: 140px;
+  background: #f5f0e8; border: 1.5px solid #2a2a2a;
+  box-shadow: 3px 3px 0 rgba(0,0,0,.12);
+  padding: 4px; display: flex; flex-direction: column; gap: 2px;
+}
+.menu-item {
+  display: flex; align-items: center; gap: 8px;
+  border: 0; background: none; cursor: pointer; text-align: left;
+  font-family: inherit; font-size: 13px; color: #2a2a2a;
+  padding: 7px 10px; border-radius: 4px;
+}
+.menu-item:hover { background: rgba(0,0,0,.05); }
+.menu-item.danger { color: #b83030; }
+.menu-item.danger:hover { background: rgba(184,48,48,.08); }
+.menu-icon { width: 16px; text-align: center; flex-shrink: 0; }
+.session-rename { flex: 1; min-width: 0; padding: 5px 4px; }
+.session-rename .text-input { font-size: 13px; padding: 5px 8px; }
+
+/* ===== 删除确认对话框（项目纸张风格） ===== */
+.dialog-backdrop {
+  position: fixed; inset: 0; z-index: 50;
+  display: flex; align-items: center; justify-content: center;
+  background: rgba(42,42,42,.18); padding: 16px;
+}
+.confirm-dialog {
+  width: min(100%, 360px);
+  background: #f5f0e8; border: 2px solid #2a2a2a;
+  box-shadow: 4px 4px 0 rgba(0,0,0,.14);
+  padding: 20px 22px;
+}
+.dialog-title { font-family: 'Caveat', cursive; font-size: 20px; font-weight: 700; color: #1a1a1a; margin: 0 0 8px; }
+.dialog-copy { font-size: 13px; line-height: 1.7; color: #444; margin: 0 0 16px; }
+.dialog-actions { display: flex; justify-content: flex-end; gap: 8px; }
+.dialog-btn {
+  font-family: inherit; font-size: 13px; cursor: pointer;
+  border: 1.5px solid #2a2a2a; border-radius: 4px; padding: 6px 14px;
+  background: transparent; color: #2a2a2a;
+}
+.dialog-btn.danger { border-color: #b83030; color: #b83030; }
+.dialog-btn.danger:hover { background: rgba(184,48,48,.08); }
+.dialog-btn:disabled { opacity: .5; cursor: not-allowed; }
 
 /* ===== 聊天面板 ===== */
 .chat-panel {
