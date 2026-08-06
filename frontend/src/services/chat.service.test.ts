@@ -68,6 +68,34 @@ describe('chatService（HTTP-only）', () => {
     expect(detail.messages[0].role).toBe('assistant')
   })
 
+  it('PATCH /chat-sessions/{id}?workspaceId=xxx 请求体只含 title', async () => {
+    const fetchMock = stubFetch({ ...sessionPayload, title: '新标题' })
+    const session = await chatService.renameChatSession('chat-abc123', 'ws-1', '新标题')
+    const [url, init] = fetchMock.mock.calls[0] as unknown as [string, RequestInit]
+    expect(url).toContain('/chat-sessions/chat-abc123?workspaceId=ws-1')
+    expect(init.method).toBe('PATCH')
+    const body = JSON.parse(init.body as string)
+    // 后端 ChatSessionUpdateRequest 为 extra=forbid：只允许 title
+    expect(Object.keys(body).sort()).toEqual(['title'])
+    expect(session.title).toBe('新标题')
+  })
+
+  it('DELETE /chat-sessions/{id}?workspaceId=xxx 永久删除', async () => {
+    const fetchMock = stubFetch({ ok: true })
+    const resp = await chatService.deleteChatSession('chat-abc123', 'ws-1')
+    const [url, init] = fetchMock.mock.calls[0] as unknown as [string, RequestInit]
+    expect(url).toContain('/chat-sessions/chat-abc123?workspaceId=ws-1')
+    expect(init.method).toBe('DELETE')
+    expect(resp.ok).toBe(true)
+  })
+
+  it('DELETE 响应含 rootPath 时契约校验失败', async () => {
+    stubFetch({ ok: true, rootPath: '/etc' })
+    await expect(chatService.deleteChatSession('chat-abc123', 'ws-1')).rejects.toBeInstanceOf(
+      ContractValidationError,
+    )
+  })
+
   it('POST /chat-sessions/{id}/messages 请求体只含 content', async () => {
     const fetchMock = stubFetch({ message: messagePayload, taskId: '' })
     const resp = await chatService.submitMessage('chat-abc123', '你好')

@@ -177,6 +177,128 @@ def test_session_workspace_mismatch_rejected(env) -> None:
     assert resp.status_code == 404
 
 
+# --- 会话重命名 -------------------------------------------------------------
+
+
+def test_rename_session_updates_title(env) -> None:
+    client, _ = env
+    session = _create_session(client, title="旧标题")
+
+    resp = client.patch(
+        f"/api/v1/chat-sessions/{session['id']}",
+        params={"workspaceId": "ws-chat"},
+        json={"title": "新标题"},
+    )
+    assert resp.status_code == 200
+    assert resp.json()["title"] == "新标题"
+    assert resp.json()["updatedAt"] != session["updatedAt"]
+
+    listed = client.get("/api/v1/workspaces/ws-chat/chat-sessions").json()
+    assert listed[0]["title"] == "新标题"
+
+
+def test_rename_session_rejects_empty_title(env) -> None:
+    client, _ = env
+    session = _create_session(client)
+
+    resp = client.patch(
+        f"/api/v1/chat-sessions/{session['id']}",
+        params={"workspaceId": "ws-chat"},
+        json={"title": "   "},
+    )
+    assert resp.status_code == 400
+    assert resp.json()["code"] == "CHAT_SESSION_TITLE_EMPTY"
+
+
+def test_rename_session_rejects_forbidden_fields(env) -> None:
+    client, _ = env
+    session = _create_session(client)
+
+    resp = client.patch(
+        f"/api/v1/chat-sessions/{session['id']}",
+        params={"workspaceId": "ws-chat"},
+        json={"title": "x", "rootPath": "C:/x", "command": "rm -rf"},
+    )
+    assert resp.status_code == 422  # extra="forbid"
+
+
+def test_rename_missing_session_returns_404(env) -> None:
+    client, _ = env
+    resp = client.patch(
+        "/api/v1/chat-sessions/chat-nope",
+        params={"workspaceId": "ws-chat"},
+        json={"title": "x"},
+    )
+    assert resp.status_code == 404
+
+
+# --- 会话删除 ---------------------------------------------------------------
+
+
+def test_delete_session_removes_messages_and_rows(env) -> None:
+    client, _ = env
+    session = _create_session(client)
+    # 未配置 Provider：用户消息 + error 消息各落库一条
+    client.post(f"/api/v1/chat-sessions/{session['id']}/messages", json={"content": "你好"})
+
+    resp = client.delete(
+        f"/api/v1/chat-sessions/{session['id']}",
+        params={"workspaceId": "ws-chat"},
+    )
+    assert resp.status_code == 200
+    assert resp.json() == {"ok": True}
+
+    # 会话 404，列表为空，消息已清空
+    assert client.get(f"/api/v1/chat-sessions/{session['id']}").status_code == 404
+    assert client.get("/api/v1/workspaces/ws-chat/chat-sessions").json() == []
+    db = client.app.state.db
+    count = db.execute(
+        "SELECT COUNT(*) FROM chat_messages WHERE session_id = ?", (session["id"],)
+    ).fetchone()[0]
+    assert count == 0
+
+
+def test_delete_session_unlinks_related_tasks(env) -> None:
+    client, _ = env
+    session = _create_session(client)
+    db = client.app.state.db
+    with db:
+        db.execute(
+            """INSERT INTO tasks
+               (id, session_id, workspace_id, title, state, plan_json, tool_calls_json,
+                model_output, changeset_status, verification_status, verification_command,
+                verification_lines_json, kind, target_file, changeset_id,
+                verification_detail, chat_session_id)
+               VALUES ('t-1', ?, 'ws-chat', 'x', 'created', '[]', '[]', '', 'pending',
+                       'pending', '', '[]', 'model', '', '', '', ?)""",
+            (session["id"], session["id"]),
+        )
+
+    resp = client.delete(
+        f"/api/v1/chat-sessions/{session['id']}",
+        params={"workspaceId": "ws-chat"},
+    )
+    assert resp.status_code == 200
+
+    row = db.execute(
+        "SELECT chat_session_id FROM tasks WHERE id = 't-1'"
+    ).fetchone()
+    assert row["chat_session_id"] == ""
+
+
+def test_delete_session_requires_workspace_ownership(env) -> None:
+    client, _ = env
+    session = _create_session(client)
+
+    resp = client.delete(
+        f"/api/v1/chat-sessions/{session['id']}",
+        params={"workspaceId": "other-ws"},
+    )
+    assert resp.status_code == 404
+    listed = client.get("/api/v1/workspaces/ws-chat/chat-sessions").json()
+    assert len(listed) == 1
+
+
 # --- fail-closed：未配置 Provider -------------------------------------------------
 
 
@@ -335,3 +457,29 @@ def test_chat_request_rejects_forbidden_fields(env) -> None:
         json={"content": "x", "rootPath": "C:/x", "filePath": "a.py", "command": "rm -rf"},
     )
     assert resp.status_code == 422  # extra="forbid"
+
+
+# --- CORS 预检 --------------------------------------------------------------
+
+
+def test_cors_preflight_allows_patch_and_delete(env) -> None:
+    client, _ = env
+    patch = client.options(
+        "/api/v1/chat-sessions/chat-x",
+        headers={
+            "Origin": "http://localhost:5173",
+            "Access-Control-Request-Method": "PATCH",
+            "Access-Control-Request-Headers": "content-type",
+        },
+    )
+    assert patch.status_code == 200
+    assert "PATCH" in patch.headers.get("access-control-allow-methods", "")
+
+    delete = client.options(
+        "/api/v1/chat-sessions/chat-x",
+        headers={
+            "Origin": "http://localhost:5173",
+            "Access-Control-Request-Method": "DELETE",
+        },
+    )
+    assert "DELETE" in delete.headers.get("access-control-allow-methods", "")

@@ -254,3 +254,12 @@ export function parseChatSubmitResponse(raw: unknown): {
     taskId: raw.taskId,
   }
 }
+
+export function parseChatDeleteResponse(raw: unknown): { ok: boolean } {
+  if (!isObject(raw)) throw new ContractValidationError('chat delete 响应不是对象')
+  if (typeof raw.ok !== 'boolean') throw new ContractValidationError('chat delete 响应缺少 ok')
+  if ('rootPath' in raw || 'filePath' in raw || 'patch' in raw || 'command' in raw) {
+    throw new ContractValidationError('chat delete 响应不应包含 rootPath/filePath/patch/command')
+  }
+  return { ok: raw.ok }
+}

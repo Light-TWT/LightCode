@@ -344,6 +344,51 @@ export const useWorkspaceStore = defineStore('workspace', {
       }
     },
 
+    /** 重命名会话：成功后同步列表中的会话标题 */
+    async renameChatSession(
+      sessionId: string,
+      title: string,
+      workspaceId: string,
+    ): Promise<boolean> {
+      this.error = null
+      try {
+        const updated = await chatService.renameChatSession(sessionId, workspaceId, title)
+        this.chatSessions = this.chatSessions.map((s) =>
+          s.id === updated.id ? updated : s,
+        )
+        return true
+      } catch (err) {
+        this.error = err instanceof Error ? err.message : String(err)
+        return false
+      }
+    },
+
+    /** 永久删除会话。若删除的是当前会话：关闭旧流，有剩余会话则打开
+     *  列表第一项，否则清空状态；删除非当前会话只移除对应行。 */
+    async deleteChatSession(sessionId: string, workspaceId: string): Promise<boolean> {
+      this.error = null
+      try {
+        await chatService.deleteChatSession(sessionId, workspaceId)
+      } catch (err) {
+        this.error = err instanceof Error ? err.message : String(err)
+        return false
+      }
+      const wasCurrent = this.currentSessionId === sessionId
+      this.chatSessions = this.chatSessions.filter((s) => s.id !== sessionId)
+      if (wasCurrent) {
+        this._cleanupChatEvents()
+        this.currentSessionId = null
+        this.messages = []
+        this.lastChatSequence = 0
+        this.chatConnection = 'idle'
+        const next = this.chatSessions[0]
+        if (next) {
+          await this.openChatSession(next.id, workspaceId)
+        }
+      }
+      return true
+    },
+
     /** 打开既有会话：拉取历史消息并按最新 sequence 续传订阅 chat.event */
     async openChatSession(sessionId: string, workspaceId?: string) {
       this.currentSessionId = sessionId

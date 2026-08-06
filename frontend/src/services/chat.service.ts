@@ -1,5 +1,10 @@
 import { requestJson } from '@/services/http'
-import { parseChatSession, parseChatSessionDetail, parseChatSubmitResponse } from '@/contracts/real-task.schema'
+import {
+  parseChatDeleteResponse,
+  parseChatSession,
+  parseChatSessionDetail,
+  parseChatSubmitResponse,
+} from '@/contracts/real-task.schema'
 import type { ChatMessage, ChatSession, ChatSubmitResponse } from '@/types/agent'
 
 export interface ChatService {
@@ -11,6 +16,10 @@ export interface ChatService {
   getChatSession(sessionId: string, workspaceId?: string): Promise<{ session: ChatSession; messages: ChatMessage[] }>
   /** POST /chat-sessions/{id}/messages —— 请求体只含 content，绝不提交路径/补丁/命令 */
   submitMessage(sessionId: string, content: string): Promise<ChatSubmitResponse>
+  /** PATCH /chat-sessions/{id}?workspaceId=xxx —— 请求体只含 title */
+  renameChatSession(sessionId: string, workspaceId: string, title: string): Promise<ChatSession>
+  /** DELETE /chat-sessions/{id}?workspaceId=xxx（工作区归属校验，永久删除） */
+  deleteChatSession(sessionId: string, workspaceId: string): Promise<{ ok: boolean }>
 }
 
 export const chatService: ChatService = {
@@ -41,5 +50,25 @@ export const chatService: ChatService = {
       body: JSON.stringify({ content }),
     })
     return parseChatSubmitResponse(raw)
+  },
+
+  async renameChatSession(sessionId, workspaceId, title) {
+    const raw = await requestJson<unknown>(
+      `/chat-sessions/${sessionId}?workspaceId=${encodeURIComponent(workspaceId)}`,
+      {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ title }),
+      },
+    )
+    return parseChatSession(raw)
+  },
+
+  async deleteChatSession(sessionId, workspaceId) {
+    const raw = await requestJson<unknown>(
+      `/chat-sessions/${sessionId}?workspaceId=${encodeURIComponent(workspaceId)}`,
+      { method: 'DELETE' },
+    )
+    return parseChatDeleteResponse(raw)
   },
 }

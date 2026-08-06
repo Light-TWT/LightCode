@@ -24,8 +24,10 @@ from app.schemas.errors import (
 from app.schemas.model_contracts import (
     ChatMessageSubmitRequest,
     ChatSessionCreateRequest,
+    ChatSessionDeleteResponse,
     ChatSessionDetailResponse,
     ChatSessionResponse,
+    ChatSessionUpdateRequest,
     ChatSubmitResponse,
     ModelTaskCreateRequest,
     ModelTaskResponse,
@@ -364,6 +366,26 @@ def submit_chat_message(
     No rootPath/filePath/patch/command/key is ever accepted."""
     correlation_id_var.set(getattr(request.state, "correlation_id", "-"))
     return ChatService.from_request(request).submit_message(session_id, payload.content)
+
+
+@router.patch("/chat-sessions/{session_id}", response_model=ChatSessionResponse)
+def rename_chat_session(
+    session_id: str, payload: ChatSessionUpdateRequest, request: Request, workspaceId: str
+) -> ChatSessionResponse:
+    """Rename a chat session. Request body is limited to ``title`` (extra=forbid);
+    workspace ownership is enforced via the required ``workspaceId`` query param."""
+    return ChatService.from_request(request).rename_session(
+        session_id, workspaceId, payload.title
+    )
+
+
+@router.delete("/chat-sessions/{session_id}", response_model=ChatSessionDeleteResponse)
+def delete_chat_session(
+    session_id: str, request: Request, workspaceId: str
+) -> ChatSessionDeleteResponse:
+    """Permanently delete a chat session (workspace ownership required)."""
+    ChatService.from_request(request).delete_session(session_id, workspaceId)
+    return ChatSessionDeleteResponse(ok=True)
 
 
 @router.get("/chat-sessions/{session_id}/events")

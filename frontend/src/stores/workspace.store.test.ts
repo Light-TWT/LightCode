@@ -10,6 +10,8 @@ const { chatMocks, taskMocks, eventMocks, wsMocks } = vi.hoisted(() => ({
     createChatSession: vi.fn(),
     getChatSession: vi.fn(),
     submitMessage: vi.fn(),
+    renameChatSession: vi.fn(),
+    deleteChatSession: vi.fn(),
   },
   taskMocks: {
     createRealTask: vi.fn(),
@@ -90,6 +92,8 @@ describe('workspace store：聊天会话与消息（核心 Agent 更新阶段 A�
     chatMocks.createChatSession.mockReset().mockResolvedValue(chatSession())
     chatMocks.getChatSession.mockReset().mockResolvedValue({ session: chatSession(), messages: [] })
     chatMocks.submitMessage.mockReset().mockResolvedValue({ message: chatMessage(1), taskId: '' })
+    chatMocks.renameChatSession.mockReset().mockResolvedValue(chatSession({ title: '新标题' }))
+    chatMocks.deleteChatSession.mockReset().mockResolvedValue({ ok: true })
     taskMocks.getRealTask.mockReset().mockResolvedValue(structuredClone(modelTaskFixture))
     taskMocks.submitApproval.mockReset().mockResolvedValue({
       ...structuredClone(modelTaskFixture),
@@ -206,6 +210,93 @@ describe('workspace store：聊天会话与消息（核心 Agent 更新阶段 A�
     store.currentSessionId = 'chat-2' // 模拟切换到另一会话
     onEvent(chatMessage(2))
     expect(store.messages).toHaveLength(1)
+  })
+
+  it('renameChatSession 成功后同步列表标题', async () => {
+    const store = useWorkspaceStore()
+    store.chatSessions = [chatSession(), chatSession({ id: 'chat-2', title: '第二个' })]
+    chatMocks.renameChatSession.mockResolvedValue(chatSession({ title: '新标题' }))
+
+    const ok = await store.renameChatSession('chat-1', '新标题', 'ws-1')
+
+    expect(ok).toBe(true)
+    expect(chatMocks.renameChatSession).toHaveBeenCalledWith('chat-1', 'ws-1', '新标题')
+    expect(store.chatSessions[0].title).toBe('新标题')
+    expect(store.chatSessions[1].title).toBe('第二个')
+  })
+
+  it('renameChatSession 失败保留原标题并返回 false', async () => {
+    const store = useWorkspaceStore()
+    store.chatSessions = [chatSession()]
+    chatMocks.renameChatSession.mockRejectedValue(new Error('bad'))
+
+    const ok = await store.renameChatSession('chat-1', '新标题', 'ws-1')
+
+    expect(ok).toBe(false)
+    expect(store.chatSessions[0].title).toBe('新会话')
+    expect(store.error).toBeTruthy()
+  })
+
+  it('deleteChatSession 删除当前会话并切换到剩余列表第一项', async () => {
+    const store = useWorkspaceStore()
+    store.chatSessions = [chatSession(), chatSession({ id: 'chat-2', title: '第二个' })]
+    store.currentSessionId = 'chat-1'
+    store.messages = [chatMessage(1)]
+    chatMocks.getChatSession.mockResolvedValue({
+      session: chatSession({ id: 'chat-2' }),
+      messages: [],
+    })
+
+    const ok = await store.deleteChatSession('chat-1', 'ws-1')
+
+    expect(ok).toBe(true)
+    expect(chatMocks.deleteChatSession).toHaveBeenCalledWith('chat-1', 'ws-1')
+    expect(store.chatSessions.map((s) => s.id)).toEqual(['chat-2'])
+    expect(store.currentSessionId).toBe('chat-2')
+    const sub = captureChatSubscription()
+    expect(sub.sessionId).toBe('chat-2')
+    expect(sub.options.tail).toBe(true)
+  })
+
+  it('deleteChatSession 删除最后一个会话后清空状态', async () => {
+    const store = useWorkspaceStore()
+    store.chatSessions = [chatSession()]
+    store.currentSessionId = 'chat-1'
+    store.messages = [chatMessage(1)]
+
+    const ok = await store.deleteChatSession('chat-1', 'ws-1')
+
+    expect(ok).toBe(true)
+    expect(store.chatSessions).toHaveLength(0)
+    expect(store.currentSessionId).toBeNull()
+    expect(store.messages).toHaveLength(0)
+  })
+
+  it('deleteChatSession 删除非当前会话不影响当前消息', async () => {
+    const store = useWorkspaceStore()
+    store.chatSessions = [chatSession(), chatSession({ id: 'chat-2' })]
+    store.currentSessionId = 'chat-1'
+    store.messages = [chatMessage(1)]
+
+    const ok = await store.deleteChatSession('chat-2', 'ws-1')
+
+    expect(ok).toBe(true)
+    expect(store.currentSessionId).toBe('chat-1')
+    expect(store.messages).toHaveLength(1)
+  })
+
+  it('deleteChatSession 失败时保留列表与当前状态', async () => {
+    const store = useWorkspaceStore()
+    store.chatSessions = [chatSession()]
+    store.currentSessionId = 'chat-1'
+    chatMocks.deleteChatSession.mockRejectedValue(new Error('bad'))
+
+    const ok = await store.deleteChatSession('chat-1', 'ws-1')
+
+    expect(ok).toBe(false)
+    expect(store.chatSessions).toHaveLength(1)
+    expect(store.currentSessionId).toBe('chat-1')
+    expect(store.error).toBeTruthy()
   })
 })
 
