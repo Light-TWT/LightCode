@@ -80,11 +80,13 @@ async function submit() {
   saving.value = true
   message.value = null
   try {
-    await providerService.saveSettings({
+    await providerService.createProvider({
       provider: form.provider,
+      name: form.name.trim(),
       baseUrl: form.baseUrl,
       apiKey: form.apiKey,
       modelId: form.modelId,
+      enabled: form.enabled,
     })
     emit('saved')
   } catch (err) {

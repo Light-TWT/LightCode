@@ -44,6 +44,8 @@ vi.mock('@/services/provider.service', () => ({
     testConnection: vi.fn().mockResolvedValue({ ok: true, code: '', detail: '' }),
     clearSettings: vi.fn().mockResolvedValue({ ...payloads.settingsPayload, configured: false }),
     listProviders: vi.fn().mockResolvedValue(payloads.profilesPayload),
+    createProvider: vi.fn().mockResolvedValue(payloads.profilesPayload[0]),
+    deleteProvider: vi.fn().mockResolvedValue({ ok: true }),
   },
 }))
 
@@ -169,7 +171,7 @@ describe('SettingsView（多供应商设置页）', () => {
     expect(wrapper.text()).not.toContain('https://api.example.com/v1')
   })
 
-  it('「测试并添加」调用 saveSettings，提交后清空 key 输入框', async () => {
+  it('「测试并添加」调用 createProvider，提交后清空 key 输入框', async () => {
     const { wrapper } = await mountSettings()
     await wrapper.get('[data-testid="open-add"]').trigger('click')
     await flushPromises()
@@ -180,9 +182,11 @@ describe('SettingsView（多供应商设置页）', () => {
     await wrapper.get('[data-testid="modal-save"]').trigger('click')
     await flushPromises()
 
-    const saveFn = getMock<ReturnType<typeof vi.fn>>(providerService.saveSettings)
-    expect(saveFn).toHaveBeenCalledTimes(1)
-    expect(saveFn.mock.calls[0][0].apiKey).toBe('sk-super-secret-12345')
+    const createFn = getMock<ReturnType<typeof vi.fn>>(providerService.createProvider)
+    expect(createFn).toHaveBeenCalledTimes(1)
+    expect(createFn.mock.calls[0][0].apiKey).toBe('sk-super-secret-12345')
+    expect(createFn.mock.calls[0][0].name).toBe('OpenAI')
+    expect(createFn.mock.calls[0][0].enabled).toBe(true)
     // 保存成功后弹层关闭（v-if 销毁），密钥输入框不再存在于 DOM
     expect(wrapper.find('[data-testid="modal-api-key"]').exists()).toBe(false)
     // 成功提示出现，且密钥绝不留在 DOM / 前端存储

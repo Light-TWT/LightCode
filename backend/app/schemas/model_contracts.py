@@ -168,6 +168,27 @@ class ProviderProfile(BaseModel, extra="forbid", populate_by_name=True):
     baseUrlHost: str = Field(alias="baseUrlHost")
 
 
+class ProviderProfileCreate(BaseModel, extra="forbid"):
+    """创建供应商配置的请求体（阶段 B）。
+
+    仅用于 POST /provider/profiles；``apiKey``/``baseUrl`` 只在本机设置端点
+    传递，绝不落库、不打日志、不回显。
+    """
+
+    name: str
+    provider: str = "openai-compatible"
+    baseUrl: str = Field(alias="baseUrl")
+    apiKey: str = Field(alias="apiKey")
+    modelId: str = Field(alias="modelId")
+    enabled: bool = True
+
+
+class ProviderProfileDeleteResponse(BaseModel, extra="forbid", populate_by_name=True):
+    """删除供应商配置的结果。"""
+
+    ok: bool
+
+
 # ---------------------------------------------------------------------------
 # 核心 Agent 更新（阶段 A）：聊天会话与消息。
 # ---------------------------------------------------------------------------

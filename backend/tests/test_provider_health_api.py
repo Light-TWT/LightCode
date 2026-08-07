@@ -222,6 +222,7 @@ def test_profiles_never_leaks_key_or_full_url(tmp_path) -> None:
     assert "https://" not in raw
 
 
-def test_profiles_rejects_writes(tmp_path) -> None:
+def test_profiles_rejects_malformed_create(tmp_path) -> None:
+    # 阶段 B 起 POST /provider/profiles 是创建端点；缺字段的请求被 422 拒绝
     with _client(tmp_path, **_configured_env()) as client:
-        assert client.post("/api/v1/provider/profiles", json={}).status_code == 405
+        assert client.post("/api/v1/provider/profiles", json={}).status_code == 422

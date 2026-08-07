@@ -1,0 +1,402 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>LightCode · 供应商设置预览</title>
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=Architects+Daughter&family=Caveat:wght@600;700&family=JetBrains+Mono:wght@400;500;600&family=Patrick+Hand&display=swap');
+
+    :root {
+      --paper: #f5f0e8;
+      --paper-deep: #ebe2d4;
+      --paper-light: #fffdf8;
+      --pencil: #2a2a2a;
+      --pencil-soft: #6e665c;
+      --line: #d8d0c4;
+      --line-dark: #aaa092;
+      --yellow: #d4a017;
+      --yellow-light: #f3e1a5;
+      --blue: #3a6090;
+      --blue-light: #e4edf5;
+      --green: #2d7a3a;
+      --green-light: #e1f0e2;
+      --red: #b83030;
+      --shadow: 0 16px 44px rgba(68, 52, 32, .16);
+    }
+
+    * { box-sizing: border-box; }
+
+    body {
+      margin: 0;
+      min-width: 1040px;
+      color: var(--pencil);
+      background:
+        radial-gradient(circle at 14% 15%, rgba(212, 160, 23, .10), transparent 25%),
+        radial-gradient(circle at 88% 90%, rgba(58, 96, 144, .08), transparent 29%),
+        var(--paper);
+      font-family: 'Architects Daughter', cursive;
+    }
+
+    button, input { font: inherit; }
+    button { cursor: pointer; }
+
+    .app-shell {
+      min-height: 100vh;
+      display: grid;
+      grid-template-columns: 82px 246px minmax(360px, 480px) minmax(360px, 1fr);
+      padding: 22px;
+    }
+
+    .rail {
+      border-right: 1.5px solid var(--line);
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      padding: 10px 16px;
+      gap: 16px;
+    }
+
+    .brand-mark {
+      width: 42px;
+      height: 42px;
+      display: grid;
+      place-items: center;
+      color: var(--pencil);
+      font-family: 'Caveat', cursive;
+      font-size: 23px;
+      font-weight: 700;
+      border: 1.5px solid var(--pencil);
+      border-radius: 12px 9px 13px 8px;
+      transform: rotate(-3deg);
+      background: var(--paper-light);
+      box-shadow: 3px 3px 0 rgba(212, 160, 23, .28);
+    }
+
+    .rail-actions { display: grid; gap: 10px; margin-top: 36px; }
+    .rail-button {
+      width: 48px;
+      height: 48px;
+      display: grid;
+      place-items: center;
+      color: var(--pencil-soft);
+      border: 0;
+      border-radius: 12px;
+      background: transparent;
+      font-size: 21px;
+    }
+    .rail-button:hover, .rail-button.active { color: var(--pencil); background: rgba(212, 160, 23, .16); }
+    .rail-button svg { width: 22px; height: 22px; fill: none; stroke: currentColor; stroke-linecap: round; stroke-linejoin: round; stroke-width: 1.7; }
+    .rail-bottom { margin-top: auto; }
+
+    .settings-nav { padding: 24px 24px 22px; border-right: 1.5px solid var(--line); }
+    .eyebrow {
+      margin: 0 0 4px;
+      color: var(--blue);
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 10px;
+      font-weight: 600;
+      letter-spacing: .12em;
+      text-transform: uppercase;
+    }
+    h1 { margin: 0; font-family: 'Caveat', cursive; font-size: 42px; line-height: 1; }
+    .nav-list { display: grid; gap: 6px; margin-top: 42px; }
+    .nav-item {
+      width: 100%;
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      padding: 12px 12px;
+      border: 1.5px solid transparent;
+      border-radius: 8px 11px 9px 10px;
+      color: var(--pencil-soft);
+      background: transparent;
+      text-align: left;
+      font-size: 16px;
+    }
+    .nav-item.active {
+      color: var(--pencil);
+      border-color: #e2cf91;
+      background: rgba(212, 160, 23, .14);
+      transform: rotate(-.5deg);
+    }
+    .nav-symbol { width: 20px; text-align: center; font-family: Arial, sans-serif; }
+    .nav-note { margin: 24px 0 0; color: var(--pencil-soft); font-family: 'Patrick Hand', cursive; font-size: 16px; line-height: 1.4; }
+    .version { margin-top: auto; padding-top: 36px; color: #978e82; font-family: 'JetBrains Mono', monospace; font-size: 10px; }
+
+    .provider-list {
+      display: flex;
+      flex-direction: column;
+      min-height: calc(100vh - 44px);
+      padding: 30px 26px 26px;
+      border-right: 1.5px solid var(--line);
+      background: rgba(255, 253, 248, .28);
+    }
+
+    .section-heading { display: flex; align-items: flex-end; justify-content: space-between; gap: 12px; }
+    .section-heading h2 { margin: 0; font-family: 'Caveat', cursive; font-size: 32px; line-height: 1; }
+    .count { color: var(--pencil-soft); font-family: 'JetBrains Mono', monospace; font-size: 11px; }
+    .search-wrap { position: relative; margin-top: 25px; }
+    .search-wrap span { position: absolute; top: 12px; left: 14px; color: var(--pencil-soft); }
+    .search {
+      width: 100%;
+      padding: 12px 14px 12px 38px;
+      border: 1.5px solid var(--line-dark);
+      border-radius: 8px 10px 9px 11px;
+      outline: none;
+      color: var(--pencil);
+      background: rgba(255, 253, 248, .75);
+      font-size: 15px;
+    }
+    .search:focus { border-color: var(--blue); box-shadow: 0 0 0 3px rgba(58, 96, 144, .10); }
+
+    .provider-items { display: grid; gap: 9px; margin-top: 20px; }
+    .provider-row {
+      width: 100%;
+      display: grid;
+      grid-template-columns: 38px 1fr auto;
+      align-items: center;
+      gap: 10px;
+      padding: 12px;
+      border: 1.5px solid transparent;
+      border-radius: 9px 11px 8px 12px;
+      text-align: left;
+      color: var(--pencil);
+      background: transparent;
+    }
+    .provider-row.selected { border-color: #d6bf75; background: rgba(212, 160, 23, .12); transform: rotate(-.25deg); }
+    .provider-row:hover { background: rgba(255, 253, 248, .7); border-color: var(--line); }
+    .provider-icon { width: 36px; height: 36px; display: grid; place-items: center; border: 1.5px solid var(--line-dark); border-radius: 10px 8px 10px 7px; background: var(--paper-light); font-family: 'JetBrains Mono', monospace; font-size: 12px; font-weight: 600; }
+    .provider-name { font-size: 16px; }
+    .provider-meta { display: block; margin-top: 3px; color: var(--pencil-soft); font-family: 'JetBrains Mono', monospace; font-size: 10px; }
+    .status-dot { width: 9px; height: 9px; border-radius: 50%; background: var(--green); box-shadow: 0 0 0 3px var(--green-light); }
+    .status-dot.pending { background: var(--yellow); box-shadow: 0 0 0 3px var(--yellow-light); }
+    .empty-list { padding: 42px 14px; color: var(--pencil-soft); text-align: center; font-family: 'Patrick Hand', cursive; font-size: 18px; }
+
+    .add-provider {
+      margin-top: auto;
+      width: 100%;
+      padding: 12px 16px;
+      border: 2px solid var(--pencil);
+      border-radius: 9px 11px 10px 8px;
+      color: var(--pencil);
+      background: var(--yellow-light);
+      font-weight: 700;
+      font-size: 16px;
+      box-shadow: 3px 3px 0 rgba(42, 42, 42, .18);
+      transition: transform .18s ease, box-shadow .18s ease;
+    }
+    .add-provider:hover { transform: translate(-1px, -1px); box-shadow: 5px 5px 0 rgba(42, 42, 42, .18); }
+
+    .detail-panel { padding: 32px 42px; display: flex; flex-direction: column; }
+    .empty-detail { flex: 1; display: grid; place-items: center; text-align: center; color: var(--pencil-soft); }
+    .empty-detail-card { max-width: 330px; }
+    .empty-symbol { width: 62px; height: 62px; display: grid; place-items: center; margin: 0 auto 18px; border: 1.5px dashed var(--line-dark); border-radius: 50% 46% 52% 44%; color: var(--yellow); font-size: 28px; transform: rotate(-8deg); }
+    .empty-detail h2 { margin: 0; color: var(--pencil); font-family: 'Caveat', cursive; font-size: 32px; }
+    .empty-detail p { margin: 12px 0 0; font-family: 'Patrick Hand', cursive; font-size: 18px; line-height: 1.45; }
+    .detail-header { display: flex; justify-content: space-between; align-items: flex-start; gap: 16px; padding-bottom: 24px; border-bottom: 1px dashed var(--line-dark); }
+    .detail-title { display: flex; align-items: center; gap: 13px; }
+    .detail-title h2 { margin: 0; font-family: 'Caveat', cursive; font-size: 35px; }
+    .detail-title p { margin: 2px 0 0; color: var(--pencil-soft); font-family: 'JetBrains Mono', monospace; font-size: 11px; }
+    .badge { padding: 5px 8px; color: var(--green); border: 1px solid #a9cbaa; border-radius: 99px; background: var(--green-light); font-family: 'JetBrains Mono', monospace; font-size: 10px; font-weight: 600; }
+    .detail-grid { display: grid; gap: 13px; max-width: 660px; margin-top: 26px; }
+    .safe-card { padding: 15px 17px; border: 1.5px solid var(--line); border-radius: 7px 10px 8px 11px; background: rgba(255, 253, 248, .6); }
+    .safe-card strong { display: block; font-size: 16px; }
+    .safe-card span { display: block; margin-top: 5px; color: var(--pencil-soft); font-family: 'JetBrains Mono', monospace; font-size: 11px; line-height: 1.5; }
+
+    .modal-backdrop {
+      position: fixed;
+      inset: 0;
+      z-index: 10;
+      display: none;
+      align-items: center;
+      justify-content: center;
+      padding: 32px;
+      background: rgba(74, 61, 45, .34);
+      backdrop-filter: blur(2px);
+    }
+    .modal-backdrop.open { display: flex; }
+    .modal {
+      width: min(920px, 94vw);
+      max-height: calc(100vh - 64px);
+      overflow: auto;
+      padding: 28px 34px 30px;
+      border: 2px solid var(--pencil);
+      border-radius: 16px 20px 15px 18px;
+      background:
+        linear-gradient(rgba(255,253,248,.86), rgba(255,253,248,.86)),
+        repeating-linear-gradient(0deg, transparent, transparent 27px, rgba(120,105,85,.075) 28px);
+      box-shadow: var(--shadow), 7px 8px 0 rgba(42, 42, 42, .16);
+    }
+    .modal-top { display: flex; justify-content: space-between; align-items: flex-start; gap: 20px; }
+    .modal h2 { margin: 0; font-family: 'Caveat', cursive; font-size: 38px; }
+    .modal-intro { margin: 4px 0 0; color: var(--pencil-soft); font-family: 'Patrick Hand', cursive; font-size: 17px; }
+    .close { width: 34px; height: 34px; border: 0; border-radius: 50%; color: var(--pencil); background: transparent; font-size: 29px; line-height: 1; }
+    .close:hover { background: rgba(184, 48, 48, .12); color: var(--red); }
+    .form-title { margin: 23px 0 10px; color: var(--pencil-soft); font-family: 'JetBrains Mono', monospace; font-size: 10px; font-weight: 600; letter-spacing: .1em; text-transform: uppercase; }
+    .provider-options { display: grid; grid-template-columns: repeat(4, 1fr); gap: 9px; }
+    .provider-option { padding: 11px 9px; border: 1.5px solid var(--line-dark); border-radius: 8px 10px 9px 7px; color: var(--pencil); background: rgba(255, 253, 248, .6); font-family: 'JetBrains Mono', monospace; font-size: 12px; }
+    .provider-option.active { border: 2px solid var(--pencil); background: var(--yellow-light); box-shadow: 2px 2px 0 rgba(42, 42, 42, .14); }
+    .fields { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; margin-top: 23px; }
+    .field.full { grid-column: 1 / -1; }
+    label { display: grid; gap: 6px; color: var(--pencil); font-size: 15px; }
+    .hint { color: var(--pencil-soft); font-family: 'JetBrains Mono', monospace; font-size: 10px; }
+    input {
+      width: 100%;
+      padding: 11px 12px;
+      border: 1.5px solid var(--line-dark);
+      border-radius: 6px 9px 7px 8px;
+      outline: none;
+      color: var(--pencil);
+      background: rgba(255, 253, 248, .84);
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 13px;
+    }
+    input:focus { border-color: var(--blue); box-shadow: 0 0 0 3px rgba(58, 96, 144, .10); }
+    .toggle-row { display: flex; justify-content: space-between; align-items: center; gap: 15px; grid-column: 1 / -1; padding: 13px 15px; border: 1.5px dashed var(--line-dark); border-radius: 8px; }
+    .toggle-row p { margin: 2px 0 0; color: var(--pencil-soft); font-family: 'Patrick Hand', cursive; font-size: 15px; }
+    .switch { position: relative; width: 48px; height: 26px; border: 1.5px solid var(--pencil); border-radius: 999px; background: var(--yellow-light); }
+    .switch::after { content: ''; position: absolute; top: 3px; right: 3px; width: 17px; height: 17px; border: 1px solid var(--pencil); border-radius: 50%; background: var(--paper-light); }
+    .modal-actions { display: flex; justify-content: flex-end; gap: 10px; margin-top: 27px; }
+    .button { padding: 11px 15px; border-radius: 7px 10px 8px 9px; font-weight: 700; font-size: 15px; }
+    .test-button { border: 1.5px solid var(--blue); color: var(--blue); background: var(--blue-light); }
+    .save-button { border: 2px solid var(--pencil); color: var(--pencil); background: var(--yellow-light); box-shadow: 2px 2px 0 rgba(42,42,42,.16); }
+    .security-note { margin: 18px 0 0; color: var(--pencil-soft); font-family: 'Patrick Hand', cursive; font-size: 15px; line-height: 1.4; }
+
+    @media (max-width: 1200px) { .app-shell { grid-template-columns: 72px 220px 360px minmax(330px, 1fr); } .detail-panel { padding: 30px; } }
+  </style>
+</head>
+<body>
+  <main class="app-shell">
+    <aside class="rail" aria-label="主导航">
+      <div class="brand-mark">L</div>
+      <nav class="rail-actions" aria-label="主导航">
+        <button class="rail-button" aria-label="工作区"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="4" y="4" width="6" height="6" rx="1"/><rect x="14" y="4" width="6" height="6" rx="1"/><rect x="4" y="14" width="6" height="6" rx="1"/><rect x="14" y="14" width="6" height="6" rx="1"/></svg></button>
+        <button class="rail-button" aria-label="文件浏览"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 4.5h10l4 4V19a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V5.5a1.5 1.5 0 0 1 1-1Z"/><path d="M14 4.5V9h5"/></svg></button>
+        <button class="rail-button" aria-label="会话"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 5.5A1.5 1.5 0 0 1 5.5 4h13A1.5 1.5 0 0 1 20 5.5v10a1.5 1.5 0 0 1-1.5 1.5H13l-4 3v-3H5.5A1.5 1.5 0 0 1 4 15.5Z"/></svg></button>
+      </nav>
+      <div class="rail-bottom"><button class="rail-button active" aria-label="设置"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="14" cy="13" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.9l.1.1-1.7 1.7-.1-.1a1.7 1.7 0 0 0-1.9-.3 1.7 1.7 0 0 0-1 1.6v.2h-2.4v-.2a1.7 1.7 0 0 0-1-1.6 1.7 1.7 0 0 0-1.9.3l-.1.1L8 17l.1-.1a1.7 1.7 0 0 0 .3-1.9 1.7 1.7 0 0 0-1.6-1H6v-2.4h.8a1.7 1.7 0 0 0 1.6-1 1.7 1.7 0 0 0-.3-1.9L8 8.6l1.7-1.7.1.1a1.7 1.7 0 0 0 1.9.3 1.7 1.7 0 0 0 1-1.6v-.2h2.4v.2a1.7 1.7 0 0 0 1 1.6 1.7 1.7 0 0 0 1.9-.3l.1-.1 1.7 1.7-.1.1a1.7 1.7 0 0 0-.3 1.9 1.7 1.7 0 0 0-1.6 1h.2V14h-.2a1.7 1.7 0 0 0-1.6 1Z"/></svg></button></div>
+    </aside>
+
+    <aside class="settings-nav">
+      <p class="eyebrow">LightCode</p>
+      <h1>设置</h1>
+      <nav class="nav-list" aria-label="设置分类">
+        <button class="nav-item active"><span class="nav-symbol">✦</span>模型与供应商</button>
+        <button class="nav-item"><span class="nav-symbol">ⓘ</span>关于</button>
+      </nav>
+      <p class="nav-note">供应商凭据仅存储在本机安全存储中，不会进入会话或日志。</p>
+      <p class="version">LIGHTCODE / LOCAL BUILD</p>
+    </aside>
+
+    <section class="provider-list" aria-label="供应商列表">
+      <div class="section-heading">
+        <h2>供应商</h2>
+        <span class="count" id="provider-count">2 个配置</span>
+      </div>
+      <div class="search-wrap"><span>⌕</span><input id="search" class="search" type="search" placeholder="搜索供应商" aria-label="搜索供应商"></div>
+      <div class="provider-items" id="provider-items">
+        <button class="provider-row selected" data-name="OpenAI" data-title="OpenAI" data-model="gpt-4.1-mini" data-status="已启用" data-state="ready">
+          <span class="provider-icon">AI</span><span><span class="provider-name">OpenAI</span><span class="provider-meta">gpt-4.1-mini</span></span><span class="status-dot" title="已启用"></span>
+        </button>
+        <button class="provider-row" data-name="DeepSeek" data-title="DeepSeek" data-model="deepseek-chat" data-status="等待测试" data-state="pending">
+          <span class="provider-icon">DS</span><span><span class="provider-name">DeepSeek</span><span class="provider-meta">deepseek-chat</span></span><span class="status-dot pending" title="等待测试"></span>
+        </button>
+      </div>
+      <div class="empty-list" id="empty-list" hidden>没有找到匹配的供应商</div>
+      <button class="add-provider" id="open-modal">＋ 添加供应商</button>
+    </section>
+
+    <section class="detail-panel" aria-live="polite">
+      <div class="empty-detail" id="empty-detail">
+        <div class="empty-detail-card"><div class="empty-symbol">✦</div><h2>选择一个供应商</h2><p>在左侧查看配置状态，或添加新的模型供应商。密钥不会在这里显示。</p></div>
+      </div>
+      <div id="detail-content" hidden>
+        <div class="detail-header">
+          <div class="detail-title"><div class="provider-icon" id="detail-icon">AI</div><div><h2 id="detail-name">OpenAI</h2><p id="detail-model">gpt-4.1-mini</p></div></div>
+          <span class="badge" id="detail-badge">已启用</span>
+        </div>
+        <div class="detail-grid">
+          <div class="safe-card"><strong>运行期配置</strong><span>仅后端持有凭据 · 本次会话可用</span></div>
+          <div class="safe-card"><strong>模型权限</strong><span>只读检索 · 模型只能提出变更 · 写入必须经过显式审批</span></div>
+          <div class="safe-card"><strong>安全视图</strong><span>不展示 API Key、完整 Base URL 或上游原始响应</span></div>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <div class="modal-backdrop" id="modal" role="dialog" aria-modal="true" aria-labelledby="modal-title">
+    <section class="modal">
+      <div class="modal-top"><div><h2 id="modal-title">添加供应商</h2><p class="modal-intro">先选择协议模板，再填写这份独立配置。</p></div><button class="close" id="close-modal" aria-label="关闭">×</button></div>
+      <p class="form-title">选择供应商</p>
+      <div class="provider-options" id="provider-options">
+        <button class="provider-option active" data-provider="OpenAI">✓ OpenAI</button><button class="provider-option" data-provider="OpenAI Compatible">OpenAI Compatible</button><button class="provider-option" data-provider="DeepSeek">DeepSeek</button><button class="provider-option" data-provider="Qwen">Qwen</button><button class="provider-option" data-provider="Kimi">Kimi</button><button class="provider-option" data-provider="OpenRouter">OpenRouter</button><button class="provider-option" data-provider="SiliconFlow">SiliconFlow</button><button class="provider-option" data-provider="Ollama">Ollama</button>
+      </div>
+      <div class="fields">
+        <label>配置名称<input id="config-name" value="OpenAI" autocomplete="off"></label>
+        <label>模型 ID<input value="gpt-4.1-mini" autocomplete="off"></label>
+        <label class="field full">API Key <span class="hint">仅提交给本机后端，不写入浏览器持久化状态</span><input type="password" placeholder="粘贴 API Key" autocomplete="new-password"></label>
+        <label class="field full">Base URL<input value="https://api.openai.com/v1" autocomplete="off"></label>
+        <div class="toggle-row"><div><strong>启用此供应商</strong><p>通过连接测试后，才可以作为模型任务的候选配置。</p></div><div class="switch" aria-label="启用供应商"></div></div>
+      </div>
+      <div class="modal-actions"><button class="button test-button" id="test-button">测试连接</button><button class="button save-button" id="save-button">＋ 测试并添加</button></div>
+      <p class="security-note">安全边界：密钥不会写入 SQLite、聊天记录、日志或 SSE 事件；正式实现还需要将每个供应商配置绑定到独立的安全凭据引用。</p>
+    </section>
+  </div>
+
+  <script>
+    const modal = document.getElementById('modal')
+    const openModal = document.getElementById('open-modal')
+    const closeModal = document.getElementById('close-modal')
+    const providerRows = [...document.querySelectorAll('.provider-row')]
+    const detailContent = document.getElementById('detail-content')
+    const emptyDetail = document.getElementById('empty-detail')
+    const search = document.getElementById('search')
+    const emptyList = document.getElementById('empty-list')
+    const selectedProvider = document.querySelector('.provider-row.selected')
+
+    function showDetail(row) {
+      providerRows.forEach(item => item.classList.toggle('selected', item === row))
+      emptyDetail.hidden = true
+      detailContent.hidden = false
+      document.getElementById('detail-name').textContent = row.dataset.title
+      document.getElementById('detail-model').textContent = row.dataset.model
+      document.getElementById('detail-icon').textContent = row.querySelector('.provider-icon').textContent
+      const badge = document.getElementById('detail-badge')
+      badge.textContent = row.dataset.status
+      badge.style.color = row.dataset.state === 'ready' ? 'var(--green)' : 'var(--pencil)'
+      badge.style.borderColor = row.dataset.state === 'ready' ? '#a9cbaa' : '#e2cf91'
+      badge.style.background = row.dataset.state === 'ready' ? 'var(--green-light)' : 'var(--yellow-light)'
+    }
+
+    openModal.addEventListener('click', () => modal.classList.add('open'))
+    closeModal.addEventListener('click', () => modal.classList.remove('open'))
+    modal.addEventListener('click', event => { if (event.target === modal) modal.classList.remove('open') })
+    document.addEventListener('keydown', event => { if (event.key === 'Escape') modal.classList.remove('open') })
+    providerRows.forEach(row => row.addEventListener('click', () => showDetail(row)))
+    search.addEventListener('input', event => {
+      const query = event.target.value.trim().toLowerCase()
+      let visibleCount = 0
+      providerRows.forEach(row => {
+        const matches = row.dataset.name.toLowerCase().includes(query) || row.dataset.model.toLowerCase().includes(query)
+        row.hidden = !matches
+        if (matches) visibleCount++
+      })
+      emptyList.hidden = visibleCount !== 0
+      document.getElementById('provider-count').textContent = query ? `${visibleCount} 个结果` : '2 个配置'
+    })
+    document.querySelectorAll('.provider-option').forEach(option => option.addEventListener('click', () => {
+      document.querySelectorAll('.provider-option').forEach(item => item.classList.toggle('active', item === option))
+      document.getElementById('config-name').value = option.dataset.provider
+    }))
+    document.getElementById('test-button').addEventListener('click', event => {
+      const button = event.currentTarget
+      const original = button.textContent
+      button.textContent = '正在测试…'
+      setTimeout(() => { button.textContent = '✓ 连接参数有效'; setTimeout(() => { button.textContent = original }, 1300) }, 700)
+    })
+    document.getElementById('save-button').addEventListener('click', () => modal.classList.remove('open'))
+    showDetail(selectedProvider)
+  </script>
+</body>
+</html>

@@ -259,6 +259,16 @@ export interface ProviderSummary {
   baseUrlHost: string
 }
 
+/** POST /api/v1/provider/profiles 请求体（ProviderProfileCreate，extra=forbid） */
+export interface ProviderProfileInput {
+  name: string
+  provider: string
+  baseUrl: string
+  apiKey: string
+  modelId: string
+  enabled: boolean
+}
+
 // --- 核心 Agent 更新（阶段 A）：聊天会话与消息 ---
 
 /** 会话状态（backend chat_sessions.status，当前恒为 active） */

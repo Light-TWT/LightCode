@@ -82,6 +82,44 @@ describe('providerService（HTTP-only）', () => {
     expect(raw).not.toContain('https://')
   })
 
+  it('POST /provider/profiles 请求体与 ProviderProfileCreate 严格一致（extra=forbid）', async () => {
+    const fetchMock = stubFetch(profilesPayload[0])
+    const created = await providerService.createProvider({
+      name: 'DeepSeek',
+      provider: 'openai-compatible',
+      baseUrl: 'https://api.deepseek.com/v1',
+      apiKey: 'sk-test-secret',
+      modelId: 'deepseek-chat',
+      enabled: true,
+    })
+    const [url, init] = fetchMock.mock.calls[0] as unknown as [string, RequestInit]
+    expect(url).toContain('/provider/profiles')
+    expect(init.method).toBe('POST')
+    const body = JSON.parse(init.body as string)
+    expect(Object.keys(body).sort()).toEqual([
+      'apiKey',
+      'baseUrl',
+      'enabled',
+      'modelId',
+      'name',
+      'provider',
+    ])
+    expect(created.id).toBe('default')
+    expect(JSON.stringify(created)).not.toContain('sk-test-secret')
+    // 安全不变量：响应对象不含 apiKey 字段（baseUrlHost 是合法 hostname 字段）
+    expect(Object.keys(created)).not.toContain('apiKey')
+    expect(JSON.stringify(created)).not.toContain('https://')
+  })
+
+  it('DELETE /provider/profiles/:id', async () => {
+    const fetchMock = stubFetch({ ok: true })
+    const result = await providerService.deleteProvider('abc123')
+    const [url, init] = fetchMock.mock.calls[0] as unknown as [string, RequestInit]
+    expect(url).toContain('/provider/profiles/abc123')
+    expect(init.method).toBe('DELETE')
+    expect(result.ok).toBe(true)
+  })
+
   it('GET /provider/health', async () => {
     const fetchMock = stubFetch(healthPayload)
     const health = await providerService.getHealth()

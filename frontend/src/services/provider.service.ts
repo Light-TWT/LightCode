@@ -1,6 +1,7 @@
 import { requestJson } from '@/services/http'
 import type {
   ProviderHealth,
+  ProviderProfileInput,
   ProviderSettingsInput,
   ProviderSettingsResponse,
   ProviderSummary,
@@ -20,6 +21,10 @@ export interface ProviderService {
   clearSettings(): Promise<ProviderSettingsResponse>
   /** GET /provider/profiles —— 供应商安全摘要列表（只读，config 派生） */
   listProviders(): Promise<ProviderSummary[]>
+  /** POST /provider/profiles —— 创建供应商配置（连接测试通过才保存） */
+  createProvider(input: ProviderProfileInput): Promise<ProviderSummary>
+  /** DELETE /provider/profiles/:id —— 删除指定供应商配置 */
+  deleteProvider(id: string): Promise<{ ok: boolean }>
 }
 
 export const providerService: ProviderService = {
@@ -65,5 +70,26 @@ export const providerService: ProviderService = {
 
   listProviders() {
     return requestJson<ProviderSummary[]>('/provider/profiles')
+  },
+
+  createProvider(input) {
+    // 请求体与后端 ProviderProfileCreate 严格一致（extra=forbid），
+    // 不含 rootPath/filePath/patch/command；响应绝不含 key/baseUrl。
+    return requestJson<ProviderSummary>('/provider/profiles', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        name: input.name,
+        provider: input.provider,
+        baseUrl: input.baseUrl,
+        apiKey: input.apiKey,
+        modelId: input.modelId,
+        enabled: input.enabled,
+      }),
+    })
+  },
+
+  deleteProvider(id) {
+    return requestJson<{ ok: boolean }>(`/provider/profiles/${id}`, { method: 'DELETE' })
   },
 }

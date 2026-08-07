@@ -39,6 +39,8 @@ from app.schemas.model_contracts import (
     ProviderTestRequest,
     ProviderTestResponse,
     ProviderProfile,
+    ProviderProfileCreate,
+    ProviderProfileDeleteResponse,
 )
 from app.services.browse_tokens import issue, verify
 from app.services.chat_service import ChatService
@@ -304,33 +306,107 @@ def clear_provider_settings(request: Request) -> ProviderSettingsResponse:
     return _settings_response(request, configured=False)
 
 
+def _profile_from_config(profile_id: str, config: ModelProviderConfig) -> ProviderProfile:
+    """Build a safe summary profile from a resolved config (never a raw URL)."""
+    status = config.status()
+    return ProviderProfile(
+        id=profile_id,
+        name=config.provider,
+        provider=config.provider,
+        modelId=config.model_id,
+        enabled=status == "ready",
+        status=status,
+        baseUrlHost=config.host_summary,
+    )
+
+
+def _profile_from_credential(
+    profile_id: str,
+    credential: ProviderRuntimeCredential,
+    env_config: ModelProviderConfig,
+) -> ProviderProfile:
+    config = build_runtime_config(env_config, credential)
+    status = config.status()
+    return ProviderProfile(
+        id=profile_id,
+        name=credential.name or credential.provider,
+        provider=credential.provider,
+        modelId=credential.model_id,
+        enabled=bool(credential.enabled) and status == "ready",
+        status=status,
+        baseUrlHost=config.host_summary,
+    )
+
+
 @router.get("/provider/profiles", response_model=list[ProviderProfile])
 def provider_profiles(request: Request) -> list[ProviderProfile]:
     """Read-only safe summary list of provider profiles (config-derived).
 
-    Never contacts the provider. Each profile carries only a hostname
-    (``baseUrlHost``) — never the full Base URL, the API key or the
-    Authorization header. Currently derived from the single effective config
-    (env snapshot + optional runtime credential); the multi-profile store is a
-    later phase.
+    Lists every saved runtime profile; when none is saved, falls back to the
+    env-derived config as a single ``default`` entry (or ``[]`` when disabled).
+    Never contacts the provider and never exposes the API key, the full Base
+    URL or the Authorization header.
     """
-    config: ModelProviderConfig = effective_config(
-        request.app.state.env_model_provider, request.app.state.credential_store
-    )
-    status = config.status()
-    if status == "disabled":
-        return []
-    return [
-        ProviderProfile(
-            id="default",
-            name=config.provider,
-            provider=config.provider,
-            modelId=config.model_id,
-            enabled=status == "ready",
-            status=status,
-            baseUrlHost=config.host_summary,
-        )
+    env_config: ModelProviderConfig = request.app.state.env_model_provider
+    store = request.app.state.credential_store
+    profiles = [
+        _profile_from_credential(profile_id, credential, env_config)
+        for profile_id, credential in store.get_all().items()
     ]
+    if not profiles and env_config.status() != "disabled":
+        profiles = [_profile_from_config("default", env_config)]
+    return profiles
+
+
+@router.post("/provider/profiles", response_model=ProviderProfile)
+def create_provider_profile(
+    payload: ProviderProfileCreate, request: Request
+) -> ProviderProfile:
+    """Create a provider profile: test connectivity, save only on success.
+
+    The API key and full Base URL live only in the request body and the
+    in-memory credential store; the response is the safe summary.
+    """
+    correlation_id_var.set(getattr(request.state, "correlation_id", "-"))
+    env_config: ModelProviderConfig = request.app.state.env_model_provider
+    credential = ProviderRuntimeCredential(
+        provider=payload.provider.strip() or "openai-compatible",
+        base_url=payload.baseUrl.strip(),
+        model_id=payload.modelId.strip(),
+        name=payload.name.strip(),
+        enabled=payload.enabled,
+        api_key=payload.apiKey.strip(),
+    )
+    config = build_runtime_config(env_config, credential)
+    if config.status() != "ready":
+        raise Phase1Error(
+            PROVIDER_SETTINGS_INVALID, config.status_detail(), http_status=422
+        )
+    try:
+        OpenAICompatibleProvider(config, transport=_provider_transport(request)).test_connection()
+    except Phase1Error as exc:
+        raise Phase1Error(
+            PROVIDER_CONNECTION_FAILED, exc.message, http_status=502
+        ) from exc
+    profile_id = request.app.state.credential_store.set(credential)
+    return _profile_from_credential(profile_id, credential, env_config)
+
+
+@router.get("/provider/profiles/{profile_id}", response_model=ProviderProfile)
+def get_provider_profile(profile_id: str, request: Request) -> ProviderProfile:
+    env_config: ModelProviderConfig = request.app.state.env_model_provider
+    credential = request.app.state.credential_store.get_named(profile_id)
+    if credential is None:
+        raise Phase1Error("PROFILE_NOT_FOUND", "未找到该供应商配置。", http_status=404)
+    return _profile_from_credential(profile_id, credential, env_config)
+
+
+@router.delete("/provider/profiles/{profile_id}", response_model=ProviderProfileDeleteResponse)
+def delete_provider_profile(profile_id: str, request: Request) -> ProviderProfileDeleteResponse:
+    removed = request.app.state.credential_store.remove(profile_id)
+    if not removed:
+        raise Phase1Error("PROFILE_NOT_FOUND", "未找到该供应商配置。", http_status=404)
+    return ProviderProfileDeleteResponse(ok=True)
 
 
 # ---------------------------------------------------------------------------

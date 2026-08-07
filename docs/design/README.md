@@ -8,6 +8,7 @@
 - `workspace-home.html`：最近项目与已注册工作区入口。
 - `session-history.html`：任务历史时间线与页内只读详情抽屉。
 - `settings.html`：两列配置中心。
+- `settings-providers.html`：暖纸多供应商设置页（供应商列表 + 搜索 + 配置安全摘要 + 添加供应商弹层），设置分类当前仅含“模型与供应商”与“关于”。
 - `PROTOTYPE_STATUS.md`：原型归档状态和跨文档交互裁决规则。
 
 ## 实现规则
@@ -19,6 +20,8 @@
 5. 待审批 ChangeSet 替换新任务输入为审查与拒绝操作。
 6. Workspace Home 仅显示最近工作区；全部已注册工作区仅在可搜索的右侧抽屉中展示。
 7. Session History 使用紧凑摘要；待审批任务返回审查，其他终态任务打开只读详情。
+8. Settings 沿用主工作区已有的主侧边栏与 SVG 图标，不引入第二套主导航；设置分类暂只保留“模型与供应商”与“关于”。
+9. Settings 的供应商列表与右侧详情展示安全视图：不显示 API Key、完整 Base URL、Authorization header 或上游原始响应；密钥只在提交瞬间存在于前端内存。
 
 ## 阶段对应关系
 
