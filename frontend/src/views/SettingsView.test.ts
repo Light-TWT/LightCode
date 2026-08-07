@@ -4,6 +4,26 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import SettingsView from './SettingsView.vue'
 
 const payloads = vi.hoisted(() => {
+  const profilesPayload = [
+    {
+      id: 'default',
+      name: 'openai-compatible',
+      provider: 'openai-compatible',
+      modelId: 'demo-model',
+      enabled: true,
+      status: 'ready',
+      baseUrlHost: 'provider.example',
+    },
+    {
+      id: 'deepseek',
+      name: 'deepseek',
+      provider: 'openai-compatible',
+      modelId: 'deepseek-chat',
+      enabled: false,
+      status: 'unconfigured',
+      baseUrlHost: 'api.deepseek.com',
+    },
+  ]
   const settingsPayload = {
     configured: true,
     status: 'ready',
@@ -13,39 +33,17 @@ const payloads = vi.hoisted(() => {
     originAllowlisted: true,
     transport: 'https',
   }
-  const healthPayload = {
-    status: 'ready',
-    provider: 'openai-compatible',
-    modelId: 'demo-model',
-    detail: 'ok',
-    capabilities: {
-      tools: ['read_file'],
-      canWriteFiles: false,
-      canRunCommands: false,
-      maxToolRounds: 8,
-      maxRequestsPerTask: 10,
-      maxInputBytes: 262144,
-      maxOutputTokens: 2048,
-      maxConcurrentTasks: 1,
-    },
-    security: {
-      apiKeyConfigured: true,
-      transport: 'https',
-      originAllowlisted: true,
-      followRedirects: false,
-      trustEnvProxies: false,
-    },
-  }
-  return { settingsPayload, healthPayload }
+  return { profilesPayload, settingsPayload }
 })
 
 vi.mock('@/services/provider.service', () => ({
   providerService: {
     getSettings: vi.fn().mockResolvedValue(payloads.settingsPayload),
-    getHealth: vi.fn().mockResolvedValue(payloads.healthPayload),
+    getHealth: vi.fn().mockResolvedValue({ status: 'ready' }),
     saveSettings: vi.fn().mockResolvedValue(payloads.settingsPayload),
     testConnection: vi.fn().mockResolvedValue({ ok: true, code: '', detail: '' }),
     clearSettings: vi.fn().mockResolvedValue({ ...payloads.settingsPayload, configured: false }),
+    listProviders: vi.fn().mockResolvedValue(payloads.profilesPayload),
   },
 }))
 
@@ -74,14 +72,11 @@ function getMock<T>(fn: unknown): T {
   return fn as T
 }
 
-describe('SettingsView（Provider 配置表单）', () => {
+describe('SettingsView（多供应商设置页）', () => {
   beforeEach(() => {
     vi.clearAllMocks()
-    ;(providerService.getSettings as ReturnType<typeof vi.fn>).mockResolvedValue(
-      payloads.settingsPayload,
-    )
-    ;(providerService.getHealth as ReturnType<typeof vi.fn>).mockResolvedValue(
-      payloads.healthPayload,
+    ;(providerService.listProviders as ReturnType<typeof vi.fn>).mockResolvedValue(
+      payloads.profilesPayload,
     )
     ;(providerService.saveSettings as ReturnType<typeof vi.fn>).mockResolvedValue(
       payloads.settingsPayload,
@@ -97,79 +92,111 @@ describe('SettingsView（Provider 配置表单）', () => {
     })
   })
 
-  it('渲染配置表单字段与 getSettings 安全状态卡片', async () => {
+  it('渲染设置分类（模型与供应商 / 关于）与供应商列表', async () => {
     const { wrapper } = await mountSettings()
-    // 表单字段
-    expect(wrapper.get('[data-testid="input-provider"]').exists()).toBe(true)
-    expect(wrapper.get('[data-testid="input-base-url"]').exists()).toBe(true)
-    expect(wrapper.get('[data-testid="input-api-key"]').attributes('type')).toBe('password')
-    expect(wrapper.get('[data-testid="input-model-id"]').exists()).toBe(true)
-    // getSettings 状态卡片
-    expect(wrapper.get('[data-testid="settings-status"]').text()).toBe('ready')
-    expect(wrapper.get('[data-testid="configured-tag"]').text()).toContain('已配置运行期凭据')
-    expect(wrapper.get('[data-testid="settings-model"]').text()).toBe('demo-model')
-    // 安全说明文案
-    expect(wrapper.text()).toContain('仅保存在后端进程内存')
-    expect(wrapper.text()).toContain('Electron 阶段将迁移为系统密钥库')
+    expect(wrapper.get('[data-testid="settings-cat-providers"]').exists()).toBe(true)
+    expect(wrapper.get('[data-testid="settings-cat-about"]').exists()).toBe(true)
+    // 默认选中第一条并展示详情
+    expect(wrapper.get('[data-testid="detail-name"]').text()).toBe('openai-compatible')
+    expect(wrapper.get('[data-testid="detail-model"]').text()).toBe('demo-model')
+    // 列表状态点：ready 启用 / 未配置等待测试
+    expect(wrapper.text()).toContain('2 个配置')
+    expect(wrapper.get('[data-testid="provider-row-default"]').exists()).toBe(true)
   })
 
-  it('「测试连接」以表单值调用 testConnection，且响应不含 key/baseUrl', async () => {
+  it('点击列表第二条供应商后详情区标题切换', async () => {
     const { wrapper } = await mountSettings()
-    await wrapper.get('[data-testid="input-base-url"]').setValue('https://api.example.com/v1')
-    await wrapper.get('[data-testid="input-api-key"]').setValue('sk-super-secret-12345')
-    await wrapper.get('[data-testid="input-model-id"]').setValue('demo-model')
+    await wrapper.get('[data-testid="provider-row-deepseek"]').trigger('click')
+    await flushPromises()
+    expect(wrapper.get('[data-testid="detail-name"]').text()).toBe('deepseek')
+    expect(wrapper.get('[data-testid="detail-model"]').text()).toBe('deepseek-chat')
+    expect(wrapper.get('[data-testid="detail-badge"]').text()).toBe('等待测试')
+  })
 
-    await wrapper.get('[data-testid="btn-test"]').trigger('click')
+  it('搜索过滤供应商并显示空状态', async () => {
+    const { wrapper } = await mountSettings()
+    await wrapper.get('[data-testid="provider-search"]').setValue('不存在的供应商')
+    await flushPromises()
+    expect(wrapper.get('[data-testid="provider-empty"]').exists()).toBe(true)
+    // 恢复搜索后列表恢复
+    await wrapper.get('[data-testid="provider-search"]').setValue('deepseek')
+    await flushPromises()
+    expect(wrapper.get('[data-testid="provider-row-deepseek"]').exists()).toBe(true)
+  })
+
+  it('「关于」分类显示占位面板', async () => {
+    const { wrapper } = await mountSettings()
+    await wrapper.get('[data-testid="settings-cat-about"]').trigger('click')
+    await flushPromises()
+    expect(wrapper.get('[data-testid="about-panel"]').exists()).toBe(true)
+  })
+
+  it('点击「添加供应商」打开弹层，API Key 为 password 且选择模板更新配置名称', async () => {
+    const { wrapper } = await mountSettings()
+    await wrapper.get('[data-testid="open-add"]').trigger('click')
+    await flushPromises()
+    expect(wrapper.get('[data-testid="modal-api-key"]').attributes('type')).toBe('password')
+    await wrapper.get('[data-testid="template-DeepSeek"]').trigger('click')
+    await flushPromises()
+    expect((wrapper.get('[data-testid="modal-name"]').element as HTMLInputElement).value).toBe(
+      'DeepSeek',
+    )
+  })
+
+  it('弹层「测试连接」以表单值调用 testConnection，提示不含密钥', async () => {
+    const { wrapper } = await mountSettings()
+    await wrapper.get('[data-testid="open-add"]').trigger('click')
+    await flushPromises()
+    await wrapper.get('[data-testid="modal-base-url"]').setValue('https://api.example.com/v1')
+    await wrapper.get('[data-testid="modal-api-key"]').setValue('sk-super-secret-12345')
+    await wrapper.get('[data-testid="modal-model-id"]').setValue('demo-model')
+
+    await wrapper.get('[data-testid="modal-test"]').trigger('click')
     await flushPromises()
 
     const testFn = getMock<ReturnType<typeof vi.fn>>(providerService.testConnection)
     expect(testFn).toHaveBeenCalledTimes(1)
-    const body = testFn.mock.calls[0][0]
-    expect(body).toMatchObject({
+    expect(testFn.mock.calls[0][0]).toMatchObject({
       provider: 'openai-compatible',
       baseUrl: 'https://api.example.com/v1',
       apiKey: 'sk-super-secret-12345',
       modelId: 'demo-model',
     })
-    // 测试成功提示，且状态卡片（来自响应）不渲染密钥/完整 URL
-    expect(wrapper.get('[data-testid="form-message"]').text()).toContain('连接测试成功')
-    expect(wrapper.get('[data-testid="form-message"]').text()).not.toContain('sk-super-secret-12345')
-    const statusCard = wrapper.get('[aria-label="Provider 状态"]')
-    expect(statusCard.text()).not.toContain('sk-super-secret-12345')
-    expect(statusCard.text()).not.toContain('https://api.example.com/v1')
+    const message = wrapper.get('[data-testid="modal-message"]').text()
+    expect(message).toContain('连接测试成功')
+    expect(message).not.toContain('sk-super-secret-12345')
+    expect(wrapper.text()).not.toContain('sk-super-secret-12345')
+    expect(wrapper.text()).not.toContain('https://api.example.com/v1')
   })
 
-  it('「测试并保存」调用 saveSettings，提交后清空 key 输入框', async () => {
+  it('「测试并添加」调用 saveSettings，提交后清空 key 输入框', async () => {
     const { wrapper } = await mountSettings()
-    await wrapper.get('[data-testid="input-base-url"]').setValue('https://api.example.com/v1')
-    await wrapper.get('[data-testid="input-api-key"]').setValue('sk-super-secret-12345')
-    await wrapper.get('[data-testid="input-model-id"]').setValue('demo-model')
+    await wrapper.get('[data-testid="open-add"]').trigger('click')
+    await flushPromises()
+    await wrapper.get('[data-testid="modal-base-url"]').setValue('https://api.example.com/v1')
+    await wrapper.get('[data-testid="modal-api-key"]').setValue('sk-super-secret-12345')
+    await wrapper.get('[data-testid="modal-model-id"]').setValue('demo-model')
 
-    // 「测试并保存」是 submit 按钮：jsdom 中按钮 click 不会触发表单 submit，
-    // 直接对 form 触发 submit（与真实浏览器行为一致）
-    await wrapper.get('[data-testid="provider-form"]').trigger('submit')
+    await wrapper.get('[data-testid="modal-save"]').trigger('click')
     await flushPromises()
 
     const saveFn = getMock<ReturnType<typeof vi.fn>>(providerService.saveSettings)
     expect(saveFn).toHaveBeenCalledTimes(1)
     expect(saveFn.mock.calls[0][0].apiKey).toBe('sk-super-secret-12345')
-    // 提交后清空 key 输入框，绝不把密钥留在 DOM / 前端存储
-    expect(wrapper.get('[data-testid="input-api-key"]').element as HTMLInputElement).toHaveProperty(
-      'value',
-      '',
-    )
+    // 保存成功后弹层关闭（v-if 销毁），密钥输入框不再存在于 DOM
+    expect(wrapper.find('[data-testid="modal-api-key"]').exists()).toBe(false)
+    // 成功提示出现，且密钥绝不留在 DOM / 前端存储
+    expect(wrapper.get('[data-testid="form-message"]').text()).toContain('供应商已添加')
     expect(wrapper.text()).not.toContain('sk-super-secret-12345')
-    expect(wrapper.get('[data-testid="form-message"]').text()).toContain('已保存')
   })
 
-  it('「清除运行期配置」调用 clearSettings 并刷新状态', async () => {
+  it('「清除运行期配置」调用 clearSettings 并显示成功提示', async () => {
     const { wrapper } = await mountSettings()
     await wrapper.get('[data-testid="btn-clear"]').trigger('click')
     await flushPromises()
-
     const clearFn = getMock<ReturnType<typeof vi.fn>>(providerService.clearSettings)
     expect(clearFn).toHaveBeenCalledTimes(1)
-    expect(wrapper.get('[data-testid="configured-tag"]').text()).toContain('仅环境变量')
+    expect(wrapper.get('[data-testid="form-message"]').text()).toContain('已清除运行期配置')
   })
 
   it('返回按钮导航到首页', async () => {
@@ -177,5 +204,11 @@ describe('SettingsView（Provider 配置表单）', () => {
     await wrapper.get('[data-testid="back-home-btn"]').trigger('click')
     await flushPromises()
     expect(router.currentRoute.value.fullPath).toBe('/')
+  })
+
+  it('页面文本不泄露密钥或完整 Base URL', async () => {
+    const { wrapper } = await mountSettings()
+    expect(wrapper.text()).not.toContain('sk-')
+    expect(wrapper.text()).not.toContain('https://')
   })
 })
