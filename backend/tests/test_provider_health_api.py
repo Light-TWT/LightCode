@@ -176,3 +176,52 @@ def test_health_makes_no_outbound_call(tmp_path, monkeypatch) -> None:
 def test_health_endpoint_rejects_writes(tmp_path) -> None:
     with _client(tmp_path, **_configured_env()) as client:
         assert client.post("/api/v1/provider/health", json={}).status_code == 405
+
+
+# --- Provider profiles: read-only safe summary list ------------------------
+
+
+def test_profiles_returns_empty_when_disabled(tmp_path) -> None:
+    with _client(tmp_path) as client:
+        body = client.get("/api/v1/provider/profiles").json()
+    assert body == []
+
+
+def test_profiles_returns_safe_summary_when_configured(tmp_path) -> None:
+    with _client(tmp_path, **_configured_env()) as client:
+        body = client.get("/api/v1/provider/profiles").json()
+    assert len(body) == 1
+    profile = body[0]
+    assert profile["id"] == "default"
+    assert profile["name"] == "openai-compatible"
+    assert profile["provider"] == "openai-compatible"
+    assert profile["modelId"] == "demo-model"
+    assert profile["enabled"] is True
+    assert profile["status"] == "ready"
+    # 只允许域名（baseUrlHost），绝不允许完整 URL、路径或凭据
+    assert profile["baseUrlHost"] == "provider.example"
+
+
+def test_profiles_unconfigured_status_consistent_with_settings(tmp_path) -> None:
+    env = _configured_env()
+    env["LIGHTCODE_MODEL_API_KEY"] = ""
+    with _client(tmp_path, **env) as client:
+        settings = client.get("/api/v1/provider/settings").json()
+        profiles = client.get("/api/v1/provider/profiles").json()
+    assert settings["status"] == "unconfigured"
+    assert len(profiles) == 1
+    assert profiles[0]["status"] == "unconfigured"
+    assert profiles[0]["enabled"] is False
+
+
+def test_profiles_never_leaks_key_or_full_url(tmp_path) -> None:
+    with _client(tmp_path, **_configured_env()) as client:
+        raw = client.get("/api/v1/provider/profiles").text
+    assert SECRET not in raw
+    assert BASE_URL not in raw
+    assert "https://" not in raw
+
+
+def test_profiles_rejects_writes(tmp_path) -> None:
+    with _client(tmp_path, **_configured_env()) as client:
+        assert client.post("/api/v1/provider/profiles", json={}).status_code == 405

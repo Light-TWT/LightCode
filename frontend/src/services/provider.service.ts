@@ -3,6 +3,7 @@ import type {
   ProviderHealth,
   ProviderSettingsInput,
   ProviderSettingsResponse,
+  ProviderSummary,
   ProviderTestResponse,
 } from '@/types/agent'
 
@@ -17,6 +18,8 @@ export interface ProviderService {
   testConnection(input: ProviderSettingsInput): Promise<ProviderTestResponse>
   /** DELETE /provider/settings —— 清除运行期凭据（回退到环境变量配置） */
   clearSettings(): Promise<ProviderSettingsResponse>
+  /** GET /provider/profiles —— 供应商安全摘要列表（只读，config 派生） */
+  listProviders(): Promise<ProviderSummary[]>
 }
 
 export const providerService: ProviderService = {
@@ -58,5 +61,9 @@ export const providerService: ProviderService = {
 
   clearSettings() {
     return requestJson<ProviderSettingsResponse>('/provider/settings', { method: 'DELETE' })
+  },
+
+  listProviders() {
+    return requestJson<ProviderSummary[]>('/provider/profiles')
   },
 }

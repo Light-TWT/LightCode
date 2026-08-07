@@ -152,6 +152,22 @@ class ProviderTestResponse(BaseModel, extra="forbid", populate_by_name=True):
     detail: str = ""
 
 
+class ProviderProfile(BaseModel, extra="forbid", populate_by_name=True):
+    """供应商安全摘要（只读列表项）：无 key、无完整 baseUrl。
+
+    ``baseUrlHost`` 只含 hostname（无 scheme/port/path/userinfo），用于 UI
+    识别供应商，绝不泄露完整 Base URL 或任何凭据。
+    """
+
+    id: str
+    name: str
+    provider: str
+    modelId: str = Field(alias="modelId")
+    enabled: bool
+    status: Literal["disabled", "unconfigured", "ready", "degraded"]
+    baseUrlHost: str = Field(alias="baseUrlHost")
+
+
 # ---------------------------------------------------------------------------
 # 核心 Agent 更新（阶段 A）：聊天会话与消息。
 # ---------------------------------------------------------------------------

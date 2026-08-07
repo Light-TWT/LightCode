@@ -44,10 +44,42 @@ function stubFetch(payload: unknown) {
   return fetchMock
 }
 
+const profilesPayload = [
+  {
+    id: 'default',
+    name: 'openai-compatible',
+    provider: 'openai-compatible',
+    modelId: 'demo-model',
+    enabled: true,
+    status: 'ready',
+    baseUrlHost: 'provider.example',
+  },
+]
+
 describe('providerService（HTTP-only）', () => {
   afterEach(() => {
     vi.restoreAllMocks()
     vi.unstubAllGlobals()
+  })
+
+  it('GET /provider/profiles 返回安全摘要列表，不含 key/完整 URL', async () => {
+    const fetchMock = stubFetch(profilesPayload)
+    const profiles = await providerService.listProviders()
+    expect(String(fetchMock.mock.calls[0][0])).toContain('/provider/profiles')
+    expect(profiles.length).toBe(1)
+    expect(profiles[0]).toMatchObject({
+      id: 'default',
+      name: 'openai-compatible',
+      provider: 'openai-compatible',
+      modelId: 'demo-model',
+      enabled: true,
+      status: 'ready',
+      baseUrlHost: 'provider.example',
+    })
+    // 安全不变量：无 apiKey、无 sk-、无 Bearer、无完整 https:// 地址
+    const raw = JSON.stringify(profiles)
+    expect(raw).not.toMatch(/apiKey|sk-|Bearer/i)
+    expect(raw).not.toContain('https://')
   })
 
   it('GET /provider/health', async () => {

@@ -127,6 +127,16 @@ class ModelProviderConfig:
         return scheme if scheme in ("http", "https") else "none"
 
     @property
+    def host_summary(self) -> str:
+        """Hostname only (no scheme, no port, no path, no userinfo).
+
+        Used for the read-only provider profile list so the UI can identify a
+        provider without ever seeing the full Base URL. ``urlsplit.hostname``
+        deliberately excludes any ``user:pass@`` prefix and port.
+        """
+        return (urlsplit(self.base_url.strip()).hostname or "").casefold()
+
+    @property
     def api_key_configured(self) -> bool:
         return bool(self.api_key)
 

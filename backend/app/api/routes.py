@@ -38,6 +38,7 @@ from app.schemas.model_contracts import (
     ProviderSettingsResponse,
     ProviderTestRequest,
     ProviderTestResponse,
+    ProviderProfile,
 )
 from app.services.browse_tokens import issue, verify
 from app.services.chat_service import ChatService
@@ -301,6 +302,35 @@ def clear_provider_settings(request: Request) -> ProviderSettingsResponse:
     """Clear the runtime credential (falls back to env config / unconfigured)."""
     request.app.state.credential_store.clear()
     return _settings_response(request, configured=False)
+
+
+@router.get("/provider/profiles", response_model=list[ProviderProfile])
+def provider_profiles(request: Request) -> list[ProviderProfile]:
+    """Read-only safe summary list of provider profiles (config-derived).
+
+    Never contacts the provider. Each profile carries only a hostname
+    (``baseUrlHost``) — never the full Base URL, the API key or the
+    Authorization header. Currently derived from the single effective config
+    (env snapshot + optional runtime credential); the multi-profile store is a
+    later phase.
+    """
+    config: ModelProviderConfig = effective_config(
+        request.app.state.env_model_provider, request.app.state.credential_store
+    )
+    status = config.status()
+    if status == "disabled":
+        return []
+    return [
+        ProviderProfile(
+            id="default",
+            name=config.provider,
+            provider=config.provider,
+            modelId=config.model_id,
+            enabled=status == "ready",
+            status=status,
+            baseUrlHost=config.host_summary,
+        )
+    ]
 
 
 # ---------------------------------------------------------------------------

@@ -244,6 +244,21 @@ export interface ProviderTestResponse {
   detail: string
 }
 
+/** `GET /api/v1/provider/profiles` 列表项 —— 供应商安全摘要。
+ *
+ *  安全不变量：绝不含 API Key / 完整 Base URL / Authorization header；
+ *  `baseUrlHost` 只含 hostname（无 scheme/port/path），用于列表识别。
+ */
+export interface ProviderSummary {
+  id: string
+  name: string
+  provider: string
+  modelId: string
+  enabled: boolean
+  status: ProviderStatus
+  baseUrlHost: string
+}
+
 // --- 核心 Agent 更新（阶段 A）：聊天会话与消息 ---
 
 /** 会话状态（backend chat_sessions.status，当前恒为 active） */
