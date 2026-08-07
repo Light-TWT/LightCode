@@ -30,6 +30,7 @@ type NavKey = 'workspace' | 'files' | 'sessions'
 const activeNav = ref<NavKey | null>(null)
 /** 当前预览的文件标识（文件名）；用于文件行高亮与预览区 toggle */
 const openPreviewName = ref<string | null>(null)
+const activeHoverSession = ref<ChatSession | null>(null)
 
 function toggleSidebar() {
   sidebarCollapsed.value = !sidebarCollapsed.value
@@ -178,6 +179,22 @@ async function send() {
 
 function openSession(id: string) {
   router.push(`/workspace/${workspaceId.value}/session/${id}`)
+}
+
+function showSessionHover(session: ChatSession) {
+  activeHoverSession.value = session
+}
+
+function hideSessionHover() {
+  activeHoverSession.value = null
+}
+
+function formatTime(iso: string): string {
+  const d = new Date(iso)
+  if (Number.isNaN(d.getTime())) return ''
+  const hh = String(d.getHours()).padStart(2, '0')
+  const mm = String(d.getMinutes()).padStart(2, '0')
+  return `${hh}:${mm}`
 }
 
 async function createSession() {
@@ -486,7 +503,7 @@ onUnmounted(() => {
           </div>
         </div>
 
-        <div v-else-if="activeNav === 'sessions'" class="panel-inner" data-testid="panel-sessions">
+        <div v-else-if="activeNav === 'sessions'" class="panel-inner session-panel" data-testid="panel-sessions">
           <p class="panel-kicker">会话</p>
           <form class="session-new" @submit.prevent="createSession">
             <input
@@ -500,41 +517,61 @@ onUnmounted(() => {
               {{ store.submitting ? '创建中…' : '＋新建' }}
             </button>
           </form>
-          <div class="session-list">
-            <div
-              v-for="s in store.chatSessions"
-              :key="s.id"
-              class="session-item"
-              :class="{ active: s.id === store.currentSessionId }"
-            >
-              <button
-                type="button"
-                class="session-row"
-                data-testid="session-row"
-                @click="openSession(s.id)"
+          <div class="session-area" @mouseleave="hideSessionHover">
+            <div class="session-list">
+              <div
+                v-for="s in store.chatSessions"
+                :key="s.id"
+                class="session-item"
+                :class="{ active: s.id === store.currentSessionId }"
               >
-                <span class="session-title">{{ s.title }}</span>
-                <span class="session-time">{{ s.updatedAt }}</span>
-              </button>
-              <button
-                type="button"
-                class="more-btn"
-                :class="{ open: openMenuId === s.id }"
-                data-testid="session-more"
-                :aria-expanded="openMenuId === s.id ? 'true' : 'false'"
-                aria-label="会话操作"
-                @click.stop="toggleMenu(s.id)"
-              >⋮</button>
-              <div v-if="openMenuId === s.id" class="session-menu" data-testid="session-menu">
-                <button type="button" class="menu-item" data-testid="session-rename" @click="startRename(s)">
-                  <span class="menu-icon" aria-hidden="true">✎</span>重命名
+                <button
+                  type="button"
+                  class="session-row"
+                  data-testid="session-row"
+                  @mouseenter="showSessionHover(s)"
+                  @focus="showSessionHover(s)"
+                  @click="openSession(s.id)"
+                >
+                  <span class="session-title">{{ s.title }}</span>
                 </button>
-                <button type="button" class="menu-item danger" data-testid="session-delete" @click="requestDelete(s)">
-                  <span class="menu-icon" aria-hidden="true">⌫</span>删除会话
-                </button>
+                <button
+                  type="button"
+                  class="more-btn"
+                  :class="{ open: openMenuId === s.id }"
+                  data-testid="session-more"
+                  :aria-expanded="openMenuId === s.id ? 'true' : 'false'"
+                  aria-label="会话操作"
+                  @click.stop="toggleMenu(s.id)"
+                >⋮</button>
+                <div v-if="openMenuId === s.id" class="session-menu" data-testid="session-menu">
+                  <button type="button" class="menu-item" data-testid="session-rename" @click="startRename(s)">
+                    <span class="menu-icon" aria-hidden="true">✎</span>重命名
+                  </button>
+                  <button type="button" class="menu-item danger" data-testid="session-delete" @click="requestDelete(s)">
+                    <span class="menu-icon" aria-hidden="true">⌫</span>删除会话
+                  </button>
+                </div>
               </div>
+              <p v-if="store.chatSessions.length === 0" class="empty-hint">暂无会话，新建一个开始对话</p>
             </div>
-            <p v-if="store.chatSessions.length === 0" class="empty-hint">暂无会话，新建一个开始对话</p>
+            <aside v-if="activeHoverSession" class="session-hover-panel" data-testid="session-hover-panel">
+              <p class="session-hover-label" data-testid="session-hover-title">{{ activeHoverSession.title }}</p>
+              <div class="session-hover-row">
+                <svg class="session-hover-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true" data-testid="session-hover-workspace-icon">
+                  <rect x="3" y="4.5" width="18" height="12" rx="1"></rect>
+                  <path d="M9 19.5h6M12 16.5v3"></path>
+                </svg>
+                <strong data-testid="session-hover-workspace">{{ workspace?.displayName ?? workspaceId }}</strong>
+              </div>
+              <div class="session-hover-row">
+                <svg class="session-hover-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true" data-testid="session-hover-time-icon">
+                  <circle cx="12" cy="12" r="8.5"></circle>
+                  <path d="M12 7v5l3 2"></path>
+                </svg>
+                <span data-testid="session-hover-updated">会话更新时间：{{ formatTime(activeHoverSession.updatedAt) }}</span>
+              </div>
+            </aside>
           </div>
         </div>
       </section>
@@ -783,11 +820,12 @@ onUnmounted(() => {
   border-right: 1px solid #d8d0c4;
   background: rgba(255,255,255,.25);
   padding: 12px 14px;
-  overflow-x: hidden;
+  overflow-x: visible;
   transition: width .18s ease;
 }
 .side-panel.hidden { width: 0; padding: 0; border-right: 0; overflow: hidden; }
 .panel-inner { min-width: 268px; height: 100%; overflow-y: auto; }
+.session-panel { overflow: visible; }
 .panel-kicker {
   font-family: 'JetBrains Mono', monospace; font-size: 9px;
   text-transform: uppercase; letter-spacing: 1.5px; color: #aaa; margin: 4px 0 10px;
@@ -844,7 +882,20 @@ onUnmounted(() => {
 }
 
 /* ===== 会话操作：列表间距、更大行高、菜单与确认框 ===== */
-.session-list { gap: 6px; margin-top: 12px; padding-top: 8px; border-top: 1px solid #d8d0c4; }
+.session-area { position: relative; display: flex; align-items: flex-start; gap: 10px; }
+.session-list { flex: 1; min-width: 0; gap: 6px; margin-top: 12px; padding-top: 8px; border-top: 1px solid #d8d0c4; }
+.session-hover-panel {
+  position: absolute; left: calc(100% + 10px); top: 12px; z-index: 12;
+  width: 190px; box-sizing: border-box; display: flex; flex-direction: column; gap: 6px;
+  padding: 12px; background: #f5f0e8; border: 1.5px solid #2a2a2a;
+  box-shadow: 4px 4px 0 rgba(0,0,0,.12); color: #2a2a2a;
+  font-size: 12px; line-height: 1.4;
+}
+.session-hover-label, .session-hover-panel span { color: #777; }
+.session-hover-label { margin: 0; font-family: 'Caveat', cursive; font-size: 17px; color: #c87020; }
+.session-hover-panel strong { font-family: 'Architects Daughter', cursive; font-size: 15px; font-weight: 700; }
+.session-hover-row { display: flex; align-items: center; gap: 6px; }
+.session-hover-icon { width: 15px; height: 15px; flex-shrink: 0; color: #c87020; }
 .session-item {
   position: relative;
   display: flex; align-items: center; gap: 2px;

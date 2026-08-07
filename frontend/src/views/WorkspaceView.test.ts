@@ -18,8 +18,8 @@ const m = vi.hoisted(() => {
     workspaceId: 'ws-1',
     title: '新会话',
     status: 'active',
-    createdAt: 't',
-    updatedAt: 't',
+    createdAt: '2026-08-06T15:36:00.000Z',
+    updatedAt: '2026-08-06T15:37:00.000Z',
   }
   const userMsg = {
     id: 'msg-1',
@@ -255,6 +255,47 @@ describe('WorkspaceView（聊天主界面）', () => {
     await wrapper.get('[data-testid="nav-btn-sessions"]').trigger('click')
     await flushPromises()
     expect(wrapper.findAll('[data-testid="session-row"]').length).toBe(1)
+  })
+
+  it('会话悬停侧栏默认隐藏，并在鼠标悬停时显示工作区与 24 小时制时间', async () => {
+    const { wrapper } = await mountWorkspace()
+    await wrapper.get('[data-testid="nav-btn-sessions"]').trigger('click')
+    await flushPromises()
+
+    expect(wrapper.find('[data-testid="session-hover-panel"]').exists()).toBe(false)
+    expect(wrapper.get('[data-testid="session-row"]').text()).not.toContain(m.session.updatedAt)
+
+    await wrapper.get('[data-testid="session-row"]').trigger('mouseenter')
+
+    expect(wrapper.get('[data-testid="session-hover-panel"]').exists()).toBe(true)
+    expect(wrapper.get('[data-testid="session-hover-title"]').text()).toBe(m.session.title)
+    expect(wrapper.get('[data-testid="session-hover-workspace"]').text()).toContain('Demo Workspace')
+    expect(wrapper.find('[data-testid="session-hover-workspace-icon"]').exists()).toBe(true)
+    expect(wrapper.find('[data-testid="session-hover-time-icon"]').exists()).toBe(true)
+    const d = new Date(m.session.updatedAt)
+    const hh = String(d.getHours()).padStart(2, '0')
+    const mm = String(d.getMinutes()).padStart(2, '0')
+    const timeText = wrapper.get('[data-testid="session-hover-updated"]').text()
+    expect(timeText).toContain(`会话更新时间：${hh}:${mm}`)
+    expect(timeText).toMatch(/会话更新时间：\d{2}:\d{2}$/)
+    expect(wrapper.find('[data-testid="session-hover-relative"]').exists()).toBe(false)
+  })
+
+  it('离开会话区域隐藏悬停侧栏，键盘 focus 会话行时显示', async () => {
+    const { wrapper } = await mountWorkspace()
+    await wrapper.get('[data-testid="nav-btn-sessions"]').trigger('click')
+    await flushPromises()
+    const sessionArea = wrapper.get('.session-area')
+    const sessionRow = wrapper.get('[data-testid="session-row"]')
+
+    await sessionRow.trigger('mouseenter')
+    expect(wrapper.get('[data-testid="session-hover-panel"]').exists()).toBe(true)
+
+    await sessionArea.trigger('mouseleave')
+    expect(wrapper.find('[data-testid="session-hover-panel"]').exists()).toBe(false)
+
+    await sessionRow.trigger('focus')
+    expect(wrapper.get('[data-testid="session-hover-panel"]').exists()).toBe(true)
   })
 
   it('edit_summary 卡片显示审查操作，批准走 store.submitDecision', async () => {
