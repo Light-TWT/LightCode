@@ -15,12 +15,14 @@
 
 - [`2026-07-23-phase-0-5-runtime-foundation.md`](2026-07-23-phase-0-5-runtime-foundation.md) — Phase 0.5 Mock Runtime 的任务分解与实现记录。
 - [`2026-07-30-phase-2-model-and-dx-plan.md`](2026-07-30-phase-2-model-and-dx-plan.md) — Phase 2 实施计划（WP1–WP8）；WP5–WP8 已实现，状态见文件顶部与 `AGENTS.md`。
+- [`superpowers/specs/2026-08-07-multi-provider-settings-design.md`](superpowers/specs/2026-08-07-multi-provider-settings-design.md) — 多供应商设置页设计（2026-08-07，阶段 A/B 已实现）。
+- [`superpowers/plans/2026-08-07-settings-provider-refactor.md`](superpowers/plans/2026-08-07-settings-provider-refactor.md) — 多供应商设置页重构实施计划（阶段 A/B）。
 
 ## 设计原型
 
 - [`design/README.md`](design/README.md) — HTML 视觉原型说明与实现规则。
 - [`design/PROTOTYPE_STATUS.md`](design/PROTOTYPE_STATUS.md) — 原型归档状态与跨文档交互裁决。
-- `design/*.html` — 已批准视觉基线（agent-workspace / workspace-home / session-history / settings），仅作视觉参考，不是运行时代码。
+- `design/*.html` — 已批准视觉基线（agent-workspace / workspace-home / session-history / settings / settings-providers），仅作视觉参考，不是运行时代码。
 
 ## 推荐阅读顺序
 

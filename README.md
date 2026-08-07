@@ -11,9 +11,9 @@ LightCode 是一个独立实现的、本地优先、可视化的编码智能体�
   - **Phase 0.5 Mock Runtime**：确定性种子数据、审批状态迁移、SQLite 持久化事件的 SSE 回放（仅供演示）。
   - **Phase 1 真实安全变更闭环**：服务端静态注册授权工作区、受控只读工具、服务端生成的确定性 ChangeSet、版本绑定审批、单个既有 UTF-8 文本文件的原子替换，以及不启动外部进程的内建完整性验证。安全不变量见 `docs/phase1-safety-contract.md`。
   - **Phase 2 模型提议（WP5–WP8，M4–M6，默认关闭）**：受限、默认关闭的 OpenAI-compatible Provider 子系统——模型只"提议"计划、受限只读工具请求（`read_file`）与服务端独立生成的候选 ChangeSet，不写文件、不执行命令、不决定审批。覆盖 Provider 基础设施（仅环境变量、fail-closed、零密钥泄露）、LangGraph 编排、API-mode E2E、可观测性、预算/并发/故障门禁与敏感数据扫描；WP8 经用户确认采用**零新增第三方依赖**策略。2026-08-04 审查修复进一步收紧：未知异常不泄露、模型上下文不含逻辑路径、输出预算本地强制、SSE 连接上限原子化。设计细节见 `docs/phase2-model-provider-design.md`。
-- 当前验证基线：前端 94 个测试通过（18 文件），后端 195 个测试通过（2 个因 symlink 环境跳过），前端 `vue-tsc -b + vite build` 通过；Phase 1 API 模式 HTTP 全闭环与 Phase 2 API-mode E2E（含 browse token、SSE 续传、敏感数据扫描断言）均已覆盖。
+- 当前验证基线：前端 96 个测试通过（13 文件），后端 226 个测试通过（2 个因 symlink 环境跳过），前端 `vue-tsc -b + vite build` 通过；Phase 1 API 模式 HTTP 全闭环与 Phase 2 API-mode E2E（含 browse token、SSE 续传、敏感数据扫描断言）均已覆盖。设置页已重构为多供应商配置中心（供应商列表/搜索/安全摘要/添加弹层，2026-08-07）。
 
-Phase 1 前端与后端均已闭环，并于 **Phase 1R（安全收尾门禁 M1+M2+M3）** 关闭全部 3 个 P0 缺陷：敏感路径逐段 casefold 拒绝、审批绑定前置校验、多进程文件级 CAS 证明；M3 进一步落地不透明浏览令牌（取代自由路径）、SSE 预算/心跳/续传、前端 token 导航与运行时 DTO 校验。**Phase 2（WP5–WP8，M4–M6）** 已完成：Provider 基础设施默认关闭且 fail-closed、模型只提议（LangGraph 编排 + 服务端 ChangeSet）、API-mode E2E、可观测性、预算/并发/故障门禁与敏感数据扫描全部落地；**2026-08-04 审查修复**（H-01/M-01~06/L-01）完成，后端全量 195 测试通过、前端 94 测试通过。下一阶段可择一推进：**Phase 3：桌面端交付**（Electron shell、FastAPI sidecar、原生文件夹选择、打包本地存储）或先行**易用性改进**。
+Phase 1 前端与后端均已闭环，并于 **Phase 1R（安全收尾门禁 M1+M2+M3）** 关闭全部 3 个 P0 缺陷：敏感路径逐段 casefold 拒绝、审批绑定前置校验、多进程文件级 CAS 证明；M3 进一步落地不透明浏览令牌（取代自由路径）、SSE 预算/心跳/续传、前端 token 导航与运行时 DTO 校验。**Phase 2（WP5–WP8，M4–M6）** 已完成：Provider 基础设施默认关闭且 fail-closed、模型只提议（LangGraph 编排 + 服务端 ChangeSet）、API-mode E2E、可观测性、预算/并发/故障门禁与敏感数据扫描全部落地；**2026-08-04 审查修复**（H-01/M-01~06/L-01）完成，后端全量 195 测试通过、前端 94 测试通过。**2026-08-07 多供应商设置页（阶段 A/B）** 完成：设置页重构为暖纸多供应商配置中心（列表/搜索/安全摘要/添加弹层 + 后端 profiles CRUD，凭据仍只存进程内存），后端全量 226 测试通过、前端 96 测试通过。下一阶段可择一推进：**Phase 3：桌面端交付**（Electron shell、FastAPI sidecar、原生文件夹选择、打包本地存储）或先行**易用性改进**。
 
 ## 快速入口
 

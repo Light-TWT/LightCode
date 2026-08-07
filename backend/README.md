@@ -7,6 +7,7 @@
 - **Phase 0.5 Mock Runtime**：由 `app/db/database.py` 的 `seed_database()` 确定性生成工作区、会话、任务、历史和审批状态，仅用于界面演示、服务适配与合约验证。不访问真实项目目录、不写源码、不执行命令、不调用模型、不接收或存储密钥。
 - **Phase 1 安全变更 MVP（后端）**：服务端静态注册授权工作区，提供受控只读工具（`list_files`/`read_file`/`search_files`）、服务端生成的确定性 ChangeSet、版本绑定审批，以及对单个既有 UTF-8 文本文件的原子替换与内建完整性验证。安全不变量以 `../docs/phase1-safety-contract.md` 与 `../docs/workspace-registration.md` 为准。
 - **Phase 2 模型提议（WP5–WP8，默认关闭）**：受限、默认关闭的 OpenAI-compatible Provider 子系统。模型只"提议"——计划、受限只读工具请求（`read_file`）与服务端独立生成的候选 ChangeSet；不写文件、不执行命令、不决定审批。发往 Provider 的上下文不含逻辑相对路径（仅 fileToken/哈希/受控文本），未知编排异常只投影固定文案。可观测性、预算/并发/故障门禁与敏感数据扫描见本文「可观测性与发布门禁」一节，设计细节见 `../docs/phase2-model-provider-design.md`。
+- **阶段 A/B（核心 Agent 更新，2026-08-04/08-07）**：单一主工作区 + 聊天闭环（`chat_sessions`/`chat_messages`，`ChatService` + LangGraph `ChatOrchestrator`）；设置页支持**多供应商**配置（`/api/v1/provider/profiles` CRUD，凭据经 `ProviderCredentialStore` 进程内存存储，不落盘），模型检索扩展为 `read_file` + `search_files`（受控 token/策略/预算）。设计细节见 `../docs/phase2-model-provider-design.md` §6。
 
 三条闭环共享同一 SQLite 与 SSE 基础设施，但数据严格隔离：Phase 0.5 种子任务标记为 `kind='mock'`，Phase 1 真实任务标记为 `kind='real'`，Phase 2 模型任务标记为 `kind='model'`，互不可跨端点触发对方行为。
 
@@ -29,6 +30,8 @@ app/
     changeset.py           确定性 append-marker ChangeSet 生成
     atomic_write.py        临时文件 + os.replace 原子替换 + 内建 UTF-8/哈希验证 + 每文件锁
     phase1.py              真实任务生命周期与 6 步审批写入协议
+    credential_store.py    可替换 Provider 凭据存储（阶段 A/B 起多配置内存实现）
+    chat_service.py        ChatService + LangGraph ChatOrchestrator（自由问答/编辑任务分流）
     browse_tokens.py       HMAC-SHA256 短期浏览令牌（绑定 workspace+operation+relative_path）
     event_service.py       SSE 事件生成（重放上限/心跳/tail 续传/最大连接数）
     model_orchestrator.py  Phase 2 LangGraph 编排与 create_model_task（模型只提议）
@@ -184,7 +187,7 @@ Phase 1 允许的受控真实读取与单文件原子写入，以及 Phase 2 模
 python -m pytest -q
 ```
 
-当前基线为 **195 个后端测试通过 + 2 个跳过**（跳过项为沙箱环境 `os.symlink` 静默降级导致不可检测，对应逻辑已由 monkeypatch 测试覆盖）。其中 WP8 新增 `test_observability.py`（9 例）与 `test_model_e2e.py`（4 例），聚焦可观测性/敏感数据扫描/API-mode E2E 共 13 例全绿；2026-08-04 审查修复新增 `test_model_orchestrator.py` 敏感文本/路径最小化 2 例、`test_model_provider_http.py` 输出预算 2 例、`test_event_service.py` SSE 并发原子性 1 例。全量验证还应从 `frontend/` 运行 `npm run test` 与 `npm run build`：
+当前基线为 **226 个后端测试通过 + 2 个跳过**（跳过项为沙箱环境 `os.symlink` 静默降级导致不可检测，对应逻辑已由 monkeypatch 测试覆盖）。其中 WP8 新增 `test_observability.py`（9 例）与 `test_model_e2e.py`（4 例），聚焦可观测性/敏感数据扫描/API-mode E2E 共 13 例全绿；2026-08-04 审查修复新增 `test_model_orchestrator.py` 敏感文本/路径最小化 2 例、`test_model_provider_http.py` 输出预算 2 例、`test_event_service.py` SSE 并发原子性 1 例；2026-08-07 多供应商设置页新增 `test_provider_profiles.py`（11 例）与 `test_provider_settings.py`（8 例）。全量验证还应从 `frontend/` 运行 `npm run test` 与 `npm run build`：
 
 ```bash
 npm run test

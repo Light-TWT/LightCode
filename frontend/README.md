@@ -68,7 +68,7 @@ npm run typecheck
 npm run build
 ```
 
-当前基线为 94 个前端测试通过（18 文件），`vue-tsc -b && vite build` 通过。修改服务合约、store 或视图后，应先运行对应聚焦测试，再运行完整测试和构建。
+当前基线为 96 个前端测试通过（13 文件），`vue-tsc -b && vite build` 通过。修改服务合约、store 或视图后，应先运行对应聚焦测试，再运行完整测试和构建。
 
 ## Phase 1 前端边界（已完成 T8）
 
@@ -82,3 +82,9 @@ Phase 2 在既有真实工作区视图之上叠加模型任务体验，模型 Pr
 - `stores/real.store.ts` 增加 `eventConnection` 状态机（connecting/open/reconnecting/closed）与 SSE `sequence` 缺口全量同步（`_resync`），模型生命周期从事件派生（最远到达阶段为 current，失败标记 failed）。真实任务订阅持续 tail（`tail=true`），服务端 `stream.end` 后将连接置为 `closed`（2026-08-04）。
 - 失败提示可行动且无敏感泄露：按稳定错误码映射固定中文文案（M-03），不渲染服务端自由 message；Provider 仅 `ready` 时可新建模型任务（M-02），其余状态与 health 请求失败均禁用，但保留历史/查看/审批。任务详情页校验 URL 工作区与任务归属，错配时清理状态并跳转真实归属路由（M-06）。
 - 设计约束与失败语义见 `../docs/phase2-model-provider-design.md` 与 `AGENTS.md` 状态追踪。
+
+## 多供应商设置页（2026-08-07，阶段 A/B）
+
+- `/settings` 重构为暖纸多供应商配置中心：主侧边栏从 `WorkspaceView` 抽取为共享 `AppSidebar`；设置分类仅含「模型与供应商」「关于」。
+- 供应商列表可搜索（按名称/模型 ID），右侧为配置安全摘要（不显示 API Key、完整 Base URL 或 Authorization header）；「添加供应商」走暖纸弹层（协议模板 + 测试并添加，提交后清空 API Key）。
+- 数据来自 `provider.service.ts` 的 `listProviders()`/`createProvider()`（`/api/v1/provider/profiles`），响应经运行时 DTO 校验，任何安全断言测试保证响应不含 `sk-`/`Bearer`/完整 `https://` URL。

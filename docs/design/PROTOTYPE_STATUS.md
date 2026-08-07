@@ -16,4 +16,4 @@
 2. Vue 实现必须使用组件、Pinia、类型化合约与服务接口重建，不得整体粘贴原型 HTML。
 3. 架构文档决定行为和安全边界；原型决定视觉语言。二者冲突时，以架构为行为依据。
 4. 新的视觉或交互决策需要同时更新本文件、`README.md` 和相关架构文档。
-5. Phase 0.5 的原型中出现的读文件、写文件、运行测试或模型输出仅为产品流程表达；当前 Runtime 仍是确定性 Mock。Phase 1 的真实能力必须遵守 `../phase1-safety-contract.md`。
+5. 原型中出现的读文件、写文件、运行测试或模型输出仅为产品流程表达。Phase 0.5 期间它们由确定性 Mock Runtime 支撑（现 Mock 前端与 Mock 页面已移除，仅保留种子演示数据）；Phase 1 起真实能力必须在服务端实现，并严格遵守 `../phase1-safety-contract.md` 与 `../workspace-registration.md`。

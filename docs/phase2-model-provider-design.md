@@ -34,6 +34,25 @@
   `{configured, status, provider, modelId, detail, originAllowlisted, transport}`，绝不返回
   API Key 或完整 Base URL。
 
+#### 6.1.1 多供应商配置（阶段 B，2026-08-07）
+
+- `ProviderCredentialStore` 扩展为**多配置**：每个运行期配置拥有稳定 `id`，协议
+  增加 `get_all()`（按 id 返回全部）/ `get_named(id)` / `remove(id)`；`get()` 保持
+  返回"当前激活"配置，使 `ChatService` / `ModelOrchestrator` 既有调用路径零改动。
+  仍是进程内存 + 线程安全（`InMemoryProviderCredentialStore`），Electron 阶段（阶段 C）
+  整体替换为系统密钥库实现。
+- 新增安全摘要 DTO（`extra="forbid"`、camelCase、无 key/完整 baseUrl）：
+  `ProviderProfile`（id/name/provider/modelId/enabled/status/baseUrlHost）与
+  `ProviderProfileCreate`（name/provider/baseUrl/apiKey/modelId/enabled，凭据仅存在于
+  请求体与内存存储）。
+- 新增 CRUD 端点 `/api/v1/provider/profiles`：GET 列表 / POST 创建 / GET|DELETE by id。
+  POST 先经 `test_connection()` 最小化 round-trip，**测试通过才保存**（fail-closed），
+  失败返回 `PROVIDER_CONNECTION_FAILED`；删除激活配置自动回落到其余配置或环境变量。
+  未保存任何配置时列表回落为环境变量派生的单个 `default` 条目（disabled 时为 `[]`）。
+- 安全不变量不变：任何响应/日志/SSE 绝不出现 API Key、完整 Base URL 或
+  Authorization header（响应仅含 `baseUrlHost` 域名）；测试连接沿用 HTTPS origin
+  allowlist、显式超时、`trust_env=False`、`follow_redirects=False`、零重试。
+
 ### 6.2 聊天会话与消息（SQLite 持久化）
 
 - 新增 `chat_sessions` / `chat_messages` 表；`tasks` 增加 `chat_session_id` 列把编辑任务
@@ -69,7 +88,8 @@
 
 ### 1.1 配置来源与 fail-closed
 
-- 配置**仅**来自后端环境变量，浏览器不输入、持久化、回显或传输 API Key / base URL。
+- 配置**仅**来自后端环境变量（WP5 原设计），浏览器不持久化、回显或传输 API Key / base URL；
+  阶段 A 起设置页可提交运行期凭据（仅提交瞬间存在），阶段 B 起支持多供应商配置，见 §6.1 / §6.1.1。
 - 默认关闭：`LIGHTCODE_MODEL_ENABLED` 必须是 `true/1/yes/on` 之一，任何其他值（含拼写错误）保持 disabled。
 - 派生状态机（`ModelProviderConfig.status()`）只产出四种状态，且**不发起任何网络调用**：
   - `disabled`：未启用。
@@ -178,9 +198,9 @@
 
 ## 4. 验证证据（WP8 + 2026-08-04 审查修复）
 
-- 后端全量 `pytest`：**195 通过 + 2 skipped**（含 WP8 新增 `test_observability.py` 9 例 +
-  `test_model_e2e.py` 4 例，以及 2026-08-04 审查修复新增：orchestrator 敏感文本/路径最小化 2 例、
-  Provider 输出预算 2 例、SSE 并发原子性 1 例）。
+- 后端全量 `pytest`：**226 通过 + 2 skipped**（当前基线含 WP8 新增 `test_observability.py` 9 例 +
+  `test_model_e2e.py` 4 例、2026-08-04 审查修复用例，以及 2026-08-07 多供应商设置页新增
+  `test_provider_profiles.py` 11 例与 `test_provider_settings.py` 8 例）。
 - WP8 聚焦（observability + API-mode E2E）：**13/13 通过**。
 - 敏感数据扫描：
   - `test_model_e2e.py` 断言日志与事件载荷不含 `test-key` / `api.example.test` / `Bearer` /
@@ -189,8 +209,9 @@
   - `test_model_orchestrator.py`（2026-08-04）断言未知异常原文与逻辑相对路径不出现在 API/SQLite/SSE 与模型请求上下文中。
 - 故障注入覆盖：Provider timeout / 429 / 5xx / 畸形 JSON / 恶意 tool request / 预算耗尽（含输出预算）/
   SQLite busy / SSE 断线续传 / 并发闸门拒绝 / SSE 连接上限并发竞争。
-- 前端：**94 测试通过（18 文件）**，`vue-tsc -b` + `vite build --emptyOutDir false` 通过（2026-08-04，
-  含 M-01 SSE 持续订阅、M-02 Provider ready 门禁、M-03 失败 UI 错误码映射、M-06 路由归属校验）。
+- 前端：**96 测试通过（13 文件）**，`vue-tsc -b` + `vite build --emptyOutDir false` 通过（2026-08-07，
+  含 M-01 SSE 持续订阅、M-02 Provider ready 门禁、M-03 失败 UI 错误码映射、M-06 路由归属校验，
+  以及多供应商设置页组件与 `provider.service` 用例）。
 - 无 skip / 假成功 / 关闭检查绕过门禁。
 
 ---

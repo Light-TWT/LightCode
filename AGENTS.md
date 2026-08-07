@@ -6,7 +6,7 @@ LightCode 是一个独立实现的、本地优先的可视化编码智能体，�
 
 ## 当前阶段
 
-项目处于核心 Agent 更新阶段（阶段 A）：单一主工作区 + 安全聊天闭环。Mock Runtime 与 Mock 前端已移除；产品入口只有一个基于已注册真实工作区的聊天式 Agent 主界面；Provider 可在设置页测试并保存（开发期为后端进程内存凭据，Electron 阶段替换为系统密钥库）；聊天会话持久化到 SQLite；模型通过受控检索（`read_file`/`search_files`）回答自由问答或生成单文件候选 ChangeSet，写入仍走显式审批与原子替换。
+项目处于核心 Agent 更新阶段（阶段 A/B）：单一主工作区 + 安全聊天闭环 + 多供应商设置页。Mock Runtime 与 Mock 前端已移除；产品入口只有一个基于已注册真实工作区的聊天式 Agent 主界面；Provider 可在设置页按多供应商配置管理（列表/搜索/添加/测试并添加/删除，开发期为后端进程内存凭据，Electron 阶段替换为系统密钥库）；聊天会话持久化到 SQLite；模型通过受控检索（`read_file`/`search_files`）回答自由问答或生成单文件候选 ChangeSet，写入仍走显式审批与原子替换。
 
 - 冻结范围、安全不变量、状态机、审批写入协议与错误码以 `docs/phase1-safety-contract.md` 为准；模型 Provider、凭据存储与聊天编排以 `docs/phase2-model-provider-design.md` 与 `docs/architecture/lightcode-local-first-agent-design.md` 为准。
 - 真实工作区根路径只来自服务端静态注册表（`LIGHTCODE_WORKSPACES_CONFIG` 或 `backend/workspaces.json`，已 gitignore）；公共 DTO、SSE、日志、错误一律不得返回真实根路径。
@@ -76,6 +76,13 @@ scripts/        开发与验证脚本
 ## 状态追踪
 
 ```text
+多供应商设置页（阶段 A/B）: 完成 (2026-08-07) —— `/settings` 重构为暖纸多供应商配置中心
+  - 阶段 A（前端）: AppSidebar 从 WorkspaceView 抽取为共享侧边栏 + SettingsNav/ProviderList/ProviderDetail/AddProviderModal 四组件
+    + 设置分类仅「模型与供应商」「关于」+ 供应商列表可搜索 + 右侧安全摘要 + 暖纸添加弹层
+  - 阶段 B（后端）: ProviderCredentialStore 扩展为多配置 dict（get() 保持激活配置语义, ChatService/ModelOrchestrator 零改动）
+    + ProviderProfile/ProviderProfileCreate/ProviderProfileDeleteResponse DTO（extra=forbid, 无 key/完整 baseUrl）
+    + /provider/profiles GET 列表 / POST 创建（连接测试通过才保存, fail-closed）/ GET/DELETE by id; 未保存时回落 env 派生 default
+  - 验证: 后端全量 226 passed / 2 skipped; 前端 96 passed / 13 files; vue-tsc -b + vite build --emptyOutDir false 通过
 核心 Agent 更新（阶段 A）: 完成 (2026-08-04) —— 单一主工作区 + 聊天闭环 + Provider 运行期设置 + 受控检索
   - Mock Runtime/页面/服务/fixture/种子数据已移除；前端 HTTP-only 化（删除 isApiMode 分支）
   - ProviderCredentialStore（开发期进程内存，Electron 阶段换 OS Keychain）+ 设置 API（GET/测试/测试并保存/清除）
