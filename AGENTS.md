@@ -76,6 +76,12 @@ scripts/        开发与验证脚本
 ## 状态追踪
 
 ```text
+工作区设置层（Settings Overlay）: 完成 (2026-08-11) —— 工作区侧边栏设置按钮不再跳转 `/settings`，改为在当前工作区上方打开设置层（规格: docs/superpowers/specs/2026-08-11-settings-overlay-design.md）
+  - 新增 SettingsOverlay.vue: Teleport 到 body 的模态层容器（role=dialog/aria-modal/aria-labelledby + 78vw×76vh 暖纸面板 + 暖灰遮罩 + Esc/遮罩点击/关闭按钮关闭 + 打开焦点进面板、关闭归还触发按钮 + prefers-reduced-motion 取消过渡）；不承载 Provider 业务状态
+  - 新增 SettingsContent.vue: 从 SettingsView 提取全部设置业务（分类/列表/搜索/详情/添加弹层/刷新/清除），独立路由页与设置层共用；showBack 控制独立页「← 返回」入口
+  - AppSidebar 设置按钮改 emit openSettings（位置/SVG/data-testid/样式不变）；WorkspaceView 持 settingsOverlayOpen 状态渲染设置层（关闭不路由、不刷新、不重建会话），provider-hint「设置」链接同步改为打开设置层；SettingsView 变薄壳复用 SettingsContent；`/settings` 路由与深链保留
+  - AddProviderModal 的 Esc 监听改 capture 阶段 + stopPropagation（弹层打开时 Esc 只关弹层不关设置层）
+  - 验证: 前端全量 102 passed / 13 files（新增 6 个设置层用例）; vue-tsc -b + vite build --emptyOutDir false 通过; 后端全量 226 passed / 2 skipped 无回归
 多供应商设置页（阶段 A/B）: 完成 (2026-08-07) —— `/settings` 重构为暖纸多供应商配置中心
   - 阶段 A（前端）: AppSidebar 从 WorkspaceView 抽取为共享侧边栏 + SettingsNav/ProviderList/ProviderDetail/AddProviderModal 四组件
     + 设置分类仅「模型与供应商」「关于」+ 供应商列表可搜索 + 右侧安全摘要 + 暖纸添加弹层

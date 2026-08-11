@@ -87,6 +87,9 @@ const m = vi.hoisted(() => {
       saveSettings: vi.fn(),
       testConnection: vi.fn(),
       clearSettings: vi.fn(),
+      listProviders: vi.fn(),
+      createProvider: vi.fn(),
+      deleteProvider: vi.fn(),
       subscribeChatEvents: vi.fn(),
       subscribeRealTaskEvents: vi.fn(),
     },
@@ -174,6 +177,7 @@ describe('路由收敛（核心 Agent 更新阶段 A）', () => {
     m.mocks.submitMessage.mockResolvedValue({ message: m.message, taskId: '' })
     m.mocks.getSettings.mockResolvedValue(m.settings)
     m.mocks.getHealth.mockResolvedValue(null)
+    m.mocks.listProviders.mockResolvedValue([])
     m.mocks.getRealTask.mockResolvedValue(m.task)
     m.mocks.submitApproval.mockResolvedValue(m.task)
     m.mocks.subscribeChatEvents.mockReturnValue(() => {})

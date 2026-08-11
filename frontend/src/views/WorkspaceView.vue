@@ -2,6 +2,7 @@
 import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import AppSidebar from '@/components/AppSidebar.vue'
+import SettingsOverlay from '@/components/SettingsOverlay.vue'
 import { useWorkspaceStore } from '@/stores/workspace.store'
 import { providerService } from '@/services/provider.service'
 import type {
@@ -26,6 +27,8 @@ const searchInput = ref('')
 
 /** 导航栏折叠状态：收缩为窄图标条 */
 const sidebarCollapsed = ref(false)
+/** 设置层：在工作区上方打开，关闭后返回同一会话与 UI 状态 */
+const settingsOverlayOpen = ref(false)
 /** 当前展开的内容面板；null 表示全部收起。点击导航项展开，再点一次收起 */
 type NavKey = 'workspace' | 'files' | 'sessions'
 const activeNav = ref<NavKey | null>(null)
@@ -364,6 +367,7 @@ onUnmounted(() => {
         :collapsed="sidebarCollapsed"
         @toggle="toggleNav"
         @toggle-collapse="toggleSidebar"
+        @open-settings="settingsOverlayOpen = true"
       />
 
       <!-- 内容面板：点击导航项展开，再点一次收起 -->
@@ -617,7 +621,7 @@ onUnmounted(() => {
             </div>
             <p v-if="!providerReady" class="provider-hint" data-testid="provider-hint">
               Provider 未就绪，无法开始对话。请先前往
-              <button type="button" class="link-btn" @click="router.push('/settings')">设置</button>
+              <button type="button" class="link-btn" data-testid="open-settings-link" @click="settingsOverlayOpen = true">设置</button>
               配置模型 Provider。
             </p>
           </template>
@@ -661,6 +665,8 @@ onUnmounted(() => {
         </div>
       </div>
     </div>
+
+    <SettingsOverlay :open="settingsOverlayOpen" @close="settingsOverlayOpen = false" />
   </div>
 </template>
 

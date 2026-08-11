@@ -1,8 +1,8 @@
 <script setup lang="ts">
 /** 共享主侧边栏：从 WorkspaceView 抽取，设置页与工作区页共用同一套
- *  品牌区 + 导航 + 底部设置入口，避免两套主导航视觉漂移。 */
-import { useRouter } from 'vue-router'
-
+ *  品牌区 + 导航 + 底部设置入口，避免两套主导航视觉漂移。
+ *  设置按钮只发出 openSettings 事件，由父视图决定结果：工作区页打开设置层，
+ *  独立设置页维持当前展示。 */
 defineProps<{
   /** 当前展开的导航键；null 表示全部收起（工作区页语义） */
   activeNav: 'workspace' | 'files' | 'sessions' | null
@@ -14,9 +14,8 @@ defineProps<{
 const emit = defineEmits<{
   (e: 'toggle', key: 'workspace' | 'files' | 'sessions'): void
   (e: 'toggleCollapse'): void
+  (e: 'openSettings'): void
 }>()
-
-const router = useRouter()
 </script>
 
 <template>
@@ -75,7 +74,7 @@ const router = useRouter()
         :class="{ active: settingsActive }"
         title="设置"
         data-testid="settings-btn"
-        @click="router.push('/settings')"
+        @click="emit('openSettings')"
       >
         <span class="icon" aria-hidden="true"><svg viewBox="0 0 24 24"><circle cx="14" cy="13" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.9l.1.1-1.7 1.7-.1-.1a1.7 1.7 0 0 0-1.9-.3 1.7 1.7 0 0 0-1 1.6v.2h-2.4v-.2a1.7 1.7 0 0 0-1-1.6 1.7 1.7 0 0 0-1.9.3l-.1.1L8 17l.1-.1a1.7 1.7 0 0 0 .3-1.9 1.7 1.7 0 0 0-1.6-1H6v-2.4h.8a1.7 1.7 0 0 0 1.6-1 1.7 1.7 0 0 0-.3-1.9L8 8.6l1.7-1.7.1.1a1.7 1.7 0 0 0 1.9.3 1.7 1.7 0 0 0 1-1.6v-.2h2.4v.2a1.7 1.7 0 0 0 1 1.6 1.7 1.7 0 0 0 1.9-.3l.1-.1 1.7 1.7-.1.1a1.7 1.7 0 0 0-.3 1.9 1.7 1.7 0 0 0-1.6 1h.2V14h-.2a1.7 1.7 0 0 0-1.6 1Z"/></svg></span>
         <span class="label">设置</span>

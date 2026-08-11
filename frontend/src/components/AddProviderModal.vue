@@ -98,14 +98,18 @@ async function submit() {
 }
 
 function onKeydown(event: KeyboardEvent) {
-  if (event.key === 'Escape') emit('close')
+  if (event.key === 'Escape') {
+    // capture 阶段截断：Esc 只关闭本弹层，不冒泡到设置层等外层 Esc 监听
+    event.stopPropagation()
+    emit('close')
+  }
 }
 
 onMounted(() => {
-  document.addEventListener('keydown', onKeydown)
+  document.addEventListener('keydown', onKeydown, true)
 })
 onBeforeUnmount(() => {
-  document.removeEventListener('keydown', onKeydown)
+  document.removeEventListener('keydown', onKeydown, true)
 })
 </script>
 

@@ -95,6 +95,10 @@ const m = vi.hoisted(() => {
       createRealTask: vi.fn(),
       getSettings: vi.fn(),
       getHealth: vi.fn(),
+      listProviders: vi.fn(),
+      createProvider: vi.fn(),
+      testConnection: vi.fn(),
+      clearSettings: vi.fn(),
       subscribeChatEvents: vi.fn(),
       subscribeRealTaskEvents: vi.fn(),
     },
@@ -129,9 +133,10 @@ vi.mock('@/services/provider.service', () => ({
   providerService: {
     getSettings: m.mocks.getSettings,
     getHealth: m.mocks.getHealth,
-    saveSettings: vi.fn(),
-    testConnection: vi.fn(),
-    clearSettings: vi.fn(),
+    listProviders: m.mocks.listProviders,
+    createProvider: m.mocks.createProvider,
+    testConnection: m.mocks.testConnection,
+    clearSettings: m.mocks.clearSettings,
   },
 }))
 vi.mock('@/services/real-task.service', () => ({
@@ -192,7 +197,7 @@ async function mountWorkspace(attachToBody = false) {
   await router.push('/workspace/ws-1/session/chat-1')
   await router.isReady()
   const wrapper = mount(WorkspaceView, {
-    global: { plugins: [router] },
+    global: { plugins: [router], stubs: { teleport: true } },
     // 断言 document.activeElement 时需真实挂载到 document（默认挂载在游离节点上，focus 不生效）
     ...(attachToBody ? { attachTo: document.body } : {}),
   })
@@ -222,6 +227,17 @@ describe('WorkspaceView（聊天主界面）', () => {
     m.mocks.renameChatSession.mockResolvedValue({ ...m.session, title: '新标题' })
     m.mocks.deleteChatSession.mockResolvedValue({ ok: true })
     m.mocks.getSettings.mockResolvedValue(readySettings)
+    m.mocks.listProviders.mockResolvedValue([
+      {
+        id: 'default',
+        name: 'openai-compatible',
+        provider: 'openai-compatible',
+        modelId: 'demo-model',
+        enabled: true,
+        status: 'ready',
+        baseUrlHost: 'provider.example',
+      },
+    ])
     m.mocks.getRealTask.mockResolvedValue(m.task)
     m.mocks.submitApproval.mockResolvedValue({
       ...m.task,
@@ -566,5 +582,133 @@ describe('WorkspaceView（聊天主界面）', () => {
 
     resolveDelete({ ok: true })
     await flushPromises()
+  })
+
+  it('设置层：点击设置按钮在工作区上方打开，工作区内容仍保留在 DOM', async () => {
+    const { wrapper } = await mountWorkspace()
+    expect(wrapper.find('[data-testid="settings-overlay"]').exists()).toBe(false)
+
+    await wrapper.get('[data-testid="settings-btn"]').trigger('click')
+    await flushPromises()
+
+    // 模态层出现且为对话框语义
+    expect(wrapper.get('[data-testid="settings-overlay"]').exists()).toBe(true)
+    expect(wrapper.get('[data-testid="settings-modal"]').attributes('role')).toBe('dialog')
+    expect(wrapper.get('[data-testid="settings-modal"]').attributes('aria-modal')).toBe('true')
+    // 工作区未卸载：消息流、输入框仍在
+    expect(wrapper.findAll('[data-testid="chat-message"]').length).toBe(2)
+    expect(wrapper.get('[data-testid="chat-input"]').exists()).toBe(true)
+    // 复用设置业务内容：分类、供应商列表、详情与添加入口
+    expect(wrapper.get('[data-testid="settings-cat-providers"]').exists()).toBe(true)
+    expect(wrapper.get('[data-testid="settings-cat-about"]').exists()).toBe(true)
+    expect(wrapper.get('[data-testid="provider-row-default"]').exists()).toBe(true)
+    expect(wrapper.get('[data-testid="detail-name"]').text()).toBe('openai-compatible')
+    expect(wrapper.get('[data-testid="open-add"]').exists()).toBe(true)
+    // 模态层不显示独立设置页的「返回」入口（工作区页头部的返回按钮不在模态层内）
+    expect(wrapper.find('[data-testid="settings-modal"] [data-testid="back-home-btn"]').exists()).toBe(false)
+    // 模态层内可切换到「关于」
+    await wrapper.get('[data-testid="settings-cat-about"]').trigger('click')
+    await flushPromises()
+    expect(wrapper.get('[data-testid="about-panel"]').exists()).toBe(true)
+  })
+
+  it('设置层：关闭按钮、Esc、遮罩点击均关闭，工作区内容不丢失', async () => {
+    const { wrapper } = await mountWorkspace()
+
+    // 关闭按钮
+    await wrapper.get('[data-testid="settings-btn"]').trigger('click')
+    await flushPromises()
+    await wrapper.get('[data-testid="settings-overlay-close"]').trigger('click')
+    await flushPromises()
+    expect(wrapper.find('[data-testid="settings-overlay"]').exists()).toBe(false)
+
+    // Esc
+    await wrapper.get('[data-testid="settings-btn"]').trigger('click')
+    await flushPromises()
+    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))
+    await flushPromises()
+    expect(wrapper.find('[data-testid="settings-overlay"]').exists()).toBe(false)
+
+    // 遮罩点击
+    await wrapper.get('[data-testid="settings-btn"]').trigger('click')
+    await flushPromises()
+    await wrapper.get('[data-testid="settings-overlay"]').trigger('click.self')
+    await flushPromises()
+    expect(wrapper.find('[data-testid="settings-overlay"]').exists()).toBe(false)
+
+    // 无论哪种方式关闭，工作区内容与输入框仍在
+    expect(wrapper.findAll('[data-testid="chat-message"]').length).toBe(2)
+    expect(wrapper.get('[data-testid="chat-input"]').exists()).toBe(true)
+  })
+
+  it('设置层：关闭后路由与会话不变，焦点回到设置按钮', async () => {
+    const { wrapper, router } = await mountWorkspace(true)
+    const settingsBtn = wrapper.get('[data-testid="settings-btn"]')
+    ;(settingsBtn.element as HTMLElement).focus()
+    await settingsBtn.trigger('click')
+    await flushPromises()
+    // 打开后焦点进入设置层面板
+    expect(document.activeElement).toBe(wrapper.get('[data-testid="settings-modal"]').element)
+
+    await wrapper.get('[data-testid="settings-overlay-close"]').trigger('click')
+    await flushPromises()
+    expect(wrapper.find('[data-testid="settings-overlay"]').exists()).toBe(false)
+    // 不跳转路由、不重建会话
+    expect(router.currentRoute.value.fullPath).toBe('/workspace/ws-1/session/chat-1')
+    expect(document.activeElement).toBe(settingsBtn.element)
+  })
+
+  it('设置层：添加供应商弹层在设置层上方打开，Esc 只关闭弹层', async () => {
+    // 真实挂载到 document：弹层内按键事件需沿 DOM 树到达 document 级 Esc 监听
+    const { wrapper } = await mountWorkspace(true)
+    await wrapper.get('[data-testid="settings-btn"]').trigger('click')
+    await flushPromises()
+    await wrapper.get('[data-testid="open-add"]').trigger('click')
+    await flushPromises()
+
+    expect(wrapper.get('[data-testid="settings-overlay"]').exists()).toBe(true)
+    expect(wrapper.get('[data-testid="modal-api-key"]').exists()).toBe(true)
+
+    // 键盘场景：焦点在弹层输入框内按 Esc，只关闭弹层（capture 截断）
+    const keyInput = wrapper.get('[data-testid="modal-api-key"]')
+    ;(keyInput.element as HTMLInputElement).focus()
+    expect(document.activeElement).toBe(keyInput.element)
+    await keyInput.trigger('keydown', { key: 'Escape' })
+    await flushPromises()
+    // 弹层关闭，设置层保持打开
+    expect(wrapper.find('[data-testid="modal-api-key"]').exists()).toBe(false)
+    expect(wrapper.get('[data-testid="settings-overlay"]').exists()).toBe(true)
+  })
+
+  it('设置层：关闭后重新打开，添加供应商弹层的 API Key 输入为空', async () => {
+    const { wrapper } = await mountWorkspace()
+    await wrapper.get('[data-testid="settings-btn"]').trigger('click')
+    await flushPromises()
+    await wrapper.get('[data-testid="open-add"]').trigger('click')
+    await flushPromises()
+    await wrapper.get('[data-testid="modal-api-key"]').setValue('sk-top-secret')
+    expect((wrapper.get('[data-testid="modal-api-key"]').element as HTMLInputElement).value).toBe('sk-top-secret')
+
+    // 关闭设置层（整棵内容树销毁，含弹层输入）
+    await wrapper.get('[data-testid="settings-overlay-close"]').trigger('click')
+    await flushPromises()
+    expect(wrapper.find('[data-testid="settings-overlay"]').exists()).toBe(false)
+
+    // 重新打开并再次打开弹层：API Key 输入为空，密钥不残留
+    await wrapper.get('[data-testid="settings-btn"]').trigger('click')
+    await flushPromises()
+    await wrapper.get('[data-testid="open-add"]').trigger('click')
+    await flushPromises()
+    expect((wrapper.get('[data-testid="modal-api-key"]').element as HTMLInputElement).value).toBe('')
+    expect(wrapper.text()).not.toContain('sk-top-secret')
+  })
+
+  it('Provider 未就绪时提示区「设置」链接打开设置层，不离开工作区', async () => {
+    m.mocks.getSettings.mockResolvedValue(unconfiguredSettings)
+    const { wrapper } = await mountWorkspace()
+    await wrapper.get('[data-testid="open-settings-link"]').trigger('click')
+    await flushPromises()
+    expect(wrapper.get('[data-testid="settings-overlay"]').exists()).toBe(true)
+    expect(wrapper.get('[data-testid="workspace-title"]').exists()).toBe(true)
   })
 })
