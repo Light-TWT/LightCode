@@ -13,6 +13,7 @@ from fastapi.responses import JSONResponse
 
 from app.api.routes import router as api_router
 from app.config.model_provider import load_model_provider_config
+from app.config.skills import skill_root
 from app.db.database import initialize_database
 from app.schemas.errors import Phase1Error
 from app.security.guard import WorkspaceGuard
@@ -43,6 +44,13 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
         database_path = (backend_dir / database_path).resolve()
     connection = initialize_database(database_path)
     app.state.db = connection
+
+    # Skill 管理（2026-08-12）：受控数据目录启动时创建，仅记录就绪状态，
+    # 绝不记录目录位置（`.gitignore` 已覆盖 backend/data/skills/）。
+    skills_dir = skill_root()
+    skills_dir.mkdir(parents=True, exist_ok=True)
+    app.state.skill_root = skills_dir
+    log.info("skill storage ready")
 
     # Phase 1: load the static workspace registry from server-side config only.
     # 默认配置路径基于 backend/ 目录，同样与启动目录无关。

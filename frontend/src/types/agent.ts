@@ -307,3 +307,40 @@ export interface ChatSubmitResponse {
   message: ChatMessage
   taskId: string
 }
+
+// --- Skill 管理（2026-08-12）--------------------------------------------------
+
+export type SkillSource = 'builtin' | 'uploaded'
+export type SkillStatus = 'disabled' | 'enabled'
+
+export interface SkillSummary {
+  id: string
+  name: string
+  source: SkillSource
+  status: SkillStatus
+  summary: string
+  documentBytes: number
+  resourceCount: number
+  sectionCount: number
+  createdAt: string
+  updatedAt: string
+}
+
+export interface SkillDetail extends SkillSummary {
+  documentSha256: string
+  packageBytes: number
+}
+
+export interface SkillDocument {
+  id: string
+  name: string
+  source: SkillSource
+  status: SkillStatus
+  content: string
+  documentSha256: string
+}
+
+export interface SkillDeleteResult {
+  id: string
+  deleted: true
+}

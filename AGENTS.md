@@ -76,6 +76,13 @@ scripts/        开发与验证脚本
 ## 状态追踪
 
 ```text
+Skill 管理（上传识别/详情/启用/删除/Agent 门禁）: 完成 (2026-08-12) —— 共享侧边栏新增「技能」入口 + `/workspace/:workspaceId/skills` 管理视图（规格: docs/superpowers/specs/2026-08-12-skill-management-design.md）
+  - 后端: `skills` 表（source/status CHECK + uploaded 名称唯一索引, 内联幂等迁移）+ config/skills.py（backend/data/skills/ 默认目录 + ZIP/文档预算常量, LIGHTCODE_SKILLS_PATH 覆盖）+ skill_package.py（纯标准库 ZIP 中央目录校验: 加密/软链/路径穿越/敏感名/后缀/深度/预算全 fail-closed, 只提取 package.zip + SKILL.md）+ skill_service.py（临时目录校验->SQLite 事务->原子替换, 文档读前重检 SHA-256, 删除仅 uploaded 且路径证明在 root 下, 内置删除拒绝）+ 5 个 REST 端点 + 14 个 SKILL_* 稳定错误码
+  - Agent 门禁: ChatService/ModelOrchestrator 构建上下文时经 list_enabled_for_agent() 只读投影（id/name/summary/文档/哈希）, format_enabled_skills_for_model 以 <untrusted-skills> 边界标记嵌入, 不持久化进消息/事件/日志; 上传默认 disabled, 禁用/删除后下一次请求即排除
+  - 前端: skills.service.ts（multipart 仅 package 字段, 不手设 Content-Type）+ skill.schema.ts 运行时契约校验（拒绝 storagePath/rootPath/未知状态/畸形 id）+ skills.store.ts（本地筛选/上传/乐观状态回滚/删除, 固定中文错误码映射）+ SkillDetailOverlay.vue（Teleport role=dialog, 纯文本 <pre> 渲染 SKILL.md, 无内部侧栏, 页脚内联删除确认, 焦点管理 + reduced-motion）+ SkillsView.vue（行式列表/搜索/来源筛选/上传按钮, 行点击开详情, 开关 stopPropagation）
+  - AppSidebar 仅追加技能按钮（data-testid=nav-btn-skills, 位于会话之后）, 原按钮/图标/顺序/折叠语义零改动; SettingsOverlay 未被修改
+  - .gitignore 新增 backend/data/skills/; python-multipart>=0.0.20 加入 backend 运行时依赖
+  - 验证: 后端全量 280 passed / 2 skipped（技能聚焦 48）; 前端全量 133 passed / 17 files（技能新增 6+8+8+7+2 例）; vue-tsc -b + vite build --emptyOutDir false 通过; 真实服务器 HTTP 冒烟 10/10（上传 disabled->启用->删除 404->未知状态 422, 无路径泄露）; 浏览器 Playwright 验收按用户选择跳过
 工作区设置层（Settings Overlay）: 完成 (2026-08-11) —— 工作区侧边栏设置按钮不再跳转 `/settings`，改为在当前工作区上方打开设置层（规格: docs/superpowers/specs/2026-08-11-settings-overlay-design.md）
   - 新增 SettingsOverlay.vue: Teleport 到 body 的模态层容器（role=dialog/aria-modal/aria-labelledby + 78vw×76vh 暖纸面板 + 暖灰遮罩 + Esc/遮罩点击/关闭按钮关闭 + 打开焦点进面板、关闭归还触发按钮 + prefers-reduced-motion 取消过渡）；不承载 Provider 业务状态
   - 新增 SettingsContent.vue: 从 SettingsView 提取全部设置业务（分类/列表/搜索/详情/添加弹层/刷新/清除），独立路由页与设置层共用；showBack 控制独立页「← 返回」入口

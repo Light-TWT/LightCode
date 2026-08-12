@@ -50,6 +50,7 @@ from app.services.model_orchestrator import (
     persist_model_outcome,
 )
 from app.services.openai_compatible_provider import OpenAICompatibleProvider
+from app.services.skill_service import SkillService, format_enabled_skills_for_model
 from app.workspaces.registry import WorkspaceRegistry
 
 #: 单条用户/assistant 消息长度上限（字符）。
@@ -157,6 +158,7 @@ class ChatService:
         credential_store: ProviderCredentialStore,
         *,
         transport: Any = None,
+        skill_service: Optional["SkillService"] = None,
     ) -> None:
         self._db = db
         self._registry = registry
@@ -164,6 +166,7 @@ class ChatService:
         self._env_config = env_config
         self._credential_store = credential_store
         self._transport = transport
+        self._skill_service = skill_service
 
     @classmethod
     def from_request(cls, request: Request) -> "ChatService":
@@ -175,6 +178,7 @@ class ChatService:
             state.env_model_provider,
             state.credential_store,
             transport=getattr(state, "provider_transport", None),
+            skill_service=SkillService(state.db, state.skill_root),
         )
 
     def _effective_config(self) -> ModelProviderConfig:
@@ -183,6 +187,25 @@ class ChatService:
         if credential is None:
             return self._env_config
         return build_runtime_config(self._env_config, credential)
+
+    # --- Agent Skill 门禁 -----------------------------------------------------
+
+    def _skill_context(self) -> str:
+        """启用 Skill 的受控提示上下文；无启用项时为空串。"""
+        if self._skill_service is None:
+            return ""
+        return format_enabled_skills_for_model(self._skill_service.list_enabled_for_agent())
+
+    def _build_model_context(self, text: str) -> str:
+        """Provider 请求上下文（系统提示 + 启用 Skill）；测试/编排共用。
+
+        ``text`` 仅保留签名形态；上下文本身不含用户消息与任何路径。
+        """
+        system = _build_chat_system_prompt("unknown")
+        skill_context = self._skill_context()
+        if skill_context:
+            return f"{system}\n\n{skill_context}"
+        return system
 
     # --- 会话 ----------------------------------------------------------------
 
@@ -336,11 +359,15 @@ class ChatService:
             message = self._persist_message(session_id, "assistant", _failure_text(code), kind="error")
             return ChatSubmitResponse(message=message, taskId="")
 
-        # 2) 构造模型上下文：系统提示 + 最近历史 + 本次消息。
+        # 2) 构造模型上下文：系统提示（含启用 Skill 投影）+ 最近历史 + 本次消息。
         history = self._list_messages(session_id)
         recent = history[-HISTORY_WINDOW - 1 : -1]  # 不含刚写入的本次 user 消息
+        system = _build_chat_system_prompt(policy_version)
+        skill_context = self._skill_context()
+        if skill_context:
+            system = f"{system}\n\n{skill_context}"
         messages: list[dict[str, str]] = [
-            {"role": "system", "content": _build_chat_system_prompt(policy_version)}
+            {"role": "system", "content": system}
         ]
         for m in recent:
             messages.append({"role": m.role, "content": m.content})

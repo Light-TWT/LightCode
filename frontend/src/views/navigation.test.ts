@@ -4,6 +4,7 @@ import { createMemoryHistory, createRouter, type Router } from 'vue-router'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import RealTaskView from './RealTaskView.vue'
 import SettingsView from './SettingsView.vue'
+import SkillsView from './SkillsView.vue'
 import WorkspaceHomeView from './WorkspaceHomeView.vue'
 import WorkspaceView from './WorkspaceView.vue'
 
@@ -133,6 +134,16 @@ vi.mock('@/services/real-task.service', () => ({
     createRealTask: m.mocks.createRealTask,
   },
 }))
+vi.mock('@/services/skills.service', () => ({
+  skillsService: {
+    list: vi.fn().mockResolvedValue([]),
+    get: vi.fn(),
+    document: vi.fn(),
+    upload: vi.fn(),
+    setStatus: vi.fn(),
+    remove: vi.fn(),
+  },
+}))
 vi.mock('@/services/event.service', () => ({
   subscribeChatEvents: m.mocks.subscribeChatEvents,
   subscribeRealTaskEvents: m.mocks.subscribeRealTaskEvents,
@@ -153,6 +164,11 @@ function createAppRouter(): Router {
         path: '/workspace/:workspaceId/task/:taskId',
         name: 'real-task',
         component: RealTaskView,
+      },
+      {
+        path: '/workspace/:workspaceId/skills',
+        name: 'skills',
+        component: SkillsView,
       },
       { path: '/settings', name: 'settings', component: SettingsView },
     ],
@@ -258,5 +274,34 @@ describe('路由收敛（核心 Agent 更新阶段 A）', () => {
     await flushPromises()
     expect(wrapper.get('[data-testid="settings-cat-providers"]').exists()).toBe(true)
     expect(wrapper.get('[data-testid="open-add"]').exists()).toBe(true)
+  })
+
+  it('keeps existing sidebar test ids and appends the Skill navigation button', async () => {
+    const router = createAppRouter()
+    await router.push('/workspace/ws-1')
+    await router.isReady()
+    const wrapper = mount(WorkspaceView, {
+      global: { plugins: [router, createPinia()], stubs: { teleport: true } },
+    })
+    await flushPromises()
+
+    expect(wrapper.get('[data-testid="nav-btn-workspace"]').exists()).toBe(true)
+    expect(wrapper.get('[data-testid="nav-btn-files"]').exists()).toBe(true)
+    expect(wrapper.get('[data-testid="nav-btn-sessions"]').exists()).toBe(true)
+    expect(wrapper.get('[data-testid="settings-btn"]').exists()).toBe(true)
+    await wrapper.get('[data-testid="nav-btn-skills"]').trigger('click')
+    await flushPromises()
+
+    expect(router.currentRoute.value.fullPath).toBe('/workspace/ws-1/skills')
+  })
+
+  it('/workspace/:workspaceId/skills 渲染技能管理视图', async () => {
+    const router = createAppRouter()
+    await router.push('/workspace/ws-1/skills')
+    await router.isReady()
+    const wrapper = mountView(SkillsView, router)
+    await flushPromises()
+    expect(wrapper.get('[data-testid="skills-title"]').exists()).toBe(true)
+    expect(wrapper.get('[data-testid="skill-upload-button"]').exists()).toBe(true)
   })
 })

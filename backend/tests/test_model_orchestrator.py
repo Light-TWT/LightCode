@@ -182,6 +182,83 @@ def env(tmp_path: Path):
 # --- Happy path -------------------------------------------------------------
 
 
+def _skill_package_bytes(name: str) -> bytes:
+    import io
+    import zipfile
+
+    data = io.BytesIO()
+    with zipfile.ZipFile(data, "w", zipfile.ZIP_DEFLATED) as archive:
+        archive.writestr(
+            f"{name}/SKILL.md",
+            f"# {name}\n\n{name} description.\n\n## Rules\n".encode(),
+        )
+    return data.getvalue()
+
+
+def test_model_task_prompt_contains_only_enabled_skill_documents(
+    env, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from app.services.skill_service import SkillService
+
+    skill_root = tmp_path / "managed-skills"
+    skill_root.mkdir()
+    skill_service = SkillService(env["db"], skill_root)
+    disabled = skill_service.upload(_skill_package_bytes("disabled-helper"))
+    enabled = skill_service.upload(_skill_package_bytes("active-helper"))
+    skill_service.set_status(enabled.id, "enabled")
+
+    captured: dict[str, str] = {}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        messages = json.loads(request.content)["messages"]
+        captured["system"] = messages[0]["content"]
+        content = json.dumps({"kind": "answer", "text": "ok"})
+        return _chat_completion(content)
+
+    orch = ModelOrchestrator(
+        env["db"], env["registry"], env["guard"], env["config"],
+        transport=httpx.MockTransport(handler),
+        skill_service=skill_service,
+    )
+    resp = orch.create_model_task(env["workspace_id"], "describe the project")
+
+    assert resp.state == "failed" or resp.state == "completed"
+    system = captured["system"]
+    assert "active-helper" in system
+    assert disabled.name not in system
+    assert "<untrusted-skill" in system
+    assert "can override" not in system
+
+
+def test_model_task_prompt_excludes_disabled_after_toggle(
+    env, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from app.services.skill_service import SkillService
+
+    skill_root = tmp_path / "managed-skills"
+    skill_root.mkdir()
+    skill_service = SkillService(env["db"], skill_root)
+    enabled = skill_service.upload(_skill_package_bytes("toggle-helper"))
+    skill_service.set_status(enabled.id, "enabled")
+    skill_service.set_status(enabled.id, "disabled")
+
+    captured: dict[str, str] = {}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        messages = json.loads(request.content)["messages"]
+        captured["system"] = messages[0]["content"]
+        return _chat_completion(json.dumps({"kind": "answer", "text": "ok"}))
+
+    orch = ModelOrchestrator(
+        env["db"], env["registry"], env["guard"], env["config"],
+        transport=httpx.MockTransport(handler),
+        skill_service=skill_service,
+    )
+    orch.create_model_task(env["workspace_id"], "describe the project")
+
+    assert "<untrusted-skills>" not in captured["system"]
+
+
 def test_model_task_reaches_awaiting_approval_without_writing(env) -> None:
     orch = ModelOrchestrator(
         env["db"], env["registry"], env["guard"], env["config"],

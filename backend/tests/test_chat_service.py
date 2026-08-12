@@ -122,12 +122,14 @@ def env(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
     (tmp_path / "workspaces.json").write_text(json.dumps(config), encoding="utf-8")
     monkeypatch.setenv("LIGHTCODE_WORKSPACES_CONFIG", str(tmp_path / "workspaces.json"))
     monkeypatch.setenv("LIGHTCODE_DATABASE_PATH", str(tmp_path / "lightcode.db"))
+    monkeypatch.setenv("LIGHTCODE_SKILLS_PATH", str(tmp_path / "managed-skills"))
 
     with TestClient(app) as client:
         client.app.state.credential_store = InMemoryProviderCredentialStore()
         yield client, target
     monkeypatch.delenv("LIGHTCODE_WORKSPACES_CONFIG", raising=False)
     monkeypatch.delenv("LIGHTCODE_DATABASE_PATH", raising=False)
+    monkeypatch.delenv("LIGHTCODE_SKILLS_PATH", raising=False)
 
 
 def _configure_provider(client: TestClient, handler: _ChatHandler) -> None:
@@ -140,6 +142,76 @@ def _configure_provider(client: TestClient, handler: _ChatHandler) -> None:
             api_key="test-key",
         )
     )
+
+
+def _skill_package_bytes(name: str) -> bytes:
+    import io
+    import zipfile
+
+    data = io.BytesIO()
+    with zipfile.ZipFile(data, "w", zipfile.ZIP_DEFLATED) as archive:
+        archive.writestr(
+            f"{name}/SKILL.md",
+            f"# {name}\n\n{name} description.\n\n## Rules\n".encode(),
+        )
+    return data.getvalue()
+
+
+def test_chat_context_contains_only_enabled_skill_documents(
+    env, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    client, _target = env
+    from app.services.chat_service import ChatService
+    from app.services.skill_service import SkillService
+
+    skill_service = SkillService(client.app.state.db, client.app.state.skill_root)
+    disabled = skill_service.upload(_skill_package_bytes("disabled-helper"))
+    enabled = skill_service.upload(_skill_package_bytes("active-helper"))
+    skill_service.set_status(enabled.id, "enabled")
+
+    chat_service = ChatService(
+        client.app.state.db,
+        client.app.state.registry,
+        client.app.state.guard,
+        client.app.state.env_model_provider,
+        client.app.state.credential_store,
+        skill_service=skill_service,
+    )
+
+    context = chat_service._build_model_context("Explain this project")
+
+    assert "active-helper" in context
+    assert disabled.name not in context
+    assert "<untrusted-skill" in context
+    assert "can override" not in context
+
+    skill_service.set_status(enabled.id, "disabled")
+    context_after_disable = chat_service._build_model_context("Explain this project")
+    assert "active-helper" not in context_after_disable
+
+
+def test_chat_context_excludes_deleted_skill_documents(
+    env, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    client, _target = env
+    from app.services.chat_service import ChatService
+    from app.services.skill_service import SkillService
+
+    skill_service = SkillService(client.app.state.db, client.app.state.skill_root)
+    removed = skill_service.upload(_skill_package_bytes("removed-helper"))
+    skill_service.set_status(removed.id, "enabled")
+    skill_service.delete(removed.id)
+
+    chat_service = ChatService(
+        client.app.state.db,
+        client.app.state.registry,
+        client.app.state.guard,
+        client.app.state.env_model_provider,
+        client.app.state.credential_store,
+        skill_service=skill_service,
+    )
+    context = chat_service._build_model_context("Explain this project")
+    assert "<untrusted-skills>" not in context
 
 
 def _create_session(client: TestClient, title: str = "会话") -> dict:

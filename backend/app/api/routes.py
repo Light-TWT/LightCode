@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Request
+from fastapi import APIRouter, File, Request, UploadFile
 from fastapi.responses import StreamingResponse
 
 from app.config.model_provider import (
@@ -7,6 +7,7 @@ from app.config.model_provider import (
     build_runtime_config,
     effective_config,
 )
+from app.config.skills import MAX_SKILL_PACKAGE_BYTES
 from app.schemas.contracts import (
     ApprovalRequest,
     BrowseFileContent,
@@ -19,6 +20,7 @@ from app.schemas.contracts import (
 from app.schemas.errors import (
     PROVIDER_CONNECTION_FAILED,
     PROVIDER_SETTINGS_INVALID,
+    SKILL_PACKAGE_TYPE_DENIED,
     Phase1Error,
 )
 from app.schemas.model_contracts import (
@@ -42,6 +44,13 @@ from app.schemas.model_contracts import (
     ProviderProfileCreate,
     ProviderProfileDeleteResponse,
 )
+from app.schemas.skill_contracts import (
+    SkillDeleteResponse,
+    SkillDetail,
+    SkillDocumentResponse,
+    SkillStatusUpdateRequest,
+    SkillSummary,
+)
 from app.services.browse_tokens import issue, verify
 from app.services.chat_service import ChatService
 from app.services.credential_store import ProviderRuntimeCredential
@@ -50,6 +59,7 @@ from app.services.model_orchestrator import ModelOrchestrator
 from app.services.observability import Metrics, correlation_id_var
 from app.services.openai_compatible_provider import OpenAICompatibleProvider
 from app.services.phase1 import Phase1Service
+from app.services.skill_service import SkillService
 
 router = APIRouter(prefix="/api/v1")
 
@@ -509,3 +519,44 @@ def chat_session_events(
         stream_chat_events(service, session_id, after, tail),
         media_type="text/event-stream",
     )
+
+
+# ---------------------------------------------------------------------------
+# Skill 管理（2026-08-12）：上传识别/列表/详情/文档/状态/删除。
+# 请求仅含 skillId 与状态意图；SkillService 是文件访问的唯一边界。
+# ---------------------------------------------------------------------------
+
+
+@router.get("/skills", response_model=list[SkillSummary])
+def list_skills(request: Request) -> list[SkillSummary]:
+    return SkillService.from_request(request).list()
+
+
+@router.get("/skills/{skill_id}", response_model=SkillDetail)
+def get_skill(skill_id: str, request: Request) -> SkillDetail:
+    return SkillService.from_request(request).get(skill_id)
+
+
+@router.get("/skills/{skill_id}/document", response_model=SkillDocumentResponse)
+def get_skill_document(skill_id: str, request: Request) -> SkillDocumentResponse:
+    return SkillService.from_request(request).get_document(skill_id)
+
+
+@router.post("/skills/upload", response_model=SkillDetail)
+async def upload_skill(request: Request, package: UploadFile = File(...)) -> SkillDetail:
+    if not package.filename or not package.filename.casefold().endswith(".zip"):
+        raise Phase1Error(SKILL_PACKAGE_TYPE_DENIED, "仅支持 .zip 技能包。")
+    package_bytes = await package.read(MAX_SKILL_PACKAGE_BYTES + 1)
+    return SkillService.from_request(request).upload(package_bytes)
+
+
+@router.patch("/skills/{skill_id}/status", response_model=SkillDetail)
+def update_skill_status(
+    skill_id: str, payload: SkillStatusUpdateRequest, request: Request
+) -> SkillDetail:
+    return SkillService.from_request(request).set_status(skill_id, payload.status)
+
+
+@router.delete("/skills/{skill_id}", response_model=SkillDeleteResponse)
+def delete_skill(skill_id: str, request: Request) -> SkillDeleteResponse:
+    return SkillService.from_request(request).delete(skill_id)

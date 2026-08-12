@@ -15,6 +15,7 @@ const emit = defineEmits<{
   (e: 'toggle', key: 'workspace' | 'files' | 'sessions'): void
   (e: 'toggleCollapse'): void
   (e: 'openSettings'): void
+  (e: 'openSkills'): void
 }>()
 </script>
 
@@ -64,6 +65,21 @@ const emit = defineEmits<{
       >
         <span class="icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M4 5.5A1.5 1.5 0 0 1 5.5 4h13A1.5 1.5 0 0 1 20 5.5v10a1.5 1.5 0 0 1-1.5 1.5H13l-4 3v-3H5.5A1.5 1.5 0 0 1 4 15.5Z"/></svg></span>
         <span class="label">会话</span>
+      </button>
+      <button
+        type="button"
+        class="nav-btn"
+        data-testid="nav-btn-skills"
+        @click="emit('openSkills')"
+      >
+        <span class="icon" aria-hidden="true">
+          <svg viewBox="0 0 24 24">
+            <path d="M4.5 5.5A1.5 1.5 0 0 1 6 4h4.5a2.5 2.5 0 0 1 2.5 2.5V20a2.5 2.5 0 0 0-2.5-2.5H6A1.5 1.5 0 0 0 4.5 19Z"/>
+            <path d="M19.5 5.5A1.5 1.5 0 0 0 18 4h-4.5A2.5 2.5 0 0 0 11 6.5V20a2.5 2.5 0 0 1 2.5-2.5H18a1.5 1.5 0 0 1 1.5 1.5Z"/>
+            <path d="M8 8h2M14 8h2"/>
+          </svg>
+        </span>
+        <span class="label">技能</span>
       </button>
     </nav>
 

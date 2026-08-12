@@ -59,6 +59,7 @@ from app.services.browse_tokens import issue, verify
 from app.services.changeset import build_model_change_set, sha256_text
 from app.services.observability import Metrics, correlation_id_var, get_logger
 from app.services.openai_compatible_provider import OpenAICompatibleProvider
+from app.services.skill_service import SkillService, format_enabled_skills_for_model
 from app.workspaces.registry import WorkspaceRegistry
 
 log = get_logger("lightcode.orchestrator")
@@ -353,19 +354,27 @@ class ModelOrchestrator:
         config: ModelProviderConfig,
         *,
         transport: Any = None,
+        skill_service: Any = None,
     ) -> None:
         self._db = db
         self._registry = registry
         self._guard = guard
         self._config = config
         self._transport = transport
+        self._skill_service = skill_service
         self._graph = self._build_graph()
 
     @classmethod
     def from_request(cls, request: Any) -> "ModelOrchestrator":
         state = request.app.state
         config = effective_config(state.env_model_provider, state.credential_store)
-        return cls(state.db, state.registry, state.guard, config)
+        return cls(
+            state.db,
+            state.registry,
+            state.guard,
+            config,
+            skill_service=SkillService(state.db, state.skill_root),
+        )
 
     # --- Graph construction -------------------------------------------------
 
@@ -610,6 +619,12 @@ class ModelOrchestrator:
         try:
             provider = OpenAICompatibleProvider(self._config, transport=self._transport)
             system_prompt = _build_system_prompt(read_token, policy_version)
+            if self._skill_service is not None:
+                skill_context = format_enabled_skills_for_model(
+                    self._skill_service.list_enabled_for_agent()
+                )
+                if skill_context:
+                    system_prompt = f"{system_prompt}\n\n{skill_context}"
             initial_messages = [
                 {"role": "system", "content": system_prompt},
                 {"role": "user", "content": f"请处理任务：{title}"},

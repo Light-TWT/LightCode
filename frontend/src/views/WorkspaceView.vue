@@ -368,6 +368,7 @@ onUnmounted(() => {
         @toggle="toggleNav"
         @toggle-collapse="toggleSidebar"
         @open-settings="settingsOverlayOpen = true"
+        @open-skills="router.push(`/workspace/${workspaceId}/skills`)"
       />
 
       <!-- 内容面板：点击导航项展开，再点一次收起 -->

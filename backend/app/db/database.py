@@ -101,6 +101,26 @@ CREATE TABLE IF NOT EXISTS chat_messages (
     created_at TEXT NOT NULL DEFAULT '',
     UNIQUE(session_id, sequence)
 );
+
+-- Skill 管理（2026-08-12）: 上传 Skill 元数据；ZIP 原包与 SKILL.md 保存在
+-- 服务端受控 Skill 数据目录（backend/data/skills/），不写入 SQLite。
+CREATE TABLE IF NOT EXISTS skills (
+    id TEXT PRIMARY KEY,
+    name TEXT NOT NULL,
+    source TEXT NOT NULL CHECK(source IN ('builtin', 'uploaded')),
+    status TEXT NOT NULL CHECK(status IN ('disabled', 'enabled')),
+    summary TEXT NOT NULL DEFAULT '',
+    document_sha256 TEXT NOT NULL,
+    package_sha256 TEXT NOT NULL DEFAULT '',
+    package_bytes INTEGER NOT NULL DEFAULT 0,
+    document_bytes INTEGER NOT NULL DEFAULT 0,
+    resource_count INTEGER NOT NULL DEFAULT 0,
+    section_count INTEGER NOT NULL DEFAULT 0,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+);
+CREATE UNIQUE INDEX IF NOT EXISTS skills_uploaded_name_unique
+ON skills(name) WHERE source = 'uploaded';
 """
 
 
