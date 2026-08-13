@@ -10,8 +10,9 @@
     "test": "vitest run",
     "dev": "tsc && electron .",
     "build": "tsc",
-    "build:sidecar": "node ../scripts/build-sidecar.mjs",
-    "build:win": "npm run compile && electron-builder --win"
+    "copy:frontend": "powershell -ExecutionPolicy Bypass -File ../scripts/copy-frontend-to-electron.ps1",
+    "build:sidecar": "cd .. && powershell -ExecutionPolicy Bypass -File scripts/build-sidecar.ps1",
+    "build:win": "npm run compile && npm run copy:frontend && electron-builder --win"
   },
   "devDependencies": {
     "@types/node": "^22.10.0",
@@ -40,7 +41,8 @@
             "x64"
           ]
         }
-      ]
+      ],
+      "signAndEditExecutable": false
     },
     "nsis": {
       "oneClick": false,
