@@ -67,7 +67,7 @@ scripts/        开发与验证脚本
 - Phase 1 仅允许受控只读工具、服务端确定性 ChangeSet、显式版本绑定审批、单个既有 UTF-8 文本文件的原子替换和内建完整性验证。
 - 阶段 A 继续禁止：真实模型直接写文件、Electron、Shell/外部命令、依赖安装、网络下载、Git 写操作、删除/新建/重命名/移动、多文件事务与前端密钥持久化。
 
-### Phase 3 桌面端边界契约（进行中）
+### Phase 3 桌面端边界契约（已完成）
 
 阶段 3 以 Windows Electron 桌面交付为目标，是一次性围绕既有安全闭环加壳，不重写已通过验证的 FastAPI/SQLite/Vue 逻辑。设计以 `docs/superpowers/specs/2026-08-13-phase-3-windows-desktop-design.md` 与实施计划 `docs/superpowers/plans/2026-08-13-phase-3-windows-desktop-delivery.md` 为准。
 
@@ -88,6 +88,13 @@ scripts/        开发与验证脚本
 ## 状态追踪
 
 ```text
+Phase 3 桌面端交付（Windows Electron + FastAPI sidecar + NSIS 安装器）: 完成 (2026-08-13) —— 围绕既有安全闭环加壳，不重写 FastAPI/SQLite/Vue 逻辑（规格: docs/superpowers/specs/2026-08-13-phase-3-windows-desktop-design.md）
+  - Electron 安全外壳: electron/src/{main,preload,sidecar,ipc}.ts + 10 单测（BrowserWindow contextIsolation/sandbox/no nodeIntegration, 唯一桥接 lightcode.workspace.selectFolder() 安全 DTO, sidecar spawn/健康探测/优雅关闭, 随机 loopback 端口 + per-launch token）
+  - 后端桌面: config/desktop.py(LIGHTCODE_DESKTOP_DATA_DIR/SIDECAR_TOKEN/SIDECAR_PORT, 相对路径拒绝, path-free 错误) + workspace_registration.py(desktop_workspaces 表 idempotent 迁移, canonical 唯一索引, 动态注册不要求 targetFile) + WindowsCredentialManagerProviderCredentialStore(Windows Credential Manager, 桌面模式启用, 不落 SQLite/日志) + 桌面注册端点(令牌校验, extra=forbid)
+  - 暖纸首页: WorkspaceHomeView.vue(居中 LightCode + 聊天框 + 建议任务 chips, 非黑配色) + WorkspacePicker.vue(最近工作区 + 选择工作文件夹, Esc/外部点击关闭/焦点归还) + desktop.service.ts(受控桥) + workspace.store.homeCreateAndSend(首条消息建会话并导航) + 5 单测
+  - sidecar 打包: backend/pyinstaller.spec + scripts/build-sidecar.ps1(排除 torch/scipy/cv2 等无关大包, 2.9GB→180MB, 产物 electron/resources/sidecar/ 已 gitignore)
+  - NSIS 安装器: electron/package.json electron-builder 配置(signAndEditExecutable:false 避免 winCodeSign 符号链接权限问题) + scripts/copy-frontend-to-electron.ps1 + scripts/test-desktop-install.ps1(手动安装/重启/升级/卸载清单) + 产物 electron/release/"LightCode Setup 0.1.0.exe"(256MB, 已 gitignore)
+  - 验证: 后端全量 303 passed / 2 skipped; 前端 141 passed / 19 files; Electron 10 passed / 3 files; 前端 vue-tsc -b + vite build 通过; sidecar 冒烟 health 200 且 loopback 绑定; NSIS 安装器构建成功
 Skill 管理（上传识别/详情/启用/删除/Agent 门禁）: 完成 (2026-08-12) —— 共享侧边栏新增「技能」入口 + `/workspace/:workspaceId/skills` 管理视图（规格: docs/superpowers/specs/2026-08-12-skill-management-design.md）
   - 后端: `skills` 表（source/status CHECK + uploaded 名称唯一索引, 内联幂等迁移）+ config/skills.py（backend/data/skills/ 默认目录 + ZIP/文档预算常量, LIGHTCODE_SKILLS_PATH 覆盖）+ skill_package.py（纯标准库 ZIP 中央目录校验: 加密/软链/路径穿越/敏感名/后缀/深度/预算全 fail-closed, 只提取 package.zip + SKILL.md）+ skill_service.py（临时目录校验->SQLite 事务->原子替换, 文档读前重检 SHA-256, 删除仅 uploaded 且路径证明在 root 下, 内置删除拒绝）+ 5 个 REST 端点 + 14 个 SKILL_* 稳定错误码
   - Agent 门禁: ChatService/ModelOrchestrator 构建上下文时经 list_enabled_for_agent() 只读投影（id/name/summary/文档/哈希）, format_enabled_skills_for_model 以 <untrusted-skills> 边界标记嵌入, 不持久化进消息/事件/日志; 上传默认 disabled, 禁用/删除后下一次请求即排除

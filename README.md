@@ -13,7 +13,7 @@ LightCode 是一个独立实现的、本地优先、可视化的编码智能体�
   - **Phase 2 模型提议（WP5–WP8，M4–M6，默认关闭）**：受限、默认关闭的 OpenAI-compatible Provider 子系统——模型只"提议"计划、受限只读工具请求（`read_file`）与服务端独立生成的候选 ChangeSet，不写文件、不执行命令、不决定审批。覆盖 Provider 基础设施（仅环境变量、fail-closed、零密钥泄露）、LangGraph 编排、API-mode E2E、可观测性、预算/并发/故障门禁与敏感数据扫描；WP8 经用户确认采用**零新增第三方依赖**策略。2026-08-04 审查修复进一步收紧：未知异常不泄露、模型上下文不含逻辑路径、输出预算本地强制、SSE 连接上限原子化。设计细节见 `docs/phase2-model-provider-design.md`。
 - 当前验证基线：前端 96 个测试通过（13 文件），后端 226 个测试通过（2 个因 symlink 环境跳过），前端 `vue-tsc -b + vite build` 通过；Phase 1 API 模式 HTTP 全闭环与 Phase 2 API-mode E2E（含 browse token、SSE 续传、敏感数据扫描断言）均已覆盖。设置页已重构为多供应商配置中心（供应商列表/搜索/安全摘要/添加弹层，2026-08-07）。
 
-Phase 1 前端与后端均已闭环，并于 **Phase 1R（安全收尾门禁 M1+M2+M3）** 关闭全部 3 个 P0 缺陷：敏感路径逐段 casefold 拒绝、审批绑定前置校验、多进程文件级 CAS 证明；M3 进一步落地不透明浏览令牌（取代自由路径）、SSE 预算/心跳/续传、前端 token 导航与运行时 DTO 校验。**Phase 2（WP5–WP8，M4–M6）** 已完成：Provider 基础设施默认关闭且 fail-closed、模型只提议（LangGraph 编排 + 服务端 ChangeSet）、API-mode E2E、可观测性、预算/并发/故障门禁与敏感数据扫描全部落地；**2026-08-04 审查修复**（H-01/M-01~06/L-01）完成，后端全量 195 测试通过、前端 94 测试通过。**2026-08-07 多供应商设置页（阶段 A/B）** 完成：设置页重构为暖纸多供应商配置中心（列表/搜索/安全摘要/添加弹层 + 后端 profiles CRUD，凭据仍只存进程内存），后端全量 226 测试通过、前端 96 测试通过。下一阶段可择一推进：**Phase 3：桌面端交付**（Electron shell、FastAPI sidecar、原生文件夹选择、打包本地存储）或先行**易用性改进**。
+Phase 1 前端与后端均已闭环，并于 **Phase 1R（安全收尾门禁 M1+M2+M3）** 关闭全部 3 个 P0 缺陷：敏感路径逐段 casefold 拒绝、审批绑定前置校验、多进程文件级 CAS 证明；M3 进一步落地不透明浏览令牌（取代自由路径）、SSE 预算/心跳/续传、前端 token 导航与运行时 DTO 校验。**Phase 2（WP5–WP8，M4–M6）** 已完成：Provider 基础设施默认关闭且 fail-closed、模型只提议（LangGraph 编排 + 服务端 ChangeSet）、API-mode E2E、可观测性、预算/并发/故障门禁与敏感数据扫描全部落地；**2026-08-04 审查修复**（H-01/M-01~06/L-01）完成，后端全量 195 测试通过、前端 94 测试通过。**2026-08-07 多供应商设置页（阶段 A/B）** 完成：设置页重构为暖纸多供应商配置中心（列表/搜索/安全摘要/添加弹层 + 后端 profiles CRUD，凭据仍只存进程内存），后端全量 226 测试通过、前端 96 测试通过。**2026-08-13 Phase 3：Windows 桌面端交付** 完成：Electron 安全外壳（沙箱化渲染进程 + 受限 IPC + 原生文件夹选择）、FastAPI sidecar（PyInstaller 打包 + loopback 绑定 + per-launch 令牌）、暖纸首页与工作区选择器、SQLite 桌面工作区注册、Windows Credential Manager 凭据持久化、NSIS 安装器；后端全量 303 测试通过、前端 141 测试通过、Electron 10 测试通过。
 
 ## 快速入口
 
@@ -27,11 +27,11 @@ Phase 1 前端与后端均已闭环，并于 **Phase 1R（安全收尾门禁 M1+
 ## 目录
 
 ```text
-frontend/       Vue 应用、类型、Pinia store 与 Mock/HTTP/SSE 服务适配器
-backend/        FastAPI + SQLite：Phase 0.5 Mock Runtime、Phase 1 真实安全变更闭环与 Phase 2 模型提议（默认关闭）
-electron/       阶段 3 桌面 shell 预留
+frontend/       Vue 应用、类型、Pinia store 与 HTTP/SSE 服务适配器
+backend/        FastAPI + SQLite：Phase 1 真实安全变更闭环与 Phase 2 模型提议（默认关闭）
+electron/       Phase 3 桌面端：Electron 安全外壳 + FastAPI sidecar + NSIS 安装器
 docs/           架构、设计原型、阶段计划与安全契约
-scripts/        可复现的开发、验证和打包脚本预留
+scripts/        可复现的构建、验证与打包脚本
 ```
 
 ## 本地开发
@@ -68,8 +68,9 @@ Phase 2 已实现的是**受限、默认关闭、仅提议**的模型 Provider�
 - Git 写操作；
 - 删除、新建、重命名、移动、二进制或多文件 ChangeSet；
 - 自动批准、自动修复循环或模型直接写文件；
-- Electron、原生文件夹选择、远程工作区、云同步或多用户协作；
 - 模型列表自动探测、自由 Provider URL 或隐式代理；
 - 在 M3 门槛达成前接入任意真实模型依赖、端点或网络调用（M3 已于 Phase 1R 达成）。
+
+部署与打包相关约束见 `electron/README.md` 与 `docs/architecture/lightcode-local-first-agent-design.md`。
 
 Phase 1 已实现的后端真实文件能力与 Phase 2 模型提议闭环，仍分别受 `docs/phase1-safety-contract.md` 与 `docs/phase2-model-provider-design.md` 严格约束（仅受控只读工具 + 单文件原子替换 + 内建验证 + 版本绑定审批）。

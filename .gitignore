@@ -45,3 +45,6 @@ electron/dist/
 electron/release/
 electron/frontend-dist/
 electron/resources/sidecar/
+# Phase 3 desktop: PyInstaller sidecar build intermediates and artifacts
+backend/build/
+backend/dist/
