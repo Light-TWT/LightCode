@@ -221,7 +221,16 @@ lightcode-local/
 
 ### 阶段 3：桌面端交付
 
-- 添加 Electron shell、FastAPI sidecar 生命周期、原生文件夹选择以及打包的本地数据存储。
+> **状态：进行中（2026-08-13）。** 设计以 `docs/superpowers/specs/2026-08-13-phase-3-windows-desktop-design.md` 为准，实施计划见 `docs/superpowers/plans/2026-08-13-phase-3-windows-desktop-delivery.md`。
+
+- 添加 Electron shell、FastAPI PyInstaller sidecar 生命周期、原生文件夹选择以及打包的本地数据存储。
+- **仅 Windows 首发**：`electron-builder` + NSIS 手动安装包；FastAPI 构建为随包 sidecar，用户无需安装 Python/Node/pip。
+- **安全加壳不变革内核**：Electron 只负责窗口、原生目录选择与 sidecar 生命周期；渲染进程保持沙箱，仍无文件/Shell 能力；FastAPI 仍是工作区访问、模型出网、审批与写入的唯一边界。
+- **动态注册工作区**：桌面注册不要求静态 `targetFile`；新目录经 canonical/reparse 校验后进入系统，模型后续经 `search_files`/`read_file` 决定单文件候选编辑，仍走显式审批与原子写入。
+- **用户数据在安装目录之外**：SQLite、技能包、工作区注册与日志放 Windows 用户数据目录；升级只替换程序资源，不删除用户数据。
+- **凭据持久化**：Provider API Key 在桌面模式经 Windows Credential Manager 适配器保存（`ProviderCredentialStore` 协议不变）。
+- **首装全新数据**：不导入开发期仓库数据库或配置。
+- **发布门槛**：内部测试阶段暂不签名；公开发布前必须接入代码签名与自动更新，另行制定计划。
 
 ### 阶段 4：可选扩展
 

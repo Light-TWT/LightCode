@@ -67,6 +67,18 @@ scripts/        开发与验证脚本
 - Phase 1 仅允许受控只读工具、服务端确定性 ChangeSet、显式版本绑定审批、单个既有 UTF-8 文本文件的原子替换和内建完整性验证。
 - 阶段 A 继续禁止：真实模型直接写文件、Electron、Shell/外部命令、依赖安装、网络下载、Git 写操作、删除/新建/重命名/移动、多文件事务与前端密钥持久化。
 
+### Phase 3 桌面端边界契约（进行中）
+
+阶段 3 以 Windows Electron 桌面交付为目标，是一次性围绕既有安全闭环加壳，不重写已通过验证的 FastAPI/SQLite/Vue 逻辑。设计以 `docs/superpowers/specs/2026-08-13-phase-3-windows-desktop-design.md` 与实施计划 `docs/superpowers/plans/2026-08-13-phase-3-windows-desktop-delivery.md` 为准。
+
+- **Electron 不含写入权**：Vue 渲染进程保持沙箱（`contextIsolation` + `sandbox`，禁用 `nodeIntegration`），没有任意 `fs`/`child_process`/原生路径能力；原生目录选择由 Electron 主进程触发，渲染进程只收到安全 DTO。
+- **FastAPI 仍是唯一权威**：文件访问、模型出网、目录注册校验、ChangeSet、审批与写入只在后端；sidecar 只监听 `127.0.0.1` 随机回环端口，桌面注册请求需每次启动生成的一次性令牌校验。
+- **路径不落外界**：绝对根路径只存在于后端私有实体与进程间可信通道；公共 DTO、SSE、日志、错误、截图与前端状态一律不得包含真实绝对路径。
+- **用户数据在安装目录之外**：SQLite、技能包、工作区注册元数据与日志放 Windows 用户数据目录；安装程序只替换不可变程序资源，升级不得删除用户数据。
+- **动态注册工作区**：桌面注册不要求 `targetFile`；新目录经 canonical/reparse 校验后进入系统，模型后续通过 `search_files`/`read_file` 决定单个既有 UTF-8 文本文件的候选编辑，仍走显式审批与原子写入。
+- **凭据持久化**：Provider API Key 在桌面模式经 Windows Credential Manager 适配器保存（`ProviderCredentialStore` 协议不变），绝不进 SQLite、日志、前端或安装资源。
+- 仍不得实现：外部命令/Shell/包管理/网络下载/Git 写操作、删除/新建/重命名/移动、多文件事务、自动审批、自动更新与公开发布签名（先内部测试）。
+
 ## 验证
 
 - 每个任务完成后运行对应的后端或前端聚焦测试；所有任务结束后运行后端全量测试、前端全量测试和前端构建。

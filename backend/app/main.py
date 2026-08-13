@@ -12,6 +12,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
 from app.api.routes import router as api_router
+from app.config.desktop import load_desktop_config
 from app.config.model_provider import load_model_provider_config
 from app.config.skills import skill_root
 from app.db.database import initialize_database
@@ -34,20 +35,31 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     # WP8: install the structured (JSON) logger exactly once at startup.
     configure_logging()
 
+    # Phase 3 desktop sidecar: when LIGHTCODE_DESKTOP_DATA_DIR is set, resolve
+    # every mutable location under the supplied absolute data root and never
+    # use the repository-relative development defaults.
+    desktop = load_desktop_config()
+    app.state.desktop = desktop
+    backend_dir = Path(__file__).resolve().parent.parent
+
     # 默认数据库路径基于本文件位置解析为绝对路径（<repo>/backend/data/lightcode.db），
     # 不依赖启动命令当前所在目录，避免从 backend/ 启动时落到 backend/backend/data/。
-    backend_dir = Path(__file__).resolve().parent.parent
-    default_database_path = backend_dir / "data" / "lightcode.db"
-    env_database_path = os.environ.get("LIGHTCODE_DATABASE_PATH")
-    database_path = Path(env_database_path) if env_database_path else default_database_path
-    if not database_path.is_absolute():
-        database_path = (backend_dir / database_path).resolve()
+    # 桌面模式下则使用 Electron 提供的用户数据根。
+    if desktop.enabled:
+        database_path = desktop.database_path
+    else:
+        default_database_path = backend_dir / "data" / "lightcode.db"
+        env_database_path = os.environ.get("LIGHTCODE_DATABASE_PATH")
+        database_path = Path(env_database_path) if env_database_path else default_database_path
+        if not database_path.is_absolute():
+            database_path = (backend_dir / database_path).resolve()
     connection = initialize_database(database_path)
     app.state.db = connection
 
     # Skill 管理（2026-08-12）：受控数据目录启动时创建，仅记录就绪状态，
     # 绝不记录目录位置（`.gitignore` 已覆盖 backend/data/skills/）。
-    skills_dir = skill_root()
+    # 桌面模式下技能目录位于用户数据根下。
+    skills_dir = desktop.skills_dir if desktop.enabled else skill_root()
     skills_dir.mkdir(parents=True, exist_ok=True)
     app.state.skill_root = skills_dir
     log.info("skill storage ready")

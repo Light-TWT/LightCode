@@ -85,7 +85,16 @@ workspace configuration
 - **Phase 2**：可在不放开任意路径的前提下增加受控策略与恢复能力。
 - **Phase 3**：Electron 可通过原生文件夹选择创建或更新服务端注册信息；浏览器仍不获得任意文件系统能力。
 
-删除、动态注册、远程工作区、网络文件系统和多用户 ACL 不属于 Phase 1。
+### 桌面注册（Phase 3）
+
+桌面注册是**服务端受控的动态注册**，与静态 `workspaces.json` 并存，但遵循同一安全边界：
+
+1. 原生目录选择由 Electron 主进程触发，绝对路径只经主进程与 sidecar 之间的可信通道传递；渲染进程只提交 `workspaceId` 或安全摘要，绝不提交根路径。
+2. 桌面注册请求需每次启动生成的一次性 sidecar 令牌校验；无令牌或令牌不符 fail-closed 拒绝。
+3. 桌面注册不要求静态配置 `targetFile`。新目录经 `WorkspaceGuard` canonical/reparse 校验后进入系统；模型后续通过 `search_files`/`read_file` 决定指向哪个既有 UTF-8 文本文件的候选编辑，仍走显式审批与原子写入。
+4. 桌面注册持久化到 SQLite（`desktop_workspaces` 表），存储服务端私有 canonical root 与安全元数据；公共 DTO、SSE、日志与错误不得返回真实根路径。
+5. 同一 canonical root 唯一；重复或非法目录注册被拒绝。
+6. 首期不删除或注销工作区；删除/注销留待后续阶段并需新入仓安全契约。
 
 ## 实现验收
 
@@ -94,3 +103,4 @@ workspace configuration
 3. API 响应、SSE、日志和错误信息均不泄漏真实根路径。
 4. 工作区根目录、父目录或目标文件涉及符号链接/junction/reparse point 时，访问被路径守卫拒绝。
 5. Phase 1 测试只使用隔离 fixture 工作区，不能以开发者日常目录作为自动化测试目标。
+6. 桌面注册路径必须来自受信任的 sidecar 通道并通过令牌校验，不能由浏览器直接提交。
