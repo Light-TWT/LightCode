@@ -14,6 +14,7 @@ from app.schemas.contracts import (
     BrowseFileEntry,
     BrowseSearchHit,
     CreateRealTaskRequest,
+    DesktopWorkspaceRegisterRequest,
     RealTaskResponse,
     RegisteredWorkspaceResponse,
 )
@@ -60,6 +61,10 @@ from app.services.observability import Metrics, correlation_id_var
 from app.services.openai_compatible_provider import OpenAICompatibleProvider
 from app.services.phase1 import Phase1Service
 from app.services.skill_service import SkillService
+from app.services.workspace_registration import (
+    TOKEN_HEADER,
+    DesktopWorkspaceService,
+)
 
 router = APIRouter(prefix="/api/v1")
 
@@ -90,6 +95,23 @@ def _provider_transport(request: Request):
 @router.get("/registered-workspaces", response_model=list[RegisteredWorkspaceResponse])
 def registered_workspaces(request: Request) -> list[RegisteredWorkspaceResponse]:
     return Phase1Service.from_request(request).list_registered_workspaces()
+
+
+@router.post(
+    "/desktop/workspaces/register",
+    response_model=RegisteredWorkspaceResponse,
+)
+def register_desktop_workspace(
+    payload: DesktopWorkspaceRegisterRequest, request: Request
+) -> RegisteredWorkspaceResponse:
+    """Desktop-only, token-authenticated workspace registration.
+
+    The selected absolute folder path is sent by Electron main over the trusted
+    sidecar channel (never by the renderer). The response is a path-free DTO.
+    """
+    svc = DesktopWorkspaceService.from_request(request)
+    token = request.headers.get(TOKEN_HEADER)
+    return svc.register(payload.rootPath, token)
 
 
 @router.get("/registered-workspaces/{workspace_id}/files")

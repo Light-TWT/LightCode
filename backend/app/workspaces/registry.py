@@ -68,6 +68,29 @@ class WorkspaceRegistry:
             seen[ws.id] = ws
         return cls(list(seen.values()))
 
+    @classmethod
+    def build(
+        cls,
+        config_path: Path | None,
+        desktop_workspaces: list["RegistryWorkspace"] | None = None,
+    ) -> "WorkspaceRegistry":
+        """Combine the static ``workspaces.json`` registry with persisted desktop
+        workspaces. Static entries are authoritative for their ids; a desktop
+        workspace with a colliding id is rejected (fail-closed)."""
+        base = cls.load(config_path)
+        merged = dict(base._by_id)
+        for ws in desktop_workspaces or []:
+            if ws.id in merged:
+                raise WorkspaceRegistryError(f"duplicate workspace id: {ws.id}")
+            merged[ws.id] = ws
+        return cls(list(merged.values()))
+
+    def add(self, workspace: "RegistryWorkspace") -> None:
+        """Register a newly created desktop workspace into the running registry."""
+        if workspace.id in self._by_id:
+            raise WorkspaceRegistryError(f"duplicate workspace id: {workspace.id}")
+        self._by_id[workspace.id] = workspace
+
     @staticmethod
     def _validate_entry(entry: dict) -> RegistryWorkspace:
         if not isinstance(entry, dict):

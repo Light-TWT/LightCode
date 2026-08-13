@@ -18,7 +18,10 @@ from app.config.skills import skill_root
 from app.db.database import initialize_database
 from app.schemas.errors import Phase1Error
 from app.security.guard import WorkspaceGuard
-from app.services.credential_store import InMemoryProviderCredentialStore
+from app.services.credential_store import (
+    InMemoryProviderCredentialStore,
+    WindowsCredentialManagerProviderCredentialStore,
+)
 from app.services.observability import (
     configure_logging,
     correlation_id_var,
@@ -26,6 +29,7 @@ from app.services.observability import (
 )
 from app.services.phase1 import Phase1Service
 from app.workspaces.registry import WorkspaceRegistry
+from app.services.workspace_registration import load_desktop_workspaces
 
 log = get_logger("lightcode.lifespan")
 
@@ -71,16 +75,23 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     config_path = Path(env_config_path) if env_config_path else default_config_path
     if not config_path.is_absolute():
         config_path = (backend_dir / config_path).resolve()
-    registry = WorkspaceRegistry.load(config_path)
+    # Phase 3: in desktop mode, merge persisted desktop workspaces into the
+    # registry so folder registration survives a sidecar restart.
+    desktop_workspaces = load_desktop_workspaces(connection) if desktop.enabled else []
+    registry = WorkspaceRegistry.build(config_path, desktop_workspaces)
     app.state.registry = registry
     app.state.guard = WorkspaceGuard(registry)
 
     # 核心 Agent 更新（阶段 A）：快照环境变量 Provider 配置 + 可替换的运行期凭据
-    # 存储。开发期使用进程内存实现（重启后凭据丢失）；Electron 阶段替换为 OS
-    # Keychain 实现，设置 API/聊天/编排接口不变。只打印 status，绝不打印 key/url。
+    # 存储。开发期使用进程内存实现（重启后凭据丢失）；桌面模式使用 Windows
+    # Credential Manager 适配器，凭据在 OS 加密存储中重启后保留。
+    # 设置 API/聊天/编排接口不变。只打印 status，绝不打印 key/url。
     env_model_provider = load_model_provider_config()
     app.state.env_model_provider = env_model_provider
-    app.state.credential_store = InMemoryProviderCredentialStore()
+    if desktop.enabled:
+        app.state.credential_store = WindowsCredentialManagerProviderCredentialStore()
+    else:
+        app.state.credential_store = InMemoryProviderCredentialStore()
     app.state.provider_transport = None
     log.info(
         "model provider env status resolved",

@@ -55,6 +55,15 @@ class RegisteredWorkspaceResponse(BaseModel, extra="forbid", populate_by_name=Tr
     policyVersion: str = Field(alias="policyVersion")
 
 
+class DesktopWorkspaceRegisterRequest(BaseModel, extra="forbid"):
+    """Desktop-only registration payload. Only ``rootPath`` is accepted; the
+    request is authenticated by the ``X-LightCode-Sidecar-Token`` header and is
+    sent only by Electron main over the trusted sidecar channel. The response is
+    a path-free ``RegisteredWorkspaceResponse``."""
+
+    rootPath: str = Field(alias="rootPath")
+
+
 class BrowseFileEntry(BaseModel, extra="forbid"):
     """A directory listing entry. The browser navigates via ``token`` only; the
     relative path is never echoed back as a client-constructible value."""

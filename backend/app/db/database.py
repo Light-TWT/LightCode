@@ -121,6 +121,21 @@ CREATE TABLE IF NOT EXISTS skills (
 );
 CREATE UNIQUE INDEX IF NOT EXISTS skills_uploaded_name_unique
 ON skills(name) WHERE source = 'uploaded';
+
+-- Phase 3（桌面端）: 服务端受控的动态工作区注册。canonical_root 是服务端
+-- 私有真实绝对路径，绝不进入公共 DTO/SSE/日志/错误；display_name 派生于
+-- 文件夹名，是渲染层可见的安全摘要。canonical_root 唯一约束保证同一目录
+-- 只能注册一次。
+CREATE TABLE IF NOT EXISTS desktop_workspaces (
+    id TEXT PRIMARY KEY,
+    display_name TEXT NOT NULL,
+    canonical_root TEXT NOT NULL UNIQUE,
+    enabled INTEGER NOT NULL DEFAULT 1,
+    policy TEXT NOT NULL,
+    policy_version TEXT NOT NULL,
+    created_at TEXT NOT NULL DEFAULT '',
+    updated_at TEXT NOT NULL DEFAULT ''
+);
 """
 
 
