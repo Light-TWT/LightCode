@@ -440,6 +440,26 @@ export const useWorkspaceStore = defineStore('workspace', {
       this.messages = [...this.messages, message]
     },
 
+    /** 首页发起：选定工作区后直接建会话并发送首条消息，返回会话 id 供导航。
+     *  成功后才由视图跳转 `/workspace/:workspaceId/session/:sessionId`。 */
+    async homeCreateAndSend(workspaceId: string, content: string): Promise<string | null> {
+      if (!this.currentWorkspaceId || this.sending) return null
+      this.resetTask()
+      this._cleanupChatEvents()
+      this.chatSessions = []
+      this.currentSessionId = null
+      this.messages = []
+      this.lastChatSequence = 0
+      this.chatConnection = 'idle'
+      const title = content.trim().replace(/\s+/g, ' ').slice(0, 20) || '新会话'
+      const session = await this.createChatSession(workspaceId, title)
+      if (!session) return null
+      // The session already exists; submit the first message (failures only set
+      // this.error) and navigate so the user can continue in the full workspace.
+      await this.submitChatMessage(content)
+      return session.id
+    },
+
     /** 订阅当前会话的 chat.event（tail 续传；EventSource 断线自动带 Last-Event-ID 重连） */
     _subscribeChatEvents(sessionId: string) {
       this._cleanupChatEvents()

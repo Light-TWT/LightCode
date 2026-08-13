@@ -207,24 +207,24 @@ describe('路由收敛（核心 Agent 更新阶段 A）', () => {
     vi.unstubAllGlobals()
   })
 
-  it('/ 存在已注册工作区时重定向到 /workspace/{firstId}', async () => {
+  it('/ 存在已注册工作区时停留在首页（不自动重定向）', async () => {
     const router = createAppRouter()
     await router.push('/')
     await router.isReady()
     mountView(WorkspaceHomeView, router)
     await flushPromises()
-    expect(router.currentRoute.value.fullPath).toBe('/workspace/ws-1')
+    expect(router.currentRoute.value.fullPath).toBe('/')
   })
 
-  it('/ 无工作区时显示空状态与去设置入口', async () => {
+  it('/ 无工作区时仍停留在首页且可从设置入口进入设置页', async () => {
     m.mocks.listRegisteredWorkspaces.mockResolvedValue([])
     const router = createAppRouter()
     await router.push('/')
     await router.isReady()
     const wrapper = mountView(WorkspaceHomeView, router)
     await flushPromises()
-    expect(wrapper.find('[data-testid="empty-state"]').exists()).toBe(true)
-    await wrapper.get('[data-testid="goto-settings"]').trigger('click')
+    expect(router.currentRoute.value.fullPath).toBe('/')
+    await wrapper.get('[data-testid="settings-link"]').trigger('click')
     await flushPromises()
     expect(router.currentRoute.value.fullPath).toBe('/settings')
   })

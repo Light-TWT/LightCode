@@ -38,3 +38,10 @@ Thumbs.db
 
 # Skill 管理（2026-08-12）: 受控技能数据目录（ZIP 与 SKILL.md 均不入库）
 backend/data/skills/
+
+# Phase 3 desktop: Electron build outputs and bundled sidecar artifact
+electron/node_modules/
+electron/dist/
+electron/release/
+electron/frontend-dist/
+electron/resources/sidecar/

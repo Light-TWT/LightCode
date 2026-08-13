@@ -1,0 +1,50 @@
+{
+  "name": "lightcode-desktop",
+  "version": "0.1.0",
+  "description": "LightCode Windows desktop shell (Phase 3)",
+  "private": true,
+  "main": "dist/main.js",
+  "type": "commonjs",
+  "scripts": {
+    "compile": "tsc",
+    "test": "vitest run",
+    "dev": "tsc && electron .",
+    "build": "tsc",
+    "build:sidecar": "node ../scripts/build-sidecar.mjs",
+    "build:win": "npm run compile && electron-builder --win"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.0",
+    "electron": "^33.0.0",
+    "electron-builder": "^25.1.8",
+    "typescript": "^5.9.3",
+    "vitest": "^4.1.10"
+  },
+  "build": {
+    "appId": "dev.lightcode.desktop",
+    "productName": "LightCode",
+    "files": [
+      "dist/**",
+      "frontend-dist/**",
+      "resources/sidecar/**" ,
+      "package.json"
+    ],
+    "directories": {
+      "output": "release"
+    },
+    "win": {
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        }
+      ]
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true
+    }
+  }
+}
