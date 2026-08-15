@@ -27,8 +27,16 @@
     "files": [
       "dist/**",
       "frontend-dist/**",
-      "resources/sidecar/**" ,
       "package.json"
+    ],
+    "extraResources": [
+      {
+        "from": "resources/sidecar",
+        "to": "sidecar",
+        "filter": [
+          "**/*"
+        ]
+      }
     ],
     "directories": {
       "output": "release"

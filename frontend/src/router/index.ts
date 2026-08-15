@@ -1,12 +1,21 @@
-import { createRouter, createWebHistory } from 'vue-router'
+import {
+  createRouter,
+  createWebHashHistory,
+  createWebHistory,
+  type RouterHistory,
+} from 'vue-router'
 import RealTaskView from '@/views/RealTaskView.vue'
 import SettingsView from '@/views/SettingsView.vue'
 import SkillsView from '@/views/SkillsView.vue'
 import WorkspaceHomeView from '@/views/WorkspaceHomeView.vue'
 import WorkspaceView from '@/views/WorkspaceView.vue'
 
+export function createAppHistory(protocol = window.location.protocol): RouterHistory {
+  return protocol === 'file:' ? createWebHashHistory() : createWebHistory()
+}
+
 export const router = createRouter({
-  history: createWebHistory(),
+  history: createAppHistory(),
   routes: [
     { path: '/', name: 'home', component: WorkspaceHomeView },
     // 核心 Agent 更新（阶段 A）：工作区聊天主界面（会话参数可选）

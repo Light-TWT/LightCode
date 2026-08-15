@@ -3,6 +3,9 @@ import vue from '@vitejs/plugin-vue'
 import { defineConfig } from 'vitest/config'
 
 export default defineConfig({
+  // Electron 桌面端以 file:// 协议加载构建产物，必须用相对资源路径，
+  // 否则 /assets/... 绝对路径会指向磁盘根目录导致 JS/CSS 加载失败（白屏）。
+  base: './',
   plugins: [vue()],
   resolve: {
     alias: {
