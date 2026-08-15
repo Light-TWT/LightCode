@@ -144,6 +144,7 @@ def _build_chat_system_prompt(policy_version: str) -> str:
 - 只能修改单个既有 UTF-8 文本文件；不能多文件、不能二进制文件。
 - 回答保持简洁准确；修改前必须先 read_file 获取 baseSha256。
 - 输出以 JSON 开始、以 JSON 结束；可用代码围栏包裹，但内容必须是合法 JSON。
+- 不要使用 <search_files>、<read_file> 等 XML 标签包裹工具调用，也不要在 JSON 里添加额外解释；只输出 {{"kind":"tool_request",...}} 形式的单个 JSON 对象。
 - 策略版本：{policy_version}
 """
 

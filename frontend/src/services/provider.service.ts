@@ -17,8 +17,6 @@ export interface ProviderService {
   saveSettings(input: ProviderSettingsInput): Promise<ProviderSettingsResponse>
   /** POST /provider/settings/test —— 只测试连接，不保存 */
   testConnection(input: ProviderSettingsInput): Promise<ProviderTestResponse>
-  /** DELETE /provider/settings —— 清除运行期凭据（回退到环境变量配置） */
-  clearSettings(): Promise<ProviderSettingsResponse>
   /** GET /provider/profiles —— 供应商安全摘要列表（只读，config 派生） */
   listProviders(): Promise<ProviderSummary[]>
   /** POST /provider/profiles —— 创建供应商配置（连接测试通过才保存） */
@@ -62,10 +60,6 @@ export const providerService: ProviderService = {
         modelId: input.modelId,
       }),
     })
-  },
-
-  clearSettings() {
-    return requestJson<ProviderSettingsResponse>('/provider/settings', { method: 'DELETE' })
   },
 
   listProviders() {

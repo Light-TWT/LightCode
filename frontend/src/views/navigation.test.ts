@@ -86,10 +86,9 @@ const m = vi.hoisted(() => {
       getHealth: vi.fn(),
       saveSettings: vi.fn(),
       testConnection: vi.fn(),
-      clearSettings: vi.fn(),
+      deleteProvider: vi.fn(),
       listProviders: vi.fn(),
       createProvider: vi.fn(),
-      deleteProvider: vi.fn(),
       subscribeChatEvents: vi.fn(),
       subscribeRealTaskEvents: vi.fn(),
     },
@@ -123,7 +122,9 @@ vi.mock('@/services/provider.service', () => ({
     getHealth: m.mocks.getHealth,
     saveSettings: m.mocks.saveSettings,
     testConnection: m.mocks.testConnection,
-    clearSettings: m.mocks.clearSettings,
+    listProviders: m.mocks.listProviders,
+    createProvider: m.mocks.createProvider,
+    deleteProvider: m.mocks.deleteProvider,
   },
 }))
 vi.mock('@/services/real-task.service', () => ({

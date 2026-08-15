@@ -26,7 +26,7 @@ from app.config.model_provider import ModelProviderConfig
 from app.db.database import initialize_database
 from app.main import app
 from app.security.guard import WorkspaceGuard
-from app.services.model_orchestrator import ModelOrchestrator
+from app.services.model_orchestrator import ModelOrchestrator, parse_model_message
 from app.workspaces.registry import WorkspaceRegistry
 
 
@@ -446,6 +446,86 @@ def test_fenced_output_is_parsed(env) -> None:
         "SELECT proposed_text FROM changesets WHERE id = ?", (resp.changeSetId,)
     ).fetchone()
     assert "fenced edit" in cs["proposed_text"]
+
+
+# --- Qwen-style XML-tag tool calls -----------------------------------------
+
+
+def test_parse_model_message_qwen_xml_tool_call() -> None:
+    """Qwen sometimes emits `<tool>{...}</tool>` instead of the JSON protocol.
+
+    The tolerant parser must convert the allowlisted XML shapes into a
+    tool_request and must reject everything else fail-closed.
+    """
+    # search_files with a JSON body -> tool_request.
+    kind, payload = parse_model_message('<search_files>\n{"query": "package.json"}\n</search_files>')
+    assert kind == "tool"
+    assert payload == {
+        "kind": "tool_request",
+        "tool": "search_files",
+        "arguments": {"query": "package.json"},
+    }
+
+    # read_file with a JSON body -> tool_request.
+    kind, payload = parse_model_message('<read_file>{"fileToken":"abc123"}</read_file>')
+    assert kind == "tool"
+    assert payload == {
+        "kind": "tool_request",
+        "tool": "read_file",
+        "arguments": {"fileToken": "abc123"},
+    }
+
+    # Surrounding prose is ignored; only the tag pair matters.
+    kind, payload = parse_model_message(
+        '让我先搜索一下：\n<search_files>{"query": "main"}</search_files>\n完成。'
+    )
+    assert kind == "tool"
+    assert payload["tool"] == "search_files"
+
+    # An unknown/off-allowlist tool name must NOT be accepted.
+    kind, payload = parse_model_message('<delete>{"path": "/etc/hosts"}</delete>')
+    assert kind == "invalid"
+
+    # A non-JSON inner body must be rejected.
+    kind, payload = parse_model_message('<read_file>just some words</read_file>')
+    assert kind == "invalid"
+
+
+def test_xml_tool_call_reaches_awaiting_approval(env) -> None:
+    """An orchestration whose first model reply uses the Qwen XML-tag shape
+    must still flow through read -> candidate -> awaiting_approval."""
+    state = {"n": 0}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        state["n"] += 1
+        body = json.loads(request.content)
+        messages = body["messages"]
+        token = _token_from_messages(messages)
+        if state["n"] == 1:
+            content = f'<read_file> {{"fileToken": "{token}"}} </read_file>'
+        else:
+            base = _base_sha_from_messages(messages)
+            payload = {
+                "kind": "candidate_edit_intent",
+                "fileToken": token,
+                "baseSha256": base,
+                "edits": [{"expectedText": "first line", "replacementText": "xml edit"}],
+                "rationale": "x",
+                "plan": ["y"],
+            }
+            content = json.dumps(payload)
+        return _chat_completion(content)
+
+    orch = ModelOrchestrator(
+        env["db"], env["registry"], env["guard"], env["config"],
+        transport=httpx.MockTransport(handler),
+    )
+    resp = orch.create_model_task(env["workspace_id"], "xml")
+    assert resp.state == "awaiting_approval"
+    cs = env["db"].execute(
+        "SELECT proposed_text FROM changesets WHERE id = ?", (resp.changeSetId,)
+    ).fetchone()
+    assert "xml edit" in cs["proposed_text"]
 
 
 # --- Tool policy -------------------------------------------------------------

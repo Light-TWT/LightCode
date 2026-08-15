@@ -52,16 +52,13 @@ async function refresh() {
   }
 }
 
-async function clearSettings() {
+async function deleteProvider(id: string) {
   if (clearing.value) return
   clearing.value = true
   formMessage.value = null
   try {
-    const resp = await providerService.clearSettings()
-    formMessage.value = {
-      kind: resp.configured ? 'err' : 'ok',
-      text: resp.configured ? '清除失败，运行期配置仍然生效。' : '已清除运行期配置，回退到环境变量配置。',
-    }
+    await providerService.deleteProvider(id)
+    formMessage.value = { kind: 'ok', text: '已删除该供应商配置。' }
     await loadProfiles()
   } catch (err) {
     formMessage.value = { kind: 'err', text: err instanceof Error ? err.message : String(err) }
@@ -104,7 +101,7 @@ onMounted(() => refresh())
         <div v-if="formMessage" class="form-message" :class="formMessage.kind" data-testid="form-message">
           {{ formMessage.text }}
         </div>
-        <ProviderDetail :provider="selectedProvider" @clear="clearSettings" />
+        <ProviderDetail :provider="selectedProvider" @clear="deleteProvider" />
       </div>
     </template>
 

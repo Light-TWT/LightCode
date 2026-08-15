@@ -2,7 +2,7 @@
 import type { ProviderSummary } from '@/types/agent'
 
 defineProps<{ provider: ProviderSummary | null }>()
-defineEmits<{ (e: 'clear'): void }>()
+defineEmits<{ (e: 'clear', id: string): void }>()
 
 function initials(name: string): string {
   return name.replace(/[^a-zA-Z0-9]/g, '').slice(0, 2).toUpperCase() || 'AI'
@@ -56,8 +56,8 @@ function badgeText(provider: ProviderSummary): string {
       </div>
 
       <div class="detail-actions">
-        <button type="button" class="clear-btn" data-testid="btn-clear" @click="$emit('clear')">
-          清除运行期配置
+        <button type="button" class="clear-btn" data-testid="btn-clear" @click="$emit('clear', provider.id)">
+          删除此供应商
         </button>
       </div>
     </template>

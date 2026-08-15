@@ -98,7 +98,7 @@ const m = vi.hoisted(() => {
       listProviders: vi.fn(),
       createProvider: vi.fn(),
       testConnection: vi.fn(),
-      clearSettings: vi.fn(),
+      deleteProvider: vi.fn(),
       subscribeChatEvents: vi.fn(),
       subscribeRealTaskEvents: vi.fn(),
     },
@@ -136,7 +136,7 @@ vi.mock('@/services/provider.service', () => ({
     listProviders: m.mocks.listProviders,
     createProvider: m.mocks.createProvider,
     testConnection: m.mocks.testConnection,
-    clearSettings: m.mocks.clearSettings,
+    deleteProvider: m.mocks.deleteProvider,
   },
 }))
 vi.mock('@/services/real-task.service', () => ({

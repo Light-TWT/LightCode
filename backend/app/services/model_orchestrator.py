@@ -139,12 +139,51 @@ def _strip_fences(text: str) -> str:
     return stripped
 
 
+def _try_xml_tool_call(text: str) -> Optional[dict]:
+    """Tolerate Qwen-style XML-tag tool calls.
+
+    Some OpenAI-compatible providers (observed with Qwen) ignore the JSON
+    protocol and emit ``<search_files>{"query":"..."}</search_files>`` instead
+    of ``{"kind":"tool_request",...}``. We accept that shape **fail-closed**:
+
+    * the outer tag must be an allowlisted tool name (``read_file`` /
+      ``search_files``), so no tool is ever invented;
+    * the inner body must be a single JSON object, which then flows through the
+      same guarded adjudication (``run_model_tool``) as a JSON tool_request;
+    * surrounding prose before/after the tag is ignored.
+
+    Returns a ``tool_request`` payload, or ``None`` when nothing matches.
+    """
+    stripped = text.strip()
+    for tool in _ORCHESTRATOR_TOOLS:
+        open_tag = f"<{tool}>"
+        close_tag = f"</{tool}>"
+        start = stripped.find(open_tag)
+        if start == -1:
+            continue
+        end = stripped.find(close_tag, start + len(open_tag))
+        if end == -1:
+            continue
+        inner = stripped[start + len(open_tag) : end].strip()
+        try:
+            arguments = json.loads(inner)
+        except (json.JSONDecodeError, ValueError):
+            continue
+        if not isinstance(arguments, dict):
+            continue
+        return {"kind": "tool_request", "tool": tool, "arguments": arguments}
+    return None
+
+
 def parse_model_message(text: str) -> tuple[str, Optional[dict]]:
     """Return ``(kind, payload)``; ``kind`` is 'answer'|'tool'|'intent'|'invalid'."""
     try:
         data = json.loads(_strip_fences(text))
     except (json.JSONDecodeError, ValueError):
-        return ("invalid", None)
+        data = None
+    if data is None:
+        # Fall back to Qwen-style XML-tag tool calls (see _try_xml_tool_call).
+        data = _try_xml_tool_call(text)
     if not isinstance(data, dict):
         return ("invalid", None)
     kind = data.get("kind")
@@ -333,6 +372,7 @@ candidate_edit_intent 格式：
 - baseSha256 必须来自 read_file 的结果，不得自行计算或猜测。
 - 每次只能修改单一既有 UTF-8 文本文件；不能多文件、不能二进制文件。
 - 输出以 JSON 开始、以 JSON 结束；可用代码围栏包裹，但内容必须是合法 JSON。
+- 不要使用 <read_file> 等 XML 标签包裹工具调用，也不要在 JSON 里添加额外解释；只输出 {{"kind":"tool_request",...}} 形式的单个 JSON 对象。
 - 策略版本：{policy_version}
 """
 

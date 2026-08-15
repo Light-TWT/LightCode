@@ -110,7 +110,7 @@ function initials(name: string): string {
   font-family: inherit; cursor: pointer;
 }
 .provider-row:hover { background: rgba(255,253,248,.7); border-color: #d8d0c4; }
-.provider-row.selected { border-color: #d6bf75; background: rgba(212,160,23,.12); transform: rotate(-.25deg); }
+.provider-row.selected { border-color: #d6bf75; background: rgba(212,160,23,.12); }
 .provider-icon {
   width: 36px; height: 36px; display: grid; place-items: center;
   border: 1.5px solid #aaa092; border-radius: 10px 8px 10px 7px;

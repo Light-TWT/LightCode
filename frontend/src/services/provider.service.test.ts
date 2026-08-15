@@ -171,13 +171,4 @@ describe('providerService（HTTP-only）', () => {
     expect(settings.status).toBe('ready')
     expect(JSON.stringify(settings)).not.toContain('sk-test-secret')
   })
-
-  it('DELETE /provider/settings 清除运行期配置', async () => {
-    const fetchMock = stubFetch({ ...settingsPayload, configured: false })
-    const settings = await providerService.clearSettings()
-    const [url, init] = fetchMock.mock.calls[0] as unknown as [string, RequestInit]
-    expect(url).toContain('/provider/settings')
-    expect(init.method).toBe('DELETE')
-    expect(settings.configured).toBe(false)
-  })
 })
