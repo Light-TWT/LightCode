@@ -179,6 +179,11 @@ Phase 1R (安全收尾门禁, WP0-WP4 = M1+M2+M3): 全部完成 (2026-07-30)
 
 ## 问题修复记录
 
+- 2026-08-15: Phase 3 桌面端「供应商配置保存后不生效 / 工作区仍提示需先配置 Provider」根因修复（真实 Windows Credential Manager 实测定位）。
+  - 根因：桌面模式使用 `WindowsCredentialManagerProviderCredentialStore`，其 ctypes 实现 `read_blob`/`read_targets` 用**手算的 CREDENTIAL struct 偏移量**访问字段（`POINTER(c_void_p)[3]/[4]`），与真实结构布局（DWORD+DWORD+指针+指针+FILETIME+DWORD+指针...）完全对不上：`read_blob` 抛 `TypeError: cannot be converted to pointer`，`read_targets` 的 `CredEnumerateW` 前缀 filter 恒返 `ERROR_NOT_FOUND(1168)` 且把 `PCREDENTIAL*` 指针数组当 `_CREDENTIAL` 数组迭代会崩溃。写路径一直正常（`set()` 能落盘到 Windows Credential Manager，实测已存在用户 2 个 Qwen 凭据条目），但读路径全坏 → `get()`/`get_all()` 返回空 → 设置页列表空白、聊天门禁判定 unconfigured。测试全用注入的 `FakeCredentialBackend`，真实 ctypes 实现从未被覆盖。
+  - 修复：`credential_store.py` 定义共享模块级 `_CREDENTIAL(ctypes.Structure)`（字段与 wincred.h 一致），`read_blob` 经 `credential.contents.CredentialBlob/CredentialBlobSize` 读取；`read_targets` 改用 `POINTER(PCREDENTIAL)` 正确迭代指针数组，并因 `CredEnumerateW` 前缀 filter 不可靠改为 NULL filter 枚举 + Python 端 `startswith(prefix)` 过滤。新增 `tests/test_credential_manager.py::test_real_windows_credential_api_roundtrip`（win32 真机运行，非 win32 skip），直接读写真实凭据管理器守卫该回归。
+  - 附带清理：实测期间发现用户真实凭据（Qwen×2）一直健康保存在 Windows Credential Manager，仅读不出来；删除探针遗留的假凭据并恢复 Active 指向用户真实 Qwen 配置。
+  - 验证：新 sidecar 实测 `/api/v1/provider/profiles` 返回用户 2 个 Qwen 配置（status=ready、dashscope.aliyuncs.com），`/api/v1/provider/health` ready；后端全量 304 passed / 2 skipped（+1 真实凭据回归）；前端 136 passed / 20 files + vue-tsc/vite build 通过；已重建 sidecar 并重新打包安装器。
 - 2026-08-15: Phase 3 桌面端「选择文件夹后提示工作区注册失败」双根因修复（对抗性审查 + 真实 sidecar/运行实例证据）。
   - 根因 1（主因）：前端 `config/runtime.ts` 的 `apiBaseUrl` 硬编码 `http://127.0.0.1:8000/api/v1`，但打包 sidecar 绑定 Electron 每启动随机选择的 loopback 端口（实测 56173，8000 无人监听）→ 渲染进程所有 API 调用（工作区列表/文件树/会话/聊天）全部失败 → 工作区列表为空，用户只能反复"选择工作文件夹"，且注册成功后渲染端仍看不到工作区。
   - 根因 2：`workspace_registration.py` 对已注册 canonical root 抛 `DESKTOP_WORKSPACE_ALREADY_EXISTS`(400)，Electron main 把一切非 2xx 统一映射为「工作区注册失败」→ 重选已添加的文件夹必然报错。

@@ -17,10 +17,12 @@
 
 from __future__ import annotations
 
+import ctypes
 import json
 import sys
 import threading
 import uuid
+from ctypes import wintypes
 from dataclasses import dataclass, field
 from typing import Optional, Protocol
 
@@ -124,6 +126,33 @@ _TARGET_PREFIX = "LightCode/Provider/"
 _ACTIVE_TARGET = "LightCode/Provider/Active"
 
 
+class _CREDENTIAL(ctypes.Structure):
+    """Native ``CREDENTIAL`` (wincred.h) layout, shared by read/write paths.
+
+    Field order and types must match the OS definition exactly; the blob
+    pointer and its size live at fixed offsets, so reading them back through
+    the struct (rather than hand-computed indices) keeps the offsets correct.
+    """
+
+    _fields_ = [
+        ("Flags", ctypes.c_ulong),
+        ("Type", ctypes.c_ulong),
+        ("TargetName", wintypes.LPWSTR),
+        ("Comment", wintypes.LPWSTR),
+        ("LastWritten", wintypes.FILETIME),
+        ("CredentialBlobSize", ctypes.c_ulong),
+        ("CredentialBlob", ctypes.c_void_p),
+        ("Persist", ctypes.c_ulong),
+        ("AttributeCount", ctypes.c_ulong),
+        ("Attributes", ctypes.c_void_p),
+        ("TargetAlias", wintypes.LPWSTR),
+        ("UserName", wintypes.LPWSTR),
+    ]
+
+
+PCREDENTIAL = ctypes.POINTER(_CREDENTIAL)
+
+
 class _CredentialBackend(Protocol):
     """Abstract OS secret-store access. The real implementation talks to the
     Windows Credential Manager via ctypes; tests inject a fake backend."""
@@ -170,59 +199,40 @@ class _WindowsCredentialApi:
     def read_targets(self, prefix: str) -> list[str]:
         if not self._available():
             raise OSError("Windows Credential Manager is unavailable")
+        # CredEnumerateW returns an array of PCREDENTIAL (pointers). Its built-in
+        # filter is unreliable here (returns ERROR_NOT_FOUND even when matching
+        # credentials exist), so enumerate everything and filter by prefix here.
+        count = ctypes.c_ulong(0)
+        credentials = ctypes.POINTER(PCREDENTIAL)()
+        if not self._cred_enum(None, 0, ctypes.byref(count), ctypes.byref(credentials)):
+            return []
         targets: list[str] = []
-        # Enumerate all credentials with the LightCode target prefix.
-        import ctypes  # type: ignore
-
-        Count = ctypes.c_ulong
-        PCredential = ctypes.c_void_p
-        credentials = PCredential()
-        count = Count()
-        flags = 0
-        if not self._cred_enum(prefix, flags, ctypes.byref(count), ctypes.byref(credentials)):
-            return targets
         try:
             for i in range(count.value):
-                entry = ctypes.cast(
-                    credentials.value + i * ctypes.sizeof(ctypes.c_void_p),
-                    ctypes.POINTER(ctypes.c_void_p),
-                ).contents
-                if not entry:
+                entry = credentials[i]
+                if not entry or not entry.contents:
                     continue
-                # Read the target name off the CREDENTIAL struct.
-                target_ptr = ctypes.cast(entry, ctypes.POINTER(ctypes.c_void_p))
-                # CREDENTIAL.TargetName is the first field (pointer).
-                target = ctypes.cast(target_ptr[0], ctypes.c_wchar_p)
-                if target and target.value:
-                    targets.append(target.value)
+                target = entry.contents.TargetName
+                if target and target.startswith(prefix):
+                    targets.append(target)
         finally:
-            if credentials.value:
+            if credentials:
                 ctypes.windll.advapi32.CredFree(credentials)
         return targets
 
     def read_blob(self, target: str) -> Optional[str]:
         if not self._available():
             raise OSError("Windows Credential Manager is unavailable")
-        import ctypes  # type: ignore
-
-        PCredential = ctypes.c_void_p
-        credential = PCredential()
+        credential = PCREDENTIAL()
         if not self._cred_read(target, 1, 0, ctypes.byref(credential)):
             return None
         try:
-            if not credential.value:
+            if not credential or not credential.contents:
                 return None
-            # CREDENTIAL.CredentialBlobSize is at offset of a pointer; read the
-            # blob pointer and its size from the struct layout.
-            blob = ctypes.cast(credential.value, ctypes.c_void_p)
-            # The CREDENTIAL struct: TargetName, TargetAlias, UserName, CredentialBlob, CredentialBlobSize...
-            size = ctypes.c_size_t(0)
-            # Skip the four pointer fields (TargetName/TargetAlias/UserName/CredentialBlob).
-            blob.value = ctypes.cast(ctypes.c_void_p(credential), ctypes.POINTER(ctypes.c_void_p))[3]
-            size.value = ctypes.cast(ctypes.c_void_p(credential), ctypes.POINTER(ctypes.c_size_t))[4]
-            if not blob.value or size.value <= 0:
+            contents = credential.contents
+            if not contents.CredentialBlob or contents.CredentialBlobSize <= 0:
                 return None
-            raw = ctypes.string_at(blob.value, size.value)
+            raw = ctypes.string_at(contents.CredentialBlob, contents.CredentialBlobSize)
             return raw.decode("utf-8")
         finally:
             ctypes.windll.advapi32.CredFree(credential)
@@ -230,27 +240,9 @@ class _WindowsCredentialApi:
     def write_blob(self, target: str, blob: str) -> None:
         if not self._available():
             raise OSError("Windows Credential Manager is unavailable")
-        import ctypes  # type: ignore
-        from ctypes import wintypes  # type: ignore
-
         data = blob.encode("utf-8")
         buf = ctypes.create_string_buffer(data)
-        class CREDENTIAL(ctypes.Structure):
-            _fields_ = [
-                ("Flags", ctypes.c_ulong),
-                ("Type", ctypes.c_ulong),
-                ("TargetName", wintypes.LPWSTR),
-                ("Comment", wintypes.LPWSTR),
-                ("LastWritten", wintypes.FILETIME),
-                ("CredentialBlobSize", ctypes.c_ulong),
-                ("CredentialBlob", ctypes.c_void_p),
-                ("Persist", ctypes.c_uint),
-                ("AttributeCount", ctypes.c_ulong),
-                ("Attributes", ctypes.c_void_p),
-                ("TargetAlias", wintypes.LPWSTR),
-                ("UserName", wintypes.LPWSTR),
-            ]
-        cred = CREDENTIAL()
+        cred = _CREDENTIAL()
         cred.Type = 1  # CRED_TYPE_GENERIC
         cred.TargetName = target
         cred.CredentialBlobSize = len(data)

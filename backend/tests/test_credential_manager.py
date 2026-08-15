@@ -5,6 +5,10 @@ get-all/remove/clear), secret-safe repr and fail-closed behaviour are verified
 without touching the real OS secret store.
 """
 
+import json
+import sys
+import uuid
+
 import pytest
 
 from app.schemas.errors import Phase1Error
@@ -110,3 +114,29 @@ def test_repr_excludes_api_key(store) -> None:
     assert "sk-super-secret" not in repr(store)
     assert "sk-super-secret" not in repr(store.get())
     assert "sk-super-secret" not in repr(store.get_all())
+
+
+@pytest.mark.skipif(sys.platform != "win32", reason="Windows Credential Manager exists only on Windows")
+def test_real_windows_credential_api_roundtrip() -> None:
+    """Regression: the real ctypes backend must read back what it writes.
+
+    Previously the CREDENTIAL struct offsets in read_blob/read_targets were
+    wrong (hand-computed indices), so writes succeeded but reads returned
+    garbage / TypeError / empty lists. Uses a throwaway target and cleans up;
+    never touches the Active pointer or any real profile.
+    """
+    from app.services.credential_store import _TARGET_PREFIX, _WindowsCredentialApi
+
+    api = _WindowsCredentialApi()
+    if not api._available():
+        pytest.skip("Windows Credential Manager unavailable")
+
+    target = f"{_TARGET_PREFIX}pytest-real-{uuid.uuid4().hex[:8]}"
+    blob = json.dumps({"probe": "ok"})
+    try:
+        api.write_blob(target, blob)
+        assert api.read_blob(target) == blob
+        assert target in api.read_targets(_TARGET_PREFIX)
+    finally:
+        api.delete_target(target)
+    assert target not in api.read_targets(_TARGET_PREFIX)
