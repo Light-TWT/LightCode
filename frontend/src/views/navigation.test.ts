@@ -3,7 +3,6 @@ import { createPinia, setActivePinia } from 'pinia'
 import { createMemoryHistory, createRouter, type Router } from 'vue-router'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import RealTaskView from './RealTaskView.vue'
-import SettingsView from './SettingsView.vue'
 import SkillsView from './SkillsView.vue'
 import WorkspaceHomeView from './WorkspaceHomeView.vue'
 import WorkspaceView from './WorkspaceView.vue'
@@ -170,7 +169,6 @@ function createAppRouter(): Router {
         name: 'skills',
         component: SkillsView,
       },
-      { path: '/settings', name: 'settings', component: SettingsView },
     ],
   })
 }
@@ -216,7 +214,7 @@ describe('路由收敛（核心 Agent 更新阶段 A）', () => {
     expect(router.currentRoute.value.fullPath).toBe('/')
   })
 
-  it('/ 无工作区时仍停留在首页且可从设置入口进入设置页', async () => {
+  it('/ 无工作区时仍停留在首页且可从侧边栏打开设置模态层', async () => {
     m.mocks.listRegisteredWorkspaces.mockResolvedValue([])
     const router = createAppRouter()
     await router.push('/')
@@ -224,9 +222,11 @@ describe('路由收敛（核心 Agent 更新阶段 A）', () => {
     const wrapper = mountView(WorkspaceHomeView, router)
     await flushPromises()
     expect(router.currentRoute.value.fullPath).toBe('/')
-    await wrapper.get('[data-testid="settings-link"]').trigger('click')
+    await wrapper.get('[data-testid="settings-btn"]').trigger('click')
     await flushPromises()
-    expect(router.currentRoute.value.fullPath).toBe('/settings')
+    // 设置以大型模态层打开（Teleport 到 body），不跳转独立设置页
+    expect(router.currentRoute.value.fullPath).toBe('/')
+    expect(document.body.querySelector('[data-testid="settings-overlay"]')).toBeTruthy()
   })
 
   it('/workspace/:workspaceId 渲染聊天主界面', async () => {
@@ -242,6 +242,15 @@ describe('路由收敛（核心 Agent 更新阶段 A）', () => {
     await flushPromises()
     expect(wrapper.get('[data-testid="session-row"]').exists()).toBe(true)
     expect(m.mocks.listChatSessions).toHaveBeenCalledWith('ws-1')
+  })
+
+  it('/workspace/:workspaceId?panel=sessions 打开会话面板（技能页侧边栏跳转）', async () => {
+    const router = createAppRouter()
+    await router.push('/workspace/ws-1?panel=sessions')
+    await router.isReady()
+    const wrapper = mountView(WorkspaceView, router)
+    await flushPromises()
+    expect(wrapper.get('[data-testid="panel-sessions"]').exists()).toBe(true)
   })
 
   it('/workspace/:workspaceId/session/:sessionId 打开会话并渲染消息', async () => {
@@ -264,16 +273,6 @@ describe('路由收敛（核心 Agent 更新阶段 A）', () => {
     await flushPromises()
     expect(m.mocks.getRealTask).toHaveBeenCalledWith('chat-task-1')
     expect(wrapper.get('[data-testid="task-state"]').text()).toBe('等待审批')
-  })
-
-  it('/settings 渲染设置页', async () => {
-    const router = createAppRouter()
-    await router.push('/settings')
-    await router.isReady()
-    const wrapper = mountView(SettingsView, router)
-    await flushPromises()
-    expect(wrapper.get('[data-testid="settings-cat-providers"]').exists()).toBe(true)
-    expect(wrapper.get('[data-testid="open-add"]').exists()).toBe(true)
   })
 
   it('keeps existing sidebar test ids and appends the Skill navigation button', async () => {

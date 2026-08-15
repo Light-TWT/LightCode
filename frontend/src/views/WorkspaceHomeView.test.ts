@@ -60,7 +60,6 @@ function createTestRouter(): Router {
         name: 'workspace-session',
         component: { template: '<div>session</div>' },
       },
-      { path: '/settings', name: 'settings', component: { template: '<div>settings</div>' } },
     ],
   })
 }

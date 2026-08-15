@@ -193,4 +193,25 @@ describe('SkillsView', () => {
     expect(wrapper.find('[data-testid="skill-delete-request"]').exists()).toBe(false)
     expect(wrapper.find('[data-testid="skill-delete-confirmation"]').exists()).toBe(false)
   })
+
+  it('navigates to the workspace page with the target panel when a nav button is clicked', async () => {
+    const router = createRouter({
+      history: createMemoryHistory(),
+      routes: [
+        { path: '/workspace/:workspaceId/skills', name: 'skills', component: SkillsView },
+        { path: '/workspace/:workspaceId', name: 'workspace', component: { template: '<div>ws</div>' } },
+      ],
+    })
+    router.push('/workspace/ws-1/skills')
+    await router.isReady()
+    const wrapper = mount(SkillsView, {
+      global: { plugins: [createPinia(), router], stubs: { teleport: true } },
+    })
+    await flushPromises()
+
+    await wrapper.get('[data-testid="nav-btn-sessions"]').trigger('click')
+    await flushPromises()
+
+    expect(router.currentRoute.value.fullPath).toBe('/workspace/ws-1?panel=sessions')
+  })
 })

@@ -187,7 +187,6 @@ function createTestRouter(): Router {
         name: 'real-task',
         component: { template: '<div>task review</div>' },
       },
-      { path: '/settings', name: 'settings', component: { template: '<div>settings</div>' } },
     ],
   })
 }

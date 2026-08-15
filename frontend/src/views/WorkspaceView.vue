@@ -48,6 +48,15 @@ function toggleNav(key: NavKey) {
   cancelRename()
 }
 
+/** 深链打开面板：`?panel=workspace|files|sessions`（技能页等二级页侧边栏跳转用）。
+ *  security: 仅接受白名单面板键，非法值忽略。 */
+function applyPanelParam() {
+  const p = route.query.panel
+  if (p === 'workspace' || p === 'files' || p === 'sessions') {
+    activeNav.value = p
+  }
+}
+
 function closePreview() {
   openPreviewName.value = null
 }
@@ -318,6 +327,7 @@ function onGlobalClick(e: MouseEvent) {
 }
 
 onMounted(async () => {
+  applyPanelParam()
   await store.openWorkspace(workspaceId.value)
   await store.loadChatSessions(workspaceId.value)
   if (sessionId.value) {
@@ -325,6 +335,11 @@ onMounted(async () => {
   }
   await loadProviderSettings()
 })
+
+watch(
+  () => route.query.panel,
+  () => applyPanelParam(),
+)
 
 watch(
   () => route.params.workspaceId,

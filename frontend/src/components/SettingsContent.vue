@@ -1,22 +1,13 @@
 <script setup lang="ts">
-/** 设置业务内容（从 SettingsView 提取）：独立路由页与工作区设置层共用同一套
- *  Provider 服务调用、列表、详情与添加供应商弹层，避免两套业务实现漂移。
- *  不承载模态层/页面容器职责：showBack 控制独立页面专属的「返回」入口。 */
+/** 设置业务内容：Provider 服务调用、列表、详情与添加供应商弹层。
+ *  由设置层（SettingsOverlay）承载，不负责页面容器/模态层职责。 */
 import { computed, onMounted, ref } from 'vue'
-import { useRouter } from 'vue-router'
 import SettingsNav from '@/components/SettingsNav.vue'
 import ProviderList from '@/components/ProviderList.vue'
 import ProviderDetail from '@/components/ProviderDetail.vue'
 import AddProviderModal from '@/components/AddProviderModal.vue'
 import { providerService } from '@/services/provider.service'
 import type { ProviderSummary } from '@/types/agent'
-
-defineProps<{
-  /** 独立设置页显示「← 返回」入口；设置层内隐藏（由模态层关闭按钮承担） */
-  showBack?: boolean
-}>()
-
-const router = useRouter()
 
 /** 设置分类：当前仅「模型与供应商」与「关于」 */
 const category = ref<'providers' | 'about'>('providers')
@@ -102,8 +93,7 @@ onMounted(() => refresh())
 
       <div class="detail-column">
         <header class="top-bar">
-          <button v-if="showBack" class="back-btn" type="button" data-testid="back-home-btn" @click="router.push('/')">← 返回</button>
-          <div v-if="showBack" class="page-title">LightCode · 设置</div>
+          <div class="page-title">LightCode · 设置</div>
           <button class="refresh-btn" type="button" :disabled="refreshing" data-testid="refresh-btn" @click="refresh">
             <span class="refresh-icon" :class="{ spinning: refreshing }">↻</span> 刷新状态
           </button>
@@ -150,8 +140,6 @@ onMounted(() => refresh())
   padding-bottom: 12px; border-bottom: 2px solid #2a2a2a;
   margin-bottom: 14px; flex-shrink: 0;
 }
-.back-btn { background: none; border: none; cursor: pointer; font-family: inherit; font-size: 13px; color: #6b7d8e; padding: 0; }
-.back-btn:hover { color: #2a2a2a; }
 .page-title { font-family: 'Caveat', cursive; font-size: 22px; font-weight: 700; color: #1a1a1a; }
 .refresh-btn {
   margin-left: auto;

@@ -3,20 +3,29 @@
  *  详情模态层（含页脚内联删除确认）。
  *  组件不直接调用 fetch、不解析 ZIP、不保存文档到 localStorage。 */
 import { onMounted, ref } from 'vue'
-import { useRoute } from 'vue-router'
+import { useRoute, useRouter } from 'vue-router'
 import AppSidebar from '@/components/AppSidebar.vue'
+import SettingsOverlay from '@/components/SettingsOverlay.vue'
 import SkillDetailOverlay from '@/components/SkillDetailOverlay.vue'
 import { useSkillsStore } from '@/stores/skills.store'
 import type { SkillStatus } from '@/types/agent'
 
 const route = useRoute()
+const router = useRouter()
 const workspaceId = String(route.params.workspaceId ?? '')
 const store = useSkillsStore()
 
 const sidebarCollapsed = ref(false)
+/** 设置层：大型模态层，与工作区页一致（不再跳转独立设置页） */
+const settingsOverlayOpen = ref(false)
 const uploadInput = ref<HTMLInputElement | null>(null)
 /** 待删除确认的技能 id（非 null 时详情页脚显示确认区） */
 const confirmDeleteId = ref<string | null>(null)
+
+/** 侧边导航项：工作区/文件浏览/会话 → 跳到工作区页并打开对应面板 */
+function goPanel(key: 'workspace' | 'files' | 'sessions') {
+  router.push({ path: `/workspace/${workspaceId}`, query: { panel: key } })
+}
 
 onMounted(() => {
   void store.load()
@@ -64,8 +73,9 @@ function closeOverlay() {
     <AppSidebar
       :active-nav="null"
       :collapsed="sidebarCollapsed"
+      @toggle="goPanel"
       @toggle-collapse="sidebarCollapsed = !sidebarCollapsed"
-      @open-settings="$router.push('/settings')"
+      @open-settings="settingsOverlayOpen = true"
     />
 
     <main class="skills-main">
@@ -179,6 +189,9 @@ function closeOverlay() {
       @confirm-delete="confirmDelete"
       @cancel-delete="cancelDelete"
     />
+
+    <!-- 设置层：大型模态层（不再跳转独立设置页） -->
+    <SettingsOverlay :open="settingsOverlayOpen" @close="settingsOverlayOpen = false" />
   </div>
 </template>
 

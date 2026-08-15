@@ -5,7 +5,6 @@ import {
   type RouterHistory,
 } from 'vue-router'
 import RealTaskView from '@/views/RealTaskView.vue'
-import SettingsView from '@/views/SettingsView.vue'
 import SkillsView from '@/views/SkillsView.vue'
 import WorkspaceHomeView from '@/views/WorkspaceHomeView.vue'
 import WorkspaceView from '@/views/WorkspaceView.vue'
@@ -25,6 +24,5 @@ export const router = createRouter({
     { path: '/workspace/:workspaceId/skills', name: 'skills', component: SkillsView },
     // 审查深链：完整 Diff 只在审查页展示（聊天内仅紧凑摘要）
     { path: '/workspace/:workspaceId/task/:taskId', name: 'real-task', component: RealTaskView },
-    { path: '/settings', name: 'settings', component: SettingsView },
   ],
 })
