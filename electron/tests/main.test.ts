@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 const browserWindowOpts: unknown[] = []
 const handledChannels: string[] = []
+const syncedChannels: string[] = []
 
 vi.mock('electron', () => ({
   app: {
@@ -21,6 +22,9 @@ vi.mock('electron', () => ({
   ipcMain: {
     handle: (channel: string) => {
       handledChannels.push(channel)
+    },
+    on: (channel: string) => {
+      syncedChannels.push(channel)
     },
   },
 }))
@@ -50,8 +54,9 @@ describe('Electron main security boundary', () => {
     expect(opts.webPreferences.webSecurity).toBe(true)
   })
 
-  it('registers only the narrow folder-selection channel', () => {
+  it('registers only the narrow folder-selection and base-URL channels', () => {
     registerIpc('tok', 8123)
     expect(handledChannels).toEqual(['lightcode:select-workspace-folder'])
+    expect(syncedChannels).toEqual(['lightcode:get-api-base-url'])
   })
 })

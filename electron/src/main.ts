@@ -52,6 +52,12 @@ function sidecarExecutable(): string {
 }
 
 export function registerIpc(token: string, port: number): void {
+  // One-time, synchronous handoff of the sidecar's loopback base URL to the
+  // renderer (read by the preload at page load). Path-free and loopback-only.
+  ipcMain.on(IPC_CHANNELS.getApiBaseUrl, (event) => {
+    event.returnValue = `http://${HOST}:${port}/api/v1`
+  })
+
   ipcMain.handle(IPC_CHANNELS.selectWorkspaceFolder, async (): Promise<SelectFolderResult> => {
     if (!mainWindow) return { cancelled: true }
     const result = await dialog.showOpenDialog(mainWindow, {

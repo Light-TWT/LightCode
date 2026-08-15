@@ -30,7 +30,6 @@ from app.schemas.contracts import RegisteredWorkspaceResponse
 from app.schemas.errors import (
     DESKTOP_MODE_DISABLED,
     DESKTOP_SIDECAR_TOKEN_INVALID,
-    DESKTOP_WORKSPACE_ALREADY_EXISTS,
     DESKTOP_WORKSPACE_INVALID,
     Phase1Error,
 )
@@ -91,7 +90,11 @@ class DesktopWorkspaceService:
 
         canonical = self._validate_root(root_path)
         workspace = self._persist(canonical)
-        self._registry.add(workspace)
+        # Idempotent registration: a canonical root already persisted is returned
+        # as-is (registry already holds it at startup or from an earlier call),
+        # so re-selecting the same folder re-opens it instead of erroring.
+        if self._registry.get(workspace.id) is None:
+            self._registry.add(workspace)
         return RegisteredWorkspaceResponse(
             id=workspace.id,
             displayName=workspace.display_name,
@@ -119,11 +122,20 @@ class DesktopWorkspaceService:
     def _persist(self, canonical: Path) -> RegistryWorkspace:
         now = _now()
         existing = self._db.execute(
-            "SELECT id FROM desktop_workspaces WHERE canonical_root = ?",
+            "SELECT * FROM desktop_workspaces WHERE canonical_root = ?",
             (str(canonical),),
         ).fetchone()
         if existing:
-            raise Phase1Error(DESKTOP_WORKSPACE_ALREADY_EXISTS, "workspace already exists")
+            # Idempotent: the same canonical root maps to the same workspace.
+            return RegistryWorkspace(
+                id=existing["id"],
+                display_name=existing["display_name"],
+                canonical_root=canonical,
+                enabled=bool(existing["enabled"]),
+                policy=existing["policy"],
+                policy_version=existing["policy_version"],
+                target_file="",
+            )
         ws_id = f"desktop-{uuid.uuid4().hex[:12]}"
         display_name = canonical.name or "工作区"
         with self._db:

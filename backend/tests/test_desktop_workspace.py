@@ -61,13 +61,16 @@ def test_register_desktop_workspace_returns_safe_dto_and_persists(
     assert "rootPath" not in body
 
 
-def test_register_duplicate_canonical_root_rejected(desktop_client, tmp_path) -> None:
+def test_register_duplicate_canonical_root_is_idempotent(desktop_client, tmp_path) -> None:
     proj = tmp_path / "dup"
     proj.mkdir()
-    assert _register(desktop_client, str(proj), TEST_TOKEN).status_code == 200
-    resp = _register(desktop_client, str(proj), TEST_TOKEN)
-    assert resp.status_code == 400
-    assert resp.json()["code"] == "DESKTOP_WORKSPACE_ALREADY_EXISTS"
+    first = _register(desktop_client, str(proj), TEST_TOKEN)
+    assert first.status_code == 200
+    # Re-selecting the same folder re-opens the existing workspace: same id,
+    # no duplicate row, no error.
+    second = _register(desktop_client, str(proj), TEST_TOKEN)
+    assert second.status_code == 200
+    assert second.json()["id"] == first.json()["id"]
 
 
 def test_register_relative_root_rejected(desktop_client, tmp_path) -> None:

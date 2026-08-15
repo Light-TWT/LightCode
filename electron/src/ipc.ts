@@ -34,6 +34,7 @@ export type SelectFolderResult =
 
 export const IPC_CHANNELS = {
   selectWorkspaceFolder: 'lightcode:select-workspace-folder',
+  getApiBaseUrl: 'lightcode:get-api-base-url',
 } as const
 
 /** The sidecar registration payload is constructed only by Electron main. */

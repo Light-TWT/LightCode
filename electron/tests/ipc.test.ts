@@ -6,9 +6,10 @@ import {
 } from '../src/ipc'
 
 describe('IPC bridge contract', () => {
-  it('exposes only the narrow folder-selection channel', () => {
+  it('exposes only the narrow folder-selection and base-URL channels', () => {
     expect(Object.values(IPC_CHANNELS)).toEqual([
       'lightcode:select-workspace-folder',
+      'lightcode:get-api-base-url',
     ])
   })
 

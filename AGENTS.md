@@ -179,6 +179,12 @@ Phase 1R (安全收尾门禁, WP0-WP4 = M1+M2+M3): 全部完成 (2026-07-30)
 
 ## 问题修复记录
 
+- 2026-08-15: Phase 3 桌面端「选择文件夹后提示工作区注册失败」双根因修复（对抗性审查 + 真实 sidecar/运行实例证据）。
+  - 根因 1（主因）：前端 `config/runtime.ts` 的 `apiBaseUrl` 硬编码 `http://127.0.0.1:8000/api/v1`，但打包 sidecar 绑定 Electron 每启动随机选择的 loopback 端口（实测 56173，8000 无人监听）→ 渲染进程所有 API 调用（工作区列表/文件树/会话/聊天）全部失败 → 工作区列表为空，用户只能反复"选择工作文件夹"，且注册成功后渲染端仍看不到工作区。
+  - 根因 2：`workspace_registration.py` 对已注册 canonical root 抛 `DESKTOP_WORKSPACE_ALREADY_EXISTS`(400)，Electron main 把一切非 2xx 统一映射为「工作区注册失败」→ 重选已添加的文件夹必然报错。
+  - 修复：Electron 新增 `lightcode:get-api-base-url` 同步 IPC（`ipcMain.on` + `event.returnValue`，返回 path-free loopback base URL），preload 经 `ipcRenderer.sendSync` 暴露为 `window.lightcode.apiBaseUrl`（沙箱 preload 保持自包含）；前端 `runtime.ts` 优先读 desktop 桥地址，否则回落 env/默认。后端注册改为幂等：同一 canonical root 返回既有工作区（200，同 id），不再抛 ALREADY_EXISTS。
+  - 验证：Electron 13 passed / 4 files（新增 apiBaseUrl IPC/preload 用例）；后端 303 passed / 2 skipped（desktop 9 例，重复注册改为幂等断言）；前端 136 passed / 20 files（新增 runtime 3 例）+ vue-tsc -b + vite build 通过。注意：已安装应用内的 sidecar 仍是旧后端打包，需重跑 `scripts/build-sidecar.ps1` + `npm run build:win` 才能生效。
+- 2026-08-15: Phase 3 桌面端「选择文件夹」报"当前环境不支持选择文件夹"根因修复。`electron/src/preload.ts` 原 `import { IPC_CHANNELS } from './ipc'` 编译为 `require("./ipc")`，但 `sandbox: true` 的沙箱 preload 只提供 polyfilled `require`，只能加载 `electron`/`events`/`timers`/`url`，**不能加载本地 CommonJS 文件**（真实 Electron 实测 `module not found`）→ preload 加载失败 → `window.lightcode` 未暴露 → 前端 `isDesktopAvailable()` 判 false 显示该文案。修复：preload 改为自包含（内联通道常量 `'lightcode:select-workspace-folder'`，仅保留 type-only import），与 `./ipc` 的 `IPC_CHANNELS` 保持同步；新增 `electron/tests/preload.test.ts` 2 例（禁止本地运行时 require + 通道值同步断言）。验证：真实 Electron 沙箱渲染器探针确认修复后 `window.lightcode.workspace.selectFolder` 暴露；Electron 全量 12 passed / 4 files（原 10 → 12）。
 - 2026-08-04: Phase 2 审查修复（修复细节与验证见 `docs/phase2-model-provider-design.md` §2/§3.6/§4）。
   - H-01: `model_orchestrator.py` 未知 `Exception` 不再插值 `str(exc)`（固定 `_INTERNAL_ORCHESTRATION_FAILURE`），异常原文不再进入 SQLite/API/SSE/前端；`_build_system_prompt` 移除 `target_file` 逻辑名、read 工具结果移除 `relativePath`，发往 Provider 的上下文仅含 fileToken/baseSha256/受控文本。
   - M-05: `openai_compatible_provider.py` 新增 `_check_output_budget`，响应后本地强制输出预算（completion_tokens 超限或 usage 缺失时按 `max_output_tokens*4` UTF-8 字节保守上限 → `MODEL_BUDGET_EXCEEDED`）。
