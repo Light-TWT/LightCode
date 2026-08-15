@@ -1,6 +1,6 @@
 {
   "name": "lightcode-desktop",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "LightCode Windows desktop shell (Phase 3)",
   "private": true,
   "main": "dist/main.js",
