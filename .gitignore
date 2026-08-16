@@ -15,9 +15,14 @@ backend/data/*.db-wal
 backend/backend/data/*.db
 backend/backend/data/*.db-shm
 backend/backend/data/*.db-wal
-backend/.env
-frontend/.env
+# Local environment files (never commit); only *.example templates are committed
+.env
+.env.*
+!*.example
 *.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
 
 # Phase 1: static workspace registration config points to real local paths;
 # it must never be committed (contains machine-specific rootPath values).

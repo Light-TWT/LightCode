@@ -97,6 +97,23 @@ uvicorn app.main:app --reload --port 8000
 - 桌面模式：`WindowsCredentialManagerProviderCredentialStore`（Windows Credential Manager，见 `credential_store.py`）。
 - 任何情况下 API Key 不进 SQLite、日志、SSE 或前端持久化。
 
+### 环境变量
+
+完整清单见 [`.env.example`](.env.example)（复制为 `backend/.env` 使用，`.env` 已被忽略，绝不提交）。常用项：
+
+| 变量 | 说明 | 默认 |
+|---|---|---|
+| `LIGHTCODE_DATABASE_PATH` | SQLite 路径（相对路径以 backend/ 为基准） | `backend/data/lightcode.db` |
+| `LIGHTCODE_WORKSPACES_CONFIG` | 静态工作区注册配置路径 | `backend/workspaces.json` |
+| `LIGHTCODE_MODEL_ENABLED` | 置 1/true 开启模型能力 | 关闭 |
+| `LIGHTCODE_MODEL_BASE_URL` / `LIGHTCODE_MODEL_API_KEY` / `LIGHTCODE_MODEL_ID` | OpenAI-compatible Provider 配置 | — |
+| `LIGHTCODE_MODEL_ALLOWED_ORIGINS` | 逗号分隔的允许 origin | 空 |
+| `LIGHTCODE_LOG_LEVEL` / `LIGHTCODE_LOG_FORMAT` | 日志级别 / 格式（json/text） | `WARNING` / `json` |
+| `LIGHTCODE_SKILLS_PATH` | 技能数据目录 | `backend/data/skills/` |
+| `LIGHTCODE_DESKTOP_DATA_DIR` / `LIGHTCODE_SIDECAR_TOKEN` / `LIGHTCODE_SIDECAR_PORT` | 桌面模式（由 Electron 注入） | 关闭 |
+
+前端使用 `VITE_LIGHTCODE_API_BASE_URL`（桌面模式优先读 Electron 桥，无需设置）。
+
 ## REST 路由
 
 ```text

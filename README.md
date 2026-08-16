@@ -40,18 +40,19 @@ python -m pip install -e "backend[dev]"
 cd backend
 uvicorn app.main:app --reload --port 8000
 
-# 终端 2：从 frontend/ 启动前端 API 模式
+# 终端 2：从 frontend/ 启动前端
 cd frontend
-VITE_LIGHTCODE_RUNTIME=api VITE_LIGHTCODE_API_BASE_URL=/api/v1 npm run dev
+VITE_LIGHTCODE_API_BASE_URL=/api/v1 npm run dev
 ```
 
 Windows PowerShell 下设置前端 API 模式：
 
 ```powershell
-$env:VITE_LIGHTCODE_RUNTIME = "api"
 $env:VITE_LIGHTCODE_API_BASE_URL = "/api/v1"
 npm run dev
 ```
+
+后端环境变量清单见 [`backend/.env.example`](backend/.env.example)（复制为 `backend/.env` 使用，`.env` 已被忽略，绝不提交）；说明见 [`backend/README.md`](backend/README.md)。
 
 验证命令和临时 SQLite 数据库的使用方式见 `backend/README.md` 与 `frontend/README.md`。
 
