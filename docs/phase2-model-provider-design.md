@@ -1,11 +1,12 @@
 # Phase 2 模型 Provider 与可观测性设计
 
-本文件是 Phase 2（WP5–WP8）模型 Provider 子系统与可观测性/发布门禁的**权威设计参考**。
-工作包划分、里程碑与验收标准见 `2026-07-30-phase-2-model-and-dx-plan.md`；本文件只记录
-已落地的架构决策、接口契约与验证证据，避免与计划文档重复。
+本文件是 Phase 2（WP5–WP8）模型 Provider 子系统与可观测性/发布门禁的**权威设计参考**，
+只记录已落地的架构决策、接口契约与验证证据。阶段实现状态见
+`../architecture/lightcode-local-first-agent-design.md`。
 
 > 约束：Phase 2 首版**不**实现 Shell/外部命令、包管理、网络下载、Git 写操作、删除/新建/重命名、
-> 多文件事务、二进制/非 UTF-8 修改、Electron、本地文件夹选择、自动批准或模型直接写文件。
+> 多文件事务、二进制/非 UTF-8 修改、自动批准或模型直接写文件。Electron 与本地文件夹选择已在
+> Phase 3 桌面端交付（2026-08-13），但浏览器 Web 模式仍不获得这些能力。
 > WP8 经用户确认采用**零新增第三方依赖**策略（stdlib `logging` + 进程内指标 + 既有 pytest/vitest）。
 >
 > **核心 Agent 更新（阶段 A，2026-08-04+）**：Provider 配置来源扩展为「后端环境变量 +
@@ -23,8 +24,8 @@
   `ProviderCredentialStore`（`app/services/credential_store.py`）。生效优先级：
   运行期凭据 > 环境变量 > unconfigured/disabled。
 - **凭据存储协议**：`ProviderCredentialStore`（get/set/clear）——Web 开发期使用
-  `InMemoryProviderCredentialStore`（进程内存，重启后丢失，绝不落盘）；Electron 阶段
-  （阶段 C）替换为 OS Keychain 实现，设置 API/聊天/编排接口不变。这是桌面交付的迁移边界。
+  `InMemoryProviderCredentialStore`（进程内存，重启后丢失，绝不落盘）；桌面模式使用
+  Windows Credential Manager 适配器（2026-08-13 已落地），设置 API/聊天/编排接口不变。
 - **允许名单**：`LIGHTCODE_MODEL_ALLOWED_ORIGINS` 非空时严格校验运行期 Base URL 的 origin；
   为空时接受用户在设置表单中显式提交的 origin（用户主动输入，非静默环境派生）。
 - **连接测试**：`POST /api/v1/provider/settings/test`（不保存）与 `POST /api/v1/provider/settings`
@@ -39,8 +40,8 @@
 - `ProviderCredentialStore` 扩展为**多配置**：每个运行期配置拥有稳定 `id`，协议
   增加 `get_all()`（按 id 返回全部）/ `get_named(id)` / `remove(id)`；`get()` 保持
   返回"当前激活"配置，使 `ChatService` / `ModelOrchestrator` 既有调用路径零改动。
-  仍是进程内存 + 线程安全（`InMemoryProviderCredentialStore`），Electron 阶段（阶段 C）
-  整体替换为系统密钥库实现。
+  仍是进程内存 + 线程安全（`InMemoryProviderCredentialStore`）；桌面模式整体替换为
+  Windows Credential Manager 适配器（2026-08-13）。
 - 新增安全摘要 DTO（`extra="forbid"`、camelCase、无 key/完整 baseUrl）：
   `ProviderProfile`（id/name/provider/modelId/enabled/status/baseUrlHost）与
   `ProviderProfileCreate`（name/provider/baseUrl/apiKey/modelId/enabled，凭据仅存在于

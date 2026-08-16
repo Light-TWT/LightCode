@@ -149,8 +149,8 @@ ChangeSet(id, task_id, diff_text, status, applied_at, rollback_snapshot)
 ```text
 lightcode-local/
   frontend/       Vue 应用，阶段 0 实现目标
-  backend/        FastAPI + SQLite；Phase 0.5 Mock Runtime 与 Phase 1 真实安全变更闭环
-  electron/       为桌面 shell 保留
+  backend/        FastAPI + SQLite；工作区、模型、审批与写入的唯一边界
+  electron/       Windows 桌面外壳 + FastAPI sidecar + NSIS 安装器
   docs/
     architecture/
     design/
@@ -185,7 +185,7 @@ lightcode-local/
 
 ### 阶段 2：真实模型与开发者体验
 
-> Phase 2 的完整工作包、Phase 1 收尾门禁、验收成果、风险和刻意不做项见 `../2026-07-30-phase-2-model-and-dx-plan.md`。在该计划的 M3 门槛达成前，不得接入真实 Provider、模型依赖、模型端点或模型网络调用。
+> Phase 2 的完整设计与验证证据见 `../phase2-model-provider-design.md`；本小节只记录当前落地状态。
 
 - Provider 仅由后端环境变量配置；浏览器不输入、持久化、回显或传输 API Key。
 - 添加 OpenAI-compatible adapter；模型只能提出计划、受限只读工具请求和单文件候选编辑意图，服务端验证后独立生成 ChangeSet。
@@ -203,25 +203,25 @@ lightcode-local/
   - `main.py` 关联 ID 中间件；`httpx`/`httpcore`/`openai`/`langchain*` 日志器被压到 WARNING，避免 provider base URL 经第三方 INFO 日志泄露。
   - 失败语义稳定：`MODEL_BUDGET_EXCEEDED`（输入/输出/请求数预算，输出预算在响应后本地强制）、`MODEL_CONCURRENCY_EXCEEDED`（进程内 `_ModelTaskGate` 并发 1，是 Phase 1 写租约的 Phase 2 类比，无 schema 变更）、`APPLY_CONFLICT`/`STALE_BASE` 沿用 Phase 1；`InstrumentedConnection` 拦截 `execute/executemany` 的 `locked`/`busy` 并计入 `sqlite.busy` 指标，保留 `PRAGMA busy_timeout` 与上下文协议。
   - 敏感数据扫描：新增 `test_model_e2e.py` 断言日志与事件载荷中不含 `test-key`/`api.example.test`/`Bearer`/`Authorization`/真实临时路径；`test_observability.py` 断言 `redact()` 与指标无密钥/路径。
-  - **验证证据**：后端全量 `pytest` 226 通过 + 2 skipped（当前基线含 WP8、2026-08-04 审查修复与 2026-08-07 多供应商设置页新增用例）；WP8 聚焦（observability + E2E）13/13 通过；无 skip/假成功。前端 96 测试通过（13 文件）+ `vue-tsc -b` + `vite build --emptyOutDir false`。
+  - **验证证据**：后端全量 `pytest` 303 通过 + 2 skipped（含 WP8、2026-08-04 审查修复与多供应商设置页新增用例）；前端 141 测试通过（20 文件）+ `vue-tsc -b` + `vite build`；Electron 12 测试通过。
 - **2026-08-04 审查修复（H-01/M-01~06/L-01）**：未知编排异常固定投影（不泄露密钥/路径/响应片段）、模型上下文移除逻辑相对路径、Provider 输出预算本地强制、health 能力收紧为 `read_file`、前端 SSE 持续订阅（`tail=true` + `stream.end→closed`）、Provider ready-only 新建门禁、失败 UI 错误码固定文案映射、任务详情路由工作区归属校验、SSE 连接上限加锁原子化。细节见 `../phase2-model-provider-design.md` 与 `AGENTS.md` 状态追踪。
 
 #### 阶段 A（核心 Agent 更新，2026-08-04+）
 
-- **单一主工作区**：Mock Runtime/页面/服务已移除；产品入口收敛为 `/workspace/:workspaceId` 聊天式 Agent 主界面 + `/settings`。浏览器只提交 `workspaceId`、会话标识、用户消息与审批决定；请求体经 `extra="forbid"` 拒绝 rootPath/filePath/patch/command/key。
-- **运行期 Provider 设置**：设置页可编辑（Provider/Base URL/API Key/Model ID），「测试并保存」经最小化连接测试成功后写入 `ProviderCredentialStore`（开发期为进程内存，Electron 阶段替换为 OS Keychain）。密钥绝不进 SQLite/前端持久化/日志/SSE。
+- **单一主工作区**：Mock Runtime/页面/服务已移除；产品入口收敛为 `/workspace/:workspaceId` 聊天式 Agent 主界面 + 设置层。浏览器只提交 `workspaceId`、会话标识、用户消息与审批决定；请求体经 `extra="forbid"` 拒绝 rootPath/filePath/patch/command/key。
+- **运行期 Provider 设置**：设置层可编辑（Provider/Base URL/API Key/Model ID），「测试并保存」经最小化连接测试成功后写入 `ProviderCredentialStore`（Web 开发期为进程内存；桌面模式为 Windows Credential Manager，2026-08-13 已落地）。密钥绝不进 SQLite/前端持久化/日志/SSE。
 - **聊天闭环**：`chat_sessions`/`chat_messages` 持久化；`ChatService` + LangGraph `ChatOrchestrator` 分流自由问答（answer）与编辑任务（候选 ChangeSet → 版本绑定审批 → 原子写入）。模型检索扩展为 `read_file` + `search_files`，均由 WorkspaceGuard/token/策略/预算约束。
 - 详细设计见 `../phase2-model-provider-design.md` §6。
 
 #### 阶段 B（多供应商设置页，2026-08-07）
 
-- **前端**：设置页重构为暖纸多供应商配置中心——从 `WorkspaceView` 抽取共享侧边栏（`AppSidebar`），设置分类仅保留「模型与供应商」「关于」；供应商列表可搜索、右侧为配置安全摘要（无 key/完整 baseUrl）、「添加供应商」走暖纸弹层（协议模板 + 测试并添加）。
+- **前端**：设置页重构为暖纸多供应商配置中心——从 `WorkspaceView` 抽取共享侧边栏（`AppSidebar`），设置层仅保留「模型与供应商」「关于」；供应商列表可搜索、右侧为配置安全摘要（无 key/完整 baseUrl）、「添加供应商」走暖纸弹层（协议模板 + 测试并添加）。
 - **后端**：`ProviderCredentialStore` 扩展为多配置 dict（`get()` 保持激活配置语义，`ChatService`/`ModelOrchestrator` 零改动）；`/api/v1/provider/profiles` 提供 GET 列表 / POST 创建（连接测试通过才保存，fail-closed）/ GET|DELETE by id；未保存任何配置时回落环境变量派生的 `default` 条目。`ProviderProfile`/`ProviderProfileCreate` 为 `extra="forbid"` 安全摘要 DTO，任何响应不含 API Key、完整 Base URL 或 Authorization header。
-- 设计与实施记录：`../superpowers/specs/2026-08-07-multi-provider-settings-design.md` 与 `../superpowers/plans/2026-08-07-settings-provider-refactor.md`。
+- 实现证据见 `../phase2-model-provider-design.md` §6.1.1。
 
 ### 阶段 3：桌面端交付
 
-> **状态：进行中（2026-08-13）。** 设计以 `docs/superpowers/specs/2026-08-13-phase-3-windows-desktop-design.md` 为准，实施计划见 `docs/superpowers/plans/2026-08-13-phase-3-windows-desktop-delivery.md`。
+> **状态：已完成（2026-08-13）。** 设计以 `docs/superpowers/specs/2026-08-13-phase-3-windows-desktop-design.md` 为准。
 
 - 添加 Electron shell、FastAPI PyInstaller sidecar 生命周期、原生文件夹选择以及打包的本地数据存储。
 - **仅 Windows 首发**：`electron-builder` + NSIS 手动安装包；FastAPI 构建为随包 sidecar，用户无需安装 Python/Node/pip。

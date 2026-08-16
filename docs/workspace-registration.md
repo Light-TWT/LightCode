@@ -2,13 +2,13 @@
 
 ## 目标
 
-在 Electron 和原生目录选择尚未实现时，真实工作区只能由本地 FastAPI 服务端在启动时注册。浏览器负责选择已存在的 `workspaceId`，不能提交任意本地路径，也不能通过普通 API 创建或修改工作区根目录。
+真实工作区只能由本地 FastAPI 服务端注册。存在两种受控来源：**服务端启动静态配置**（`workspaces.json`）与 **桌面动态注册**（Phase 3，Electron 原生文件夹选择 → sidecar → 注册端点）。浏览器只负责选择已存在的 `workspaceId`，不能提交任意本地路径，也不能通过普通 API 创建或修改工作区根目录。
 
 本规范与 `phase1-safety-contract.md` 配套使用。
 
 ## 注册模型
 
-采用**服务端启动静态配置**：部署者维护一个不由浏览器写入的配置文件，FastAPI 在启动阶段读取并验证。SQLite 仅保存注册状态、策略版本和审计镜像；静态配置才是根路径的权威来源。
+采用**服务端受控注册**：部署者维护一个不由浏览器写入的静态配置文件（`backend/workspaces.json`，见 `backend/README.md`），FastAPI 在启动阶段读取并验证；桌面模式另经带令牌的注册端点写入 SQLite `desktop_workspaces`。SQLite 仅保存注册状态、策略版本和审计镜像；服务端私有实体才是根路径的权威来源。
 
 配置形状示例：
 
@@ -37,6 +37,8 @@
 3. 拒绝根目录自身为符号链接、junction 或其他 reparse point 的情形。
 4. 记录启用状态、策略版本和校验结果；校验失败的工作区不可进入真实执行流程。
 5. 将 canonical root 仅保留在服务端私有实体或内存注册表中。
+
+桌面动态注册（Phase 3）在同一安全边界内运行：绝对路径只经 Electron 主进程与 sidecar 的可信 loopback 通道传递（携带每次启动生成的一次性令牌），渲染进程不持有根路径；注册请求经 `WorkspaceGuard` canonical/reparse 校验后写入 `desktop_workspaces`，同一 canonical root 幂等返回既有工作区。
 
 工作区列表 API 至多返回：
 

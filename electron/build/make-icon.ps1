@@ -1,7 +1,8 @@
 # Generate multi-size icon.ico (16/32/48/64/128/256) from source PNG.
 # Uses BMP/DIB encoding (not PNG) for maximum electron-builder compatibility.
-$Source = "d:\works\pycharm-2025.1.1\Object\lightcode-local\electron\build\icon.png"
-$Output = "d:\works\pycharm-2025.1.1\Object\lightcode-local\electron\build\icon.ico"
+$Here = Split-Path -Parent $MyInvocation.MyCommand.Path
+$Source = Join-Path $Here "icon.png"
+$Output = Join-Path $Here "icon.ico"
 Add-Type -AssemblyName System.Drawing
 
 $src = [System.Drawing.Image]::FromFile($Source)

@@ -4,25 +4,21 @@ LightCode 是一个独立实现的、本地优先、可视化的编码智能体�
 
 ## 当前状态
 
-项目已完成 **Phase 0.5：本地运行时基础** 与 **Phase 1：安全变更 MVP（后端 T1-T7/T9 + 前端 T8 均已闭环）**：
+LightCode 已完成可发布的 Windows 桌面端 MVP。产品入口是基于已注册工作区的聊天式 Agent，Web 开发模式和 Electron 桌面模式共用 FastAPI、SQLite、Vue 和安全变更闭环。
 
-- 前端：Vue 3、TypeScript、Vite、Vue Router、Pinia，以及 Mock/HTTP/SSE 服务适配边界；Phase 1 真实闭环（注册工作区浏览、文件预览、内容搜索、真实任务创建/审批/SSE）已接入 Vue 视图。
-- 后端：FastAPI、SQLite，以及两套隔离的闭环——
-  - **Phase 0.5 Mock Runtime**：确定性种子数据、审批状态迁移、SQLite 持久化事件的 SSE 回放（仅供演示）。
-  - **Phase 1 真实安全变更闭环**：服务端静态注册授权工作区、受控只读工具、服务端生成的确定性 ChangeSet、版本绑定审批、单个既有 UTF-8 文本文件的原子替换，以及不启动外部进程的内建完整性验证。安全不变量见 `docs/phase1-safety-contract.md`。
-  - **Phase 2 模型提议（WP5–WP8，M4–M6，默认关闭）**：受限、默认关闭的 OpenAI-compatible Provider 子系统——模型只"提议"计划、受限只读工具请求（`read_file`）与服务端独立生成的候选 ChangeSet，不写文件、不执行命令、不决定审批。覆盖 Provider 基础设施（仅环境变量、fail-closed、零密钥泄露）、LangGraph 编排、API-mode E2E、可观测性、预算/并发/故障门禁与敏感数据扫描；WP8 经用户确认采用**零新增第三方依赖**策略。2026-08-04 审查修复进一步收紧：未知异常不泄露、模型上下文不含逻辑路径、输出预算本地强制、SSE 连接上限原子化。设计细节见 `docs/phase2-model-provider-design.md`。
-- 当前验证基线：前端 96 个测试通过（13 文件），后端 226 个测试通过（2 个因 symlink 环境跳过），前端 `vue-tsc -b + vite build` 通过；Phase 1 API 模式 HTTP 全闭环与 Phase 2 API-mode E2E（含 browse token、SSE 续传、敏感数据扫描断言）均已覆盖。设置页已重构为多供应商配置中心（供应商列表/搜索/安全摘要/添加弹层，2026-08-07）。
-
-Phase 1 前端与后端均已闭环，并于 **Phase 1R（安全收尾门禁 M1+M2+M3）** 关闭全部 3 个 P0 缺陷：敏感路径逐段 casefold 拒绝、审批绑定前置校验、多进程文件级 CAS 证明；M3 进一步落地不透明浏览令牌（取代自由路径）、SSE 预算/心跳/续传、前端 token 导航与运行时 DTO 校验。**Phase 2（WP5–WP8，M4–M6）** 已完成：Provider 基础设施默认关闭且 fail-closed、模型只提议（LangGraph 编排 + 服务端 ChangeSet）、API-mode E2E、可观测性、预算/并发/故障门禁与敏感数据扫描全部落地；**2026-08-04 审查修复**（H-01/M-01~06/L-01）完成，后端全量 195 测试通过、前端 94 测试通过。**2026-08-07 多供应商设置页（阶段 A/B）** 完成：设置页重构为暖纸多供应商配置中心（列表/搜索/安全摘要/添加弹层 + 后端 profiles CRUD，凭据仍只存进程内存），后端全量 226 测试通过、前端 96 测试通过。**2026-08-13 Phase 3：Windows 桌面端交付** 完成：Electron 安全外壳（沙箱化渲染进程 + 受限 IPC + 原生文件夹选择）、FastAPI sidecar（PyInstaller 打包 + loopback 绑定 + per-launch 令牌）、暖纸首页与工作区选择器、SQLite 桌面工作区注册、Windows Credential Manager 凭据持久化、NSIS 安装器；后端全量 303 测试通过、前端 141 测试通过、Electron 10 测试通过。
+- 前端：Vue 3、TypeScript、Vite、Vue Router、Pinia；产品运行时使用 HTTP/SSE 服务，测试仍使用类型化 fixture。
+- 后端：FastAPI + SQLite；工作区访问、模型出网、ChangeSet、审批和原子写入均由服务端控制。
+- 模型：OpenAI-compatible Provider 默认关闭。模型只能回答问题或提议单文件 ChangeSet，不能写文件、执行命令或决定审批。
+- 桌面端：Electron 沙箱渲染进程 + 受限 IPC + FastAPI sidecar + Windows Credential Manager + NSIS 安装器。
+- 验证基线：后端 303 passed / 2 skipped，前端 141 passed，Electron 12 passed；具体命令见各子目录 README。
 
 ## 快速入口
 
-1. 阅读 [项目规则](AGENTS.md)。
+1. 开发时阅读本地 [项目规则](AGENTS.md)；该文件是内部规则，不属于公开发行文档。
 2. 阅读 [产品架构](docs/architecture/lightcode-local-first-agent-design.md)。
-3. 阅读 [Phase 0.5 运行时基础计划](docs/2026-07-23-phase-0-5-runtime-foundation.md) 了解当前合约与实现证据；Phase 1 后端实现证据见 `AGENTS.md` 问题修复记录与 `docs/phase1-safety-contract.md`。
+3. 涉及真实文件变更时阅读 [安全契约](docs/phase1-safety-contract.md) 与 [工作区注册规范](docs/workspace-registration.md)。
 4. 阅读 [设计原型说明](docs/design/README.md) 与相关 HTML 原型；原型只定义视觉和交互，不是运行时代码。
-5. 涉及真实文件变更时阅读 [安全契约](docs/phase1-safety-contract.md) 与 [工作区注册规范](docs/workspace-registration.md)。
-6. 阅读 [文档索引](docs/README.md) 了解各文档角色与推荐阅读顺序。
+5. 阅读 [文档索引](docs/README.md) 了解各文档角色与推荐阅读顺序。
 
 ## 目录
 
@@ -30,13 +26,13 @@ Phase 1 前端与后端均已闭环，并于 **Phase 1R（安全收尾门禁 M1+
 frontend/       Vue 应用、类型、Pinia store 与 HTTP/SSE 服务适配器
 backend/        FastAPI + SQLite：Phase 1 真实安全变更闭环与 Phase 2 模型提议（默认关闭）
 electron/       Phase 3 桌面端：Electron 安全外壳 + FastAPI sidecar + NSIS 安装器
-docs/           架构、设计原型、阶段计划与安全契约
+docs/           架构、安全契约、桌面设计与发布清单
 scripts/        可复现的构建、验证与打包脚本
 ```
 
 ## 本地开发
 
-后端与前端可独立启动；API 模式同时提供 Phase 0.5 确定性 Mock 数据与 Phase 1 受控真实工作区端点。
+后端与前端可独立启动。开发期前端默认使用测试 fixture；连接真实后端时显式启用 API 模式。
 
 ```bash
 # 终端 1：从 backend/ 启动后端
@@ -61,7 +57,7 @@ npm run dev
 
 ## 非目标
 
-Phase 2 已实现的是**受限、默认关闭、仅提议**的模型 Provider：模型不写文件、不执行命令、不调用网络工具、不管理包、不写 Git、不决定审批。项目仍**不**实现以下能力（详见 `docs/2026-07-30-phase-2-model-and-dx-plan.md` §刻意不做）：
+模型 Provider 是**受限、默认关闭、仅提议**的能力：模型不写文件、不执行命令、不调用网络工具、不管理包、不写 Git、不决定审批。项目仍**不**实现以下能力：
 
 - 前端输入、持久化、同步、回显 API Key；
 - Shell、subprocess、PowerShell、cmd、pytest、npm、pip、包管理、网络工具或下载；
@@ -69,7 +65,7 @@ Phase 2 已实现的是**受限、默认关闭、仅提议**的模型 Provider�
 - 删除、新建、重命名、移动、二进制或多文件 ChangeSet；
 - 自动批准、自动修复循环或模型直接写文件；
 - 模型列表自动探测、自由 Provider URL 或隐式代理；
-- 在 M3 门槛达成前接入任意真实模型依赖、端点或网络调用（M3 已于 Phase 1R 达成）。
+- 自动模型发现、自由 Provider URL 或隐式代理。
 
 部署与打包相关约束见 `electron/README.md` 与 `docs/architecture/lightcode-local-first-agent-design.md`。
 

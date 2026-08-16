@@ -58,12 +58,12 @@ npm run build:win
 ## 数据位置
 
 - **不可变应用资源**（Vue、sidecar.exe、Electron）位于安装目录，由安装器升级替换。
-- **可变用户数据**（SQLite、技能、Provider 凭据）位于 `app.getPath('userData')`，**不在**安装目录内；卸载不会静默删除用户数据。
+- **可变用户数据**（SQLite、技能、工作区注册）位于 `app.getPath('userData')`，**不在**安装目录内；卸载不会静默删除用户数据。Provider API Key 单独存于 Windows Credential Manager。
 
 ## 验证
 
 ```powershell
-npm run test    # Electron 主进程/preload/sidecar 单元测试
+npm run test    # Electron 主进程/preload/sidecar 单元测试（当前基线 12 passed）
 ```
 
-发布前完整验证命令见 `../docs/superpowers/plans/2026-08-13-phase-3-windows-desktop-delivery.md` Task 9。
+发布前完整验证清单见 `../docs/release-checklist-phase3-desktop.md`。

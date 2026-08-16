@@ -35,6 +35,7 @@ Thumbs.db
 .superpowers
 .codex
 .opencode
+AGENTS.md
 
 # Skill 管理（2026-08-12）: 受控技能数据目录（ZIP 与 SKILL.md 均不入库）
 backend/data/skills/

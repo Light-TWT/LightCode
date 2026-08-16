@@ -1,52 +1,59 @@
-# LightCode 后端（Phase 0.5 Mock Runtime + Phase 1 安全变更 MVP + Phase 2 模型提议）
+# LightCode 后端
 
 ## 概述
 
-`backend/` 是基于 FastAPI 与 SQLite 的本地运行时，当前承载三条隔离的闭环：
+`backend/` 是 LightCode 的唯一权威边界：工作区注册、文件访问、模型出网、ChangeSet、审批与原子写入全部在服务端完成。基于 FastAPI + SQLite，当前承载：
 
-- **Phase 0.5 Mock Runtime**：由 `app/db/database.py` 的 `seed_database()` 确定性生成工作区、会话、任务、历史和审批状态，仅用于界面演示、服务适配与合约验证。不访问真实项目目录、不写源码、不执行命令、不调用模型、不接收或存储密钥。
-- **Phase 1 安全变更 MVP（后端）**：服务端静态注册授权工作区，提供受控只读工具（`list_files`/`read_file`/`search_files`）、服务端生成的确定性 ChangeSet、版本绑定审批，以及对单个既有 UTF-8 文本文件的原子替换与内建完整性验证。安全不变量以 `../docs/phase1-safety-contract.md` 与 `../docs/workspace-registration.md` 为准。
-- **Phase 2 模型提议（WP5–WP8，默认关闭）**：受限、默认关闭的 OpenAI-compatible Provider 子系统。模型只"提议"——计划、受限只读工具请求（`read_file`）与服务端独立生成的候选 ChangeSet；不写文件、不执行命令、不决定审批。发往 Provider 的上下文不含逻辑相对路径（仅 fileToken/哈希/受控文本），未知编排异常只投影固定文案。可观测性、预算/并发/故障门禁与敏感数据扫描见本文「可观测性与发布门禁」一节，设计细节见 `../docs/phase2-model-provider-design.md`。
-- **阶段 A/B（核心 Agent 更新，2026-08-04/08-07）**：单一主工作区 + 聊天闭环（`chat_sessions`/`chat_messages`，`ChatService` + LangGraph `ChatOrchestrator`）；设置页支持**多供应商**配置（`/api/v1/provider/profiles` CRUD，凭据经 `ProviderCredentialStore` 进程内存存储，不落盘），模型检索扩展为 `read_file` + `search_files`（受控 token/策略/预算）。设计细节见 `../docs/phase2-model-provider-design.md` §6。
-
-三条闭环共享同一 SQLite 与 SSE 基础设施，但数据严格隔离：Phase 0.5 种子任务标记为 `kind='mock'`，Phase 1 真实任务标记为 `kind='real'`，Phase 2 模型任务标记为 `kind='model'`，互不可跨端点触发对方行为。
+- **聊天闭环**：`chat_sessions` / `chat_messages` 持久化，`ChatService` + LangGraph `ChatOrchestrator` 分流自由问答（answer）与编辑任务（candidate_edit_intent）。
+- **模型提议**：OpenAI-compatible Provider 默认关闭、仅"提议"——模型计划、受限只读工具请求（`read_file`/`search_files`）与服务端独立生成的候选 ChangeSet；不写文件、不执行命令、不决定审批。发往 Provider 的上下文不含逻辑相对路径（仅 fileToken/哈希/受控文本）。可观测性、预算/并发/故障门禁与敏感数据扫描见本文「可观测性」一节，设计细节见 `../docs/phase2-model-provider-design.md`。
+- **真实文件能力**：工作区注册（静态 `workspaces.json` + 桌面动态注册）、受控只读工具（`list_files`/`read_file`/`search_files`）、服务端生成的确定性 ChangeSet、版本绑定审批、单个既有 UTF-8 文本文件的原子替换与内建完整性验证。安全不变量以 `../docs/phase1-safety-contract.md` 与 `../docs/workspace-registration.md` 为准。
+- **Provider 运行期设置**：多供应商 profiles（`/api/v1/provider/profiles` CRUD）与设置（`/provider/settings`），凭据经 `ProviderCredentialStore` 存储——Web 开发期为进程内存，桌面模式为 Windows Credential Manager。
+- **技能管理**：ZIP 上传、详情、启用/删除与 Agent 门禁，见 `app/services/skill_service.py`。
 
 ## 结构
 
 ```text
 app/
-  main.py                  FastAPI 入口、CORS、SQLite 与 WorkspaceRegistry 生命周期
-  api/routes.py            REST 与 SSE 路由（Mock + Phase 1 真实端点）
-  db/database.py           SQLite schema、迁移、初始化与确定性种子
-  db/connection.py         独立连接工厂（WAL + busy_timeout + row factory），供并发验证复用
+  main.py                  FastAPI 入口、CORS、SQLite 与 WorkspaceRegistry 生命周期；GET /health
+  api/routes.py            REST 与 SSE 路由（prefix=/api/v1）
+  config/
+    model_provider.py      ModelProviderConfig（仅环境变量、fail-closed、safe_summary 无密钥）
+    desktop.py             桌面模式配置（数据目录、sidecar 令牌/端口）
+    skills.py              技能目录与预算常量
+  db/
+    database.py            SQLite schema、迁移与初始化（WAL + busy_timeout）
+    connection.py          独立连接工厂（供并发验证复用）
   schemas/
     contracts.py           camelCase Pydantic 请求/响应合约（extra="forbid"）
-    errors.py              稳定错误码（Phase1Error）
+    model_contracts.py     模型/Provider/聊天 DTO（extra="forbid"）
+    skill_contracts.py     技能 DTO
+    errors.py              稳定错误码（Phase1Error / MODEL_* / SKILL_*）
   security/
     fs.py                  文件系统分类与规范化
     guard.py               WorkspaceGuard 统一路径守卫
+    policy.py              策略唯一来源（扩展名白名单、敏感路径、预算常量）
   services/
-    runtime.py             Mock 查询、审批状态迁移与事件读取
-    changeset.py           确定性 append-marker ChangeSet 生成
-    atomic_write.py        临时文件 + os.replace 原子替换 + 内建 UTF-8/哈希验证 + 每文件锁
     phase1.py              真实任务生命周期与 6 步审批写入协议
-    credential_store.py    可替换 Provider 凭据存储（阶段 A/B 起多配置内存实现）
-    chat_service.py        ChatService + LangGraph ChatOrchestrator（自由问答/编辑任务分流）
+    changeset.py           确定性 ChangeSet 生成与精确唯一文本替换
+    atomic_write.py        临时文件 + os.replace 原子替换 + 内建 UTF-8/哈希验证 + 每文件锁
+    chat_service.py        ChatService + LangGraph ChatOrchestrator
+    model_orchestrator.py  LangGraph 编排与 create_model_task（模型只提议）
+    openai_compatible_provider.py  OpenAI-compatible chat 适配（信任边界/超时/预算/错误分类）
+    llm_client.py          build_llm 工厂（trust_env=False / follow_redirects=False / max_retries=0）
+    credential_store.py    可替换 Provider 凭据存储（内存 / Windows Credential Manager）
     browse_tokens.py       HMAC-SHA256 短期浏览令牌（绑定 workspace+operation+relative_path）
     event_service.py       SSE 事件生成（重放上限/心跳/tail 续传/最大连接数）
-    model_orchestrator.py  Phase 2 LangGraph 编排与 create_model_task（模型只提议）
-    openai_compatible_provider.py  OpenAI-compatible chat 适配（信任边界/超时/预算/错误分类）
-    observability.py       WP8 单一日志/指标出口（JSON 格式、关联 ID、redact 拒绝名单、进程内 Metrics）
-config/
-    model_provider.py      ModelProviderConfig（仅环境变量、fail-closed、safe_summary 无密钥）
-llm_client.py             build_llm 工厂（trust_env=False / follow_redirects=False / max_retries=0）
+    workspace_registration.py  桌面动态工作区注册（令牌校验 + canonical 校验）
+    skill_package.py       ZIP 安全校验与提取（fail-closed）
+    skill_service.py       技能 CRUD 与 Agent 门禁
+    observability.py       单一日志/指标出口（JSON 格式、关联 ID、redact 拒绝名单、进程内 Metrics）
   workspaces/
-    registry.py            服务端静态工作区注册表（启动加载）
+    registry.py            服务端工作区注册表（静态配置加载）
 tests/                    pytest 用例；每个用例使用隔离临时数据库
 pyproject.toml            Python 依赖与 pytest 配置
 ```
 
-SSE 事件生成在 `app/services/event_service.py`（重放上限 1000、心跳 10s、tail 窗口 30s、最大连接数 50），由 `app/api/routes.py` 通过 `stream_events(...)` 输出。SSE 仅回放 SQLite 中已持久化且按 `sequence` 排序的事件，不是持续模型流。每帧携带 `id:`（即 `sequence`），支持 `?after_sequence=<n>` 显式续传与浏览器自动重连的 `Last-Event-ID`；`?tail=true` 时回放后保持连接轮询新事件，否则发送 `stream.end` 后关闭。Phase 1 真实任务事件复用既有的 `task_events` 表，并有独立端点 `GET /api/v1/real-tasks/{taskId}/events`。
+SSE 事件生成在 `app/services/event_service.py`（重放上限 1000、心跳 10s、tail 窗口 30s、最大连接数 50），由 `app/api/routes.py` 通过 `stream_events(...)` 输出。SSE 仅回放 SQLite 中已持久化且按 `sequence` 排序的事件。每帧携带 `id:`（即 `sequence`），支持 `?after_sequence=<n>` 显式续传与浏览器自动重连的 `Last-Event-ID`；`?tail=true` 时回放后保持连接轮询新事件，否则发送 `stream.end` 后关闭。
 
 ## 依赖与启动
 
@@ -54,7 +61,7 @@ SSE 事件生成在 `app/services/event_service.py`（重放上限 1000、心跳
 
 ```bash
 python -m venv .venv
-source .venv/bin/activate        # Windows: .venv\Scripts\activate
+.venv\Scripts\activate        # Windows；macOS/Linux: source .venv/bin/activate
 python -m pip install -e ".[dev]"
 ```
 
@@ -66,118 +73,104 @@ uvicorn app.main:app --reload --port 8000
 
 `main.py` 会将本地 `backend/` 置于 Python 导入路径前部，避免系统环境中同名 `app` 包影响 `uvicorn app.main:app`。
 
-前端 API 模式可通过 Vite `/api` 代理访问 `http://127.0.0.1:8000`，也可使用直接 API 基址 `http://127.0.0.1:8000/api/v1`。以 API 模式启动前端（连通 Phase 1 真实端点与 `/real` 页面）：
-
-```bash
-# 从 frontend/ 目录
-VITE_LIGHTCODE_RUNTIME=api npm run dev
-```
-
-不设置该变量时前端使用内置 Mock 服务，不访问后端。
+前端开发模式通过 Vite `/api` 代理访问 `http://127.0.0.1:8000`（见 `frontend/README.md`）。
 
 ## 配置与数据
 
 ### 运行时数据库
 
-运行时数据库包含审批后的 Mock 任务状态与 Phase 1 真实任务/ChangeSet/审批记录，不应进入源码历史。
-
-- 默认路径：`<repo>/backend/data/lightcode.db`。
-- 由 `backend/app/main.py` 基于自身位置解析为绝对路径。
-- 可使用 `LIGHTCODE_DATABASE_PATH` 指向隔离的临时数据库；相对路径以 `backend/` 为基准解析，而不是当前工作目录。
+- 默认路径：`<repo>/backend/data/lightcode.db`，由 `main.py` 基于自身位置解析为绝对路径。
+- 可使用 `LIGHTCODE_DATABASE_PATH` 指向隔离的临时数据库；相对路径以 `backend/` 为基准解析。
 - 根 `.gitignore` 忽略 `backend/data/*.db` 及其 `-shm`/`-wal` 文件。
+- 运行时数据（会话、消息、任务、ChangeSet、审批、桌面工作区注册）绝不进入源码历史。
 
-### 工作区注册配置（Phase 1）
+### 工作区注册
 
-Phase 1 真实工作区只来自服务端启动静态配置，浏览器不得提交本地路径：
-
-- 默认配置文件：`backend/workspaces.json`（含 `rootPath` + `targetFile` 等，含机器特定绝对路径）。
-- 也可用环境变量 `LIGHTCODE_WORKSPACES_CONFIG` 指向任意 JSON 配置文件。
-- 该配置文件**已 gitignore，绝不提交**（防止泄露本机目录结构）。
-- 配置文件缺失时服务正常启动，但真实工作区数量为零（仅 Mock 能力可用）。
-- 仓库内置 `backend/workspaces.example.json` 模板：复制为 `backend/workspaces.json` 后，将每条 `rootPath` 改为本机真实绝对路径即可（其余字段按需调整；`rootPath` 不得是符号链接/联结且必须真实存在）。
+- **静态注册**：默认配置文件 `backend/workspaces.json`（含 `rootPath` + `targetFile` 等，含机器特定绝对路径）；也可用 `LIGHTCODE_WORKSPACES_CONFIG` 指向任意 JSON。该文件**已 gitignore，绝不提交**。
+- **桌面动态注册**：桌面模式经 `POST /api/v1/desktop/workspaces/register` 注册（per-launch sidecar 令牌校验，canonical/reparse 校验后写入 SQLite `desktop_workspaces`），同一 canonical root 幂等返回既有工作区。
+- 仓库内置 `backend/workspaces.example.json` 模板：复制为 `backend/workspaces.json` 后，将每条 `rootPath` 改为本机真实绝对路径（`rootPath` 不得是符号链接/junction 且必须真实存在）。
 - 配置形态与启动校验规则见 `../docs/workspace-registration.md`。
 
-```bash
-# 用隔离配置启动（示例）
-LIGHTCODE_WORKSPACES_CONFIG=/tmp/lightcode-workspaces.json uvicorn app.main:app --port 8000
-```
+### 凭据存储
+
+- Web 开发期：`InMemoryProviderCredentialStore`（进程内存，重启后丢失，绝不落盘）。
+- 桌面模式：`WindowsCredentialManagerProviderCredentialStore`（Windows Credential Manager，见 `credential_store.py`）。
+- 任何情况下 API Key 不进 SQLite、日志、SSE 或前端持久化。
 
 ## REST 路由
 
-### Phase 0.5 Mock 端点
-
 ```text
-GET  /health
-GET  /api/v1/workspaces/recent
-GET  /api/v1/workspaces
-GET  /api/v1/workspaces/{workspaceId}
-GET  /api/v1/workspaces/{workspaceId}/sessions
-GET  /api/v1/sessions/{sessionId}/tasks/current
-POST /api/v1/tasks/{taskId}/changeset/approve
-GET  /api/v1/workspaces/{workspaceId}/tasks/history
-GET  /api/v1/tasks/{taskId}
-GET  /api/v1/tasks/{taskId}/events
+GET   /health                                       服务存活探针
+GET   /api/v1/registered-workspaces                 注册工作区列表
+GET   /api/v1/registered-workspaces/{id}/files      文件树（nodeToken）
+GET   /api/v1/registered-workspaces/{id}/file       文件读取（fileToken）
+GET   /api/v1/registered-workspaces/{id}/search     内容搜索（query）
+POST  /api/v1/desktop/workspaces/register           桌面动态注册（sidecar 令牌）
+POST  /api/v1/real-tasks                            创建真实任务
+GET   /api/v1/real-tasks/{id}                       任务详情
+POST  /api/v1/real-tasks/{id}/approval              审批（decision/changeSetId/revision/diffHash/idempotencyKey）
+GET   /api/v1/real-tasks/{id}/events                SSE 事件（续传/tail）
+GET   /api/v1/provider/health                       只读健康状态（不发网络请求）
+GET   /api/v1/provider/settings                     设置摘要
+POST  /api/v1/provider/settings/test                仅测试连接
+POST  /api/v1/provider/settings                     测试并保存
+DELETE /api/v1/provider/settings                    清除
+GET   /api/v1/provider/profiles                     供应商列表
+POST  /api/v1/provider/profiles                     添加（连接测试通过才保存）
+GET   /api/v1/provider/profiles/{id}                供应商详情
+DELETE /api/v1/provider/profiles/{id}               删除供应商
+POST  /api/v1/model-tasks                           创建模型任务
+GET   /api/v1/model-tasks/{id}                      模型任务详情
+GET   /api/v1/workspaces/{id}/chat-sessions         会话列表
+POST  /api/v1/workspaces/{id}/chat-sessions         创建会话
+GET   /api/v1/chat-sessions/{id}                    会话详情
+POST  /api/v1/chat-sessions/{id}/messages           提交消息
+PATCH /api/v1/chat-sessions/{id}                    重命名等
+DELETE /api/v1/chat-sessions/{id}                   删除会话
+GET   /api/v1/chat-sessions/{id}/events             SSE chat 事件
+GET   /api/v1/skills                                技能列表
+GET   /api/v1/skills/{id}                           技能详情
+GET   /api/v1/skills/{id}/document                  技能文档
+POST  /api/v1/skills/upload                         ZIP 上传
+PATCH /api/v1/skills/{id}/status                    启用/禁用
+DELETE /api/v1/skills/{id}                          删除（仅 uploaded）
 ```
 
-所有 JSON 使用 camelCase，并与 `frontend/src/types/agent.ts` 对齐。 Mock 审批是当前唯一状态修改操作：它更新确定性 Mock 状态并追加 `changeset.approved`、`verification.started`、`verification.completed` 事件；不会写入真实文件或执行真实验证。
-
-### Phase 1 真实端点
-
-```text
-GET  /api/v1/registered-workspaces
-GET  /api/v1/registered-workspaces/{workspaceId}/files?nodeToken=<opaque>
-GET  /api/v1/registered-workspaces/{workspaceId}/file?fileToken=<opaque>
-GET  /api/v1/registered-workspaces/{workspaceId}/search?query=<text>
-POST /api/v1/real-tasks
-GET  /api/v1/real-tasks/{taskId}
-POST /api/v1/real-tasks/{taskId}/approval
-GET  /api/v1/real-tasks/{taskId}/events
-```
-
-文件树（`/files`）与文件读取（`/file`）不再接收自由路径，改用不透明浏览令牌（`browse_tokens`）：`/files` 对每个条目签发绑定 `(workspaceId, operation="list", relativePath)` 的令牌（secret/link 条目发空令牌，可见不可开）；`/file` 用 `fileToken`（绑定 `operation="read"`）解析真实相对路径，令牌经 HMAC 校验，签名不符/workspace 不符/operation 不符/过期均 fail-closed 拒绝。`/search` 命中项带回绑定 `operation="read"` 的令牌供前端直接打开。
-
-真实任务 SSE 端点支持 `?after_sequence=`、`Last-Event-ID` 续传与 `?tail=true` 轮询。公共 DTO、SSE、日志与错误信息均不含真实根路径；审批请求仅接受 `decision`/`changeSetId`/`revision`/`diffHash`/`idempotencyKey`，且 Pydantic `extra="forbid"` 拒绝任何 `rootPath`/`filePath`/patch/command。稳定错误码见 `app/schemas/errors.py`。
+所有 JSON 使用 camelCase。文件树（`/files`）与文件读取（`/file`）不接收自由路径，改用不透明浏览令牌（`browse_tokens`）；`/search` 命中项带回绑定 `operation="read"` 的令牌供前端直接打开。公共 DTO、SSE、日志与错误信息均不含真实根路径；审批请求仅接受 `decision`/`changeSetId`/`revision`/`diffHash`/`idempotencyKey`，Pydantic `extra="forbid"` 拒绝任何 `rootPath`/`filePath`/patch/command。稳定错误码见 `app/schemas/errors.py`。
 
 ## 禁止清单（全局）
 
-- **不受限/持续的模型流**：Phase 2 允许的模型 Provider 必须是默认关闭、仅"提议"的——不能写文件、执行命令、调用网络工具、管理包、写 Git 或决定审批；完整约束见 `../docs/phase2-model-provider-design.md`。
-- Phase 1/Phase 2 之外的任意真实文件系统修改：新建/删除/重命名/移动、多文件事务、二进制/非 UTF-8/超限文件；
+- 模型写文件、执行命令、调用网络工具、管理包、写 Git 或决定审批；
+- 新建/删除/重命名/移动、多文件事务、二进制/非 UTF-8/超限文件的修改；
 - Shell、`subprocess`、依赖安装、网络下载与 Git 写操作；
-- API Key、密码、token 或其他密钥的接收、持久化、事件记录、前端传播、日志或截图；密钥仅来自后端环境变量，浏览器不输入/回显/传输；
-- Electron。
+- API Key、密码、token 或其他密钥进入 SQLite、日志、SSE、前端持久化或截图。
 
-Phase 1 允许的受控真实读取与单文件原子写入，以及 Phase 2 模型提议闭环，必须在 `../docs/phase1-safety-contract.md` 与 `../docs/phase2-model-provider-design.md` 的全部不变量下执行。
-
-## 可观测性与发布门禁（WP8）
+## 可观测性
 
 所有日志与指标只经 `app/services/observability.py`，避免多 sink 泄露敏感数据。
 
 ### 日志级别
 
 - 由环境变量 `LIGHTCODE_LOG_LEVEL` 控制（默认 `WARNING`）。
-- `configure_logging()` 将 `httpx`/`httpcore`/`openai`/`langchain*` 日志器压到 `WARNING`，
-  阻断第三方库在 INFO 打印完整请求 URL（含 provider base URL）的泄露路径。
+- `configure_logging()` 将 `httpx`/`httpcore`/`openai`/`langchain*` 日志器压到 `WARNING`，阻断第三方库在 INFO 打印完整请求 URL（含 provider base URL）的泄露路径。
 - 每条记录为单个 JSON 对象，附关联 ID（`correlation_id`）；`exc_info` 文本被脱敏。
 
 ### 指标
 
-- 进程内 `Metrics` 单例（`observability.py`）只聚合数值：任务状态转换、工具调用（名称/类别/耗时）、
-  provider 调用（provider/模型 ID/HTTP 类别/耗时/token）、预算耗尽、并发拒绝、SSE 连接/续传、SQLite busy。
-- 指标不含 prompt/response/key/header/完整路径。`Metrics.snapshot()` 仅返回计数器/gauge/耗时直方图汇总。
-- 进程内单例仅对单进程后端有效；多 worker 部署需外部聚合（不在 Phase 2 范围内）。
+- 进程内 `Metrics` 单例只聚合数值：任务状态转换、工具调用（名称/类别/耗时）、provider 调用（provider/模型 ID/HTTP 类别/耗时/token）、预算耗尽、并发拒绝、SSE 连接/续传、SQLite busy。
+- 指标不含 prompt/response/key/header/完整路径。进程内单例仅对单进程后端有效。
 
 ### 敏感数据不变
 
-- 绝不记录：API Key、Authorization/Cookie、完整 prompt/response、原始代码、完整根路径、绝对路径、
-  provider 请求头、未脱敏异常栈、`sk-`/`Bearer` 形状的凭据。
-- `redact()` 对 secret/location 键与凭据形状做递归脱敏；API-mode E2E 测试断言日志与事件载荷不含
-  `test-key` / `api.example.test` / `Bearer` / `Authorization` / 真实临时路径。
+- 绝不记录：API Key、Authorization/Cookie、完整 prompt/response、原始代码、完整根路径、provider 请求头、未脱敏异常栈、`sk-`/`Bearer` 形状的凭据。
+- `redact()` 对 secret/location 键与凭据形状做递归脱敏；`test_model_e2e.py` 断言日志与事件载荷不含 `test-key`/`api.example.test`/`Bearer`/`Authorization`/真实临时路径。
 
 ### 失败语义
 
-- `MODEL_BUDGET_EXCEEDED`：输入字节 / 输出 token / 每 task 请求数超预算；输出预算在 Provider 响应返回后由 `_check_output_budget` 本地强制（completion_tokens 超限，或 usage 缺失时按 `max_output_tokens*4` UTF-8 字节保守上限）。
-- `MODEL_CONCURRENCY_EXCEEDED`：进程内 `_ModelTaskGate` 已达 `max_concurrent_tasks=1`（Phase 1 写租约的 Phase 2 类比，无 schema 变更）。
-- `APPLY_CONFLICT` / `STALE_BASE` 沿用 Phase 1；`InstrumentedConnection` 拦截 SQLite `locked`/`busy` 并计入 `sqlite.busy` 指标（保留 `PRAGMA busy_timeout` 与上下文协议，无 schema 变更）。
+- `MODEL_BUDGET_EXCEEDED`：输入字节 / 输出 token / 每 task 请求数超预算；输出预算由 `_check_output_budget` 本地强制。
+- `MODEL_CONCURRENCY_EXCEEDED`：进程内 `_ModelTaskGate` 已达 `max_concurrent_tasks=1`。
+- `APPLY_CONFLICT` / `STALE_BASE`：审批写入前的并发冲突与基线不一致检测。
+- `InstrumentedConnection` 拦截 SQLite `locked`/`busy` 并计入 `sqlite.busy` 指标（保留 `PRAGMA busy_timeout` 与上下文协议）。
 
 ## 验证
 
@@ -187,11 +180,6 @@ Phase 1 允许的受控真实读取与单文件原子写入，以及 Phase 2 模
 python -m pytest -q
 ```
 
-当前基线为 **226 个后端测试通过 + 2 个跳过**（跳过项为沙箱环境 `os.symlink` 静默降级导致不可检测，对应逻辑已由 monkeypatch 测试覆盖）。其中 WP8 新增 `test_observability.py`（9 例）与 `test_model_e2e.py`（4 例），聚焦可观测性/敏感数据扫描/API-mode E2E 共 13 例全绿；2026-08-04 审查修复新增 `test_model_orchestrator.py` 敏感文本/路径最小化 2 例、`test_model_provider_http.py` 输出预算 2 例、`test_event_service.py` SSE 并发原子性 1 例；2026-08-07 多供应商设置页新增 `test_provider_profiles.py`（11 例）与 `test_provider_settings.py`（8 例）。全量验证还应从 `frontend/` 运行 `npm run test` 与 `npm run build`：
+当前基线：**303 passed / 2 skipped**（跳过项为沙箱环境 `os.symlink` 静默降级导致不可检测，对应逻辑由 monkeypatch 测试覆盖）。聚焦用例：`test_phase1_*`（真实任务/审批/安全）、`test_model_orchestrator.py` / `test_model_e2e.py`（模型编排/API-mode E2E）、`test_observability.py`（脱敏/指标）、`test_provider_*`（Provider 设置/健康）、`test_skill_*`（技能）、`test_desktop_*` / `test_credential_manager.py`（桌面注册与凭据）。
 
-```bash
-npm run test
-npm run build
-```
-
-同一 SQLite 数据库重启后，审批后的 Mock 状态与 Phase 1 真实任务/ChangeSet/审批记录会保留；使用新的数据库启动则回到确定性种子或 `awaiting_approval` 状态。
+全量验证还应从 `frontend/` 运行 `npm run test` 与 `npm run build`，从 `electron/` 运行 `npm run test`。

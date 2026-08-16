@@ -42,7 +42,8 @@
 
 ## 六、数据备份提醒（对用户）
 
-- [ ] 用户数据位置：`%APPDATA%\LightCode`（SQLite、技能、凭据）。
+- [ ] 用户数据位置：`app.getPath('userData')`（如 `%APPDATA%\LightCode`），含 SQLite、技能与工作区注册。
+- [ ] Provider API Key 单独存于 Windows Credential Manager，**不在**上述用户数据目录中。
 - [ ] 升级前建议备份该目录。
 
 ## 七、公开发布门禁（发布前必须完成）
@@ -53,10 +54,10 @@
 
 ## 记录本
 
-- 版本：`0.1.0`
+- 版本：`0.3.0`
 - 后端测试通过数：303 passed / 2 skipped
 - 前端测试通过数：141 passed（19 文件）
-- Electron 测试通过数：10 passed（3 文件）
+- Electron 测试通过数：12 passed（4 文件）
 - sidecar 产物大小：约 180 MB
 - 安装器产物大小：约 256 MB
 - 安装器 SHA-256：`____________________`

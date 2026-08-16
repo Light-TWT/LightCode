@@ -19,13 +19,13 @@ $RepoRoot = Split-Path -Parent $PSScriptRoot
 $BackendDir = Join-Path $RepoRoot "backend"
 $OutDir     = Join-Path $RepoRoot "electron\resources\sidecar"
 
-# Allow overriding the Python interpreter. Defaults to a local miniconda.
+# Allow overriding the Python interpreter. Defaults to the python on PATH.
 $Py = $env:LIGHTCODE_PYTHON
 if (-not $Py) {
-    $Py = "D:\works\Miniconda-py313\python.exe"
+    $Py = (Get-Command python -ErrorAction SilentlyContinue).Source
 }
 if (-not (Test-Path $Py)) {
-    throw "Python interpreter not found at '$Py'. Set LIGHTCODE_PYTHON to a Python with PyInstaller installed."
+    throw "Python interpreter not found. Set LIGHTCODE_PYTHON to a Python with PyInstaller installed."
 }
 
 Write-Host "Using Python: $Py"
