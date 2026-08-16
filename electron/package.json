@@ -1,6 +1,6 @@
 {
   "name": "lightcode-desktop",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "LightCode Windows desktop shell (Phase 3)",
   "private": true,
   "main": "dist/main.js",
@@ -12,7 +12,7 @@
     "build": "tsc",
     "copy:frontend": "powershell -ExecutionPolicy Bypass -File ../scripts/copy-frontend-to-electron.ps1",
     "build:sidecar": "cd .. && powershell -ExecutionPolicy Bypass -File scripts/build-sidecar.ps1",
-    "build:win": "npm run compile && npm run copy:frontend && electron-builder --win"
+    "build:win": "npm run compile && npm run copy:frontend && powershell -ExecutionPolicy Bypass -File build/make-icon.ps1 && electron-builder --win"
   },
   "devDependencies": {
     "@types/node": "^22.10.0",
@@ -41,6 +41,7 @@
     "directories": {
       "output": "release"
     },
+    "afterPack": "./afterPack.js",
     "win": {
       "target": [
         {
@@ -50,6 +51,7 @@
           ]
         }
       ],
+      "icon": "build/icon.ico",
       "signAndEditExecutable": false
     },
     "nsis": {

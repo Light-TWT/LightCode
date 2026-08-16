@@ -3,6 +3,8 @@
  *  品牌区 + 导航 + 底部设置入口，避免两套主导航视觉漂移。
  *  设置按钮只发出 openSettings 事件，由父视图决定结果：工作区页打开设置层，
  *  独立设置页维持当前展示。 */
+import logo from '@/assets/logo.png'
+
 defineProps<{
   /** 当前展开的导航键；null 表示全部收起（工作区页语义） */
   activeNav: 'workspace' | 'files' | 'sessions' | null
@@ -22,7 +24,7 @@ const emit = defineEmits<{
 <template>
   <aside class="sidebar" :class="{ collapsed }" aria-label="侧边导航">
     <div class="brand">
-      <span class="brand-mark" aria-hidden="true">L</span>
+      <img class="brand-mark" :src="logo" alt="LightCode" draggable="false">
       <span class="brand-text">LightCode</span>
       <button
         type="button"
@@ -116,10 +118,9 @@ const emit = defineEmits<{
   padding: 0 16px;
 }
 .brand-mark {
-  width: 26px; height: 26px; flex-shrink: 0;
-  display: grid; place-items: center;
-  border-radius: 6px; background: #2a2a2a; color: #f5f0e8;
-  font-family: 'Caveat', cursive; font-weight: 700; font-size: 14px;
+  width: 30px; height: 30px; flex-shrink: 0;
+  border-radius: 6px;
+  object-fit: contain;
 }
 .brand-text { flex: 1; font-family: 'Caveat', cursive; font-size: 22px; font-weight: 700; color: #1a1a1a; white-space: nowrap; }
 .brand-arrow {
