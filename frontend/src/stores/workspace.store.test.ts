@@ -212,6 +212,42 @@ describe('workspace store：聊天会话与消息（核心 Agent 更新阶段 A�
     expect(store.messages).toHaveLength(1)
   })
 
+  it('chat SSE stream.end 后自动重连并从 lastChatSequence 续传', async () => {
+    const store = useWorkspaceStore()
+    chatMocks.getChatSession.mockResolvedValue({
+      session: chatSession(),
+      messages: [chatMessage(1)],
+    })
+    await store.openChatSession('chat-1', 'ws-1')
+    expect(eventMocks.subscribeChatEvents).toHaveBeenCalledTimes(1)
+    let sub = captureChatSubscription()
+    expect(sub.options.afterSequence).toBe(1)
+    // 模拟服务端 tail 窗口（30s）结束：触发 onEnd，应自动重开一条新流
+    sub.options.onEnd!()
+    expect(eventMocks.subscribeChatEvents).toHaveBeenCalledTimes(2)
+    sub = captureChatSubscription()
+    expect(sub.sessionId).toBe('chat-1')
+    expect(sub.options.tail).toBe(true)
+    expect(sub.options.afterSequence).toBe(1)
+  })
+
+  it('chat SSE 在重连后的新流上继续追加消息（用户气泡不丢失）', async () => {
+    const store = useWorkspaceStore()
+    chatMocks.getChatSession.mockResolvedValue({
+      session: chatSession(),
+      messages: [chatMessage(1)],
+    })
+    await store.openChatSession('chat-1', 'ws-1')
+    // 模拟用户第 3 次输入前的流已结束，触发重连
+    captureChatSubscription().options.onEnd!()
+    expect(store.chatConnection).toBe('connecting')
+    const sub = captureChatSubscription()
+    // 新流按当前序列续传后，用户消息帧照常追加
+    sub.onEvent(chatMessage(2, { role: 'user', content: '第三次输入' }))
+    expect(store.messages.map((m) => m.content)).toContain('第三次输入')
+    expect(store.chatConnection).toBe('open')
+  })
+
   it('renameChatSession 成功后同步列表标题', async () => {
     const store = useWorkspaceStore()
     store.chatSessions = [chatSession(), chatSession({ id: 'chat-2', title: '第二个' })]

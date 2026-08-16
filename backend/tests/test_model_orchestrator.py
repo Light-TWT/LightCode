@@ -491,6 +491,117 @@ def test_parse_model_message_qwen_xml_tool_call() -> None:
     assert kind == "invalid"
 
 
+def test_parse_model_message_tolerates_prose_and_fenced_json() -> None:
+    """Qwen wraps the protocol JSON in prose and/or a Markdown fence; the
+    parser must extract the object while staying fail-closed."""
+    # Prose + fenced JSON (the shape observed against Qwen on a first message).
+    kind, payload = parse_model_message(
+        '让我先搜索项目中的前端配置文件，了解使用了哪些技术栈。\n\n'
+        '```json\n{"kind":"tool_request","tool":"search_files","arguments":{"query":"package.json"}}\n```'
+    )
+    assert kind == "tool"
+    assert payload["tool"] == "search_files"
+    assert payload["arguments"] == {"query": "package.json"}
+
+    # Prose + bare JSON object.
+    kind, payload = parse_model_message(
+        '好的，回答如下：{"kind":"answer","text":"项目使用 Vue + TypeScript。"}'
+    )
+    assert kind == "answer"
+    assert payload["text"] == "项目使用 Vue + TypeScript。"
+
+    # Braces inside string literals must not unbalance the extraction.
+    kind, payload = parse_model_message(
+        '{"kind":"answer","text":"模板形如 {placeholder}，注意转义 \\" 引号。"} 结束'
+    )
+    assert kind == "answer"
+    assert "{placeholder}" in payload["text"]
+
+
+def test_invalid_first_reply_retries_then_succeeds(env) -> None:
+    """Qwen's intermittent prose-only first reply (no JSON at all) must not
+    fail the task: the orchestrator retries once, then read -> intent -> approval."""
+    state = {"n": 0}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        state["n"] += 1
+        body = json.loads(request.content)
+        messages = body["messages"]
+        token = _token_from_messages(messages)
+        if state["n"] == 1:
+            # Pure prose with no braces: fails every parse path -> triggers retry.
+            content = "我直接回答你：这个项目使用了 Vue、TypeScript 与 Vite。"
+        elif state["n"] == 2:
+            content = json.dumps(
+                {"kind": "tool_request", "tool": "read_file", "arguments": {"fileToken": token}}
+            )
+        else:
+            base = _base_sha_from_messages(messages)
+            payload = {
+                "kind": "candidate_edit_intent",
+                "fileToken": token,
+                "baseSha256": base,
+                "edits": [{"expectedText": "first line", "replacementText": "retry edit"}],
+                "rationale": "x",
+                "plan": ["y"],
+            }
+            content = json.dumps(payload)
+        return _chat_completion(content)
+
+    orch = ModelOrchestrator(
+        env["db"], env["registry"], env["guard"], env["config"],
+        transport=httpx.MockTransport(handler),
+    )
+    resp = orch.create_model_task(env["workspace_id"], "retry")
+    assert resp.state == "awaiting_approval"
+    cs = env["db"].execute(
+        "SELECT proposed_text FROM changesets WHERE id = ?", (resp.changeSetId,)
+    ).fetchone()
+    assert "retry edit" in cs["proposed_text"]
+
+
+def test_retry_after_empty_reply_then_succeeds(env) -> None:
+    """A transient empty provider reply (MODEL_UPSTREAM_ERROR) is retried once;
+    the corrected read -> intent flow must still reach awaiting_approval."""
+    state = {"n": 0}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        state["n"] += 1
+        body = json.loads(request.content)
+        messages = body["messages"]
+        token = _token_from_messages(messages)
+        if state["n"] == 1:
+            # Empty assistant content -> provider.chat raises upstream error.
+            content = ""
+        elif state["n"] == 2:
+            content = json.dumps(
+                {"kind": "tool_request", "tool": "read_file", "arguments": {"fileToken": token}}
+            )
+        else:
+            base = _base_sha_from_messages(messages)
+            payload = {
+                "kind": "candidate_edit_intent",
+                "fileToken": token,
+                "baseSha256": base,
+                "edits": [{"expectedText": "first line", "replacementText": "empty retry"}],
+                "rationale": "x",
+                "plan": ["y"],
+            }
+            content = json.dumps(payload)
+        return _chat_completion(content)
+
+    orch = ModelOrchestrator(
+        env["db"], env["registry"], env["guard"], env["config"],
+        transport=httpx.MockTransport(handler),
+    )
+    resp = orch.create_model_task(env["workspace_id"], "empty-retry")
+    assert resp.state == "awaiting_approval"
+    cs = env["db"].execute(
+        "SELECT proposed_text FROM changesets WHERE id = ?", (resp.changeSetId,)
+    ).fetchone()
+    assert "empty retry" in cs["proposed_text"]
+
+
 def test_xml_tool_call_reaches_awaiting_approval(env) -> None:
     """An orchestration whose first model reply uses the Qwen XML-tag shape
     must still flow through read -> candidate -> awaiting_approval."""

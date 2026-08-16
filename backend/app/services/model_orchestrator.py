@@ -42,6 +42,7 @@ from app.schemas.errors import (
     MODEL_CONCURRENCY_EXCEEDED,
     MODEL_EDIT_INVALID,
     MODEL_RESPONSE_INVALID,
+    MODEL_UPSTREAM_ERROR,
     STALE_BASE,
     Phase1Error,
 )
@@ -139,6 +140,68 @@ def _strip_fences(text: str) -> str:
     return stripped
 
 
+def _first_json_object(text: str) -> Optional[str]:
+    """Extract the first balanced ``{...}`` object from arbitrary text.
+
+    Qwen and other OpenAI-compatible providers sometimes wrap the protocol JSON
+    in prose plus a Markdown fence (``让我先搜索…\\n```json\\n{...}\\n````), or
+    just prose before a bare object. ``_strip_fences`` cannot handle those
+    because the text does not start with a fence. This scan respects JSON
+    string literals so braces inside strings do not unbalance the depth.
+
+    Fail-closed: the returned text still has to be valid JSON and pass the
+    schema validation below; an unrelated ``{`` in prose yields a parse miss,
+    not a wrong acceptance.
+    """
+    start = text.find("{")
+    if start == -1:
+        return None
+    depth = 0
+    in_str = False
+    escaped = False
+    for i in range(start, len(text)):
+        ch = text[i]
+        if in_str:
+            if escaped:
+                escaped = False
+            elif ch == "\\":
+                escaped = True
+            elif ch == '"':
+                in_str = False
+            continue
+        if ch == '"':
+            in_str = True
+        elif ch == "{":
+            depth += 1
+        elif ch == "}":
+            depth -= 1
+            if depth == 0:
+                return text[start : i + 1]
+    return None
+
+
+def _try_json_object(text: str) -> Optional[dict]:
+    """Parse a dict from the model reply (fast path: bare JSON or start-fence)."""
+    stripped = _strip_fences(text)
+    try:
+        data = json.loads(stripped)
+    except (json.JSONDecodeError, ValueError):
+        return None
+    return data if isinstance(data, dict) else None
+
+
+def _try_wrapped_json(text: str) -> Optional[dict]:
+    """Parse a dict from JSON wrapped in prose and/or a Markdown fence (Qwen)."""
+    candidate = _first_json_object(text)
+    if candidate is None:
+        return None
+    try:
+        data = json.loads(candidate)
+    except (json.JSONDecodeError, ValueError):
+        return None
+    return data if isinstance(data, dict) else None
+
+
 def _try_xml_tool_call(text: str) -> Optional[dict]:
     """Tolerate Qwen-style XML-tag tool calls.
 
@@ -177,13 +240,14 @@ def _try_xml_tool_call(text: str) -> Optional[dict]:
 
 def parse_model_message(text: str) -> tuple[str, Optional[dict]]:
     """Return ``(kind, payload)``; ``kind`` is 'answer'|'tool'|'intent'|'invalid'."""
-    try:
-        data = json.loads(_strip_fences(text))
-    except (json.JSONDecodeError, ValueError):
-        data = None
+    # 1) Fast path: bare JSON or a fence at the very start.
+    data = _try_json_object(text)
     if data is None:
-        # Fall back to Qwen-style XML-tag tool calls (see _try_xml_tool_call).
+        # 2) Qwen-style XML-tag tool call: <search_files>{...}</search_files>.
         data = _try_xml_tool_call(text)
+    if data is None:
+        # 3) JSON wrapped in prose and/or a Markdown fence (Qwen style).
+        data = _try_wrapped_json(text)
     if not isinstance(data, dict):
         return ("invalid", None)
     kind = data.get("kind")
@@ -200,6 +264,55 @@ def parse_model_message(text: str) -> tuple[str, Optional[dict]]:
     except Exception:  # noqa: BLE001 - any schema violation is a protocol error
         return ("invalid", None)
     return ("invalid", None)
+
+
+#: Fixed corrective nudge sent on a transient empty/invalid model reply.
+#: It deliberately repeats the JSON-only requirement to counter Qwen-style
+#: providers that wrap output in prose or emit empty thinking-only replies.
+_RETRY_NUDGE = (
+    "上一条回复没有按协议输出：必须是单个 JSON 对象（answer / tool_request / "
+    "candidate_edit_intent）。请重新输出，只输出 JSON，不要添加任何解释、散文或代码围栏。"
+)
+
+
+def _call_model_with_retry(
+    provider: OpenAICompatibleProvider,
+    messages: list[dict[str, Any]],
+) -> tuple[str, Optional[dict], list[dict[str, Any]], Optional[Phase1Error]]:
+    """One provider call with a single corrective retry.
+
+    Qwen and other OpenAI-compatible providers intermittently reply with an
+    empty assistant message (``MODEL_UPSTREAM_ERROR``) or prose-wrapped JSON
+    that fails the protocol parse. A fixed one-line nudge absorbs those
+    transient failures without weakening the fail-closed protocol — the
+    retried reply must still pass :func:`parse_model_message`. Any other error
+    code (budget, rate limit, concurrency, …) is returned untouched so the
+    caller preserves the original fail-closed code.
+
+    Returns ``(kind, payload, accumulated_messages, error)`` where ``kind`` is
+    'answer'|'tool'|'intent'|'invalid' and ``error`` is the original
+    ``Phase1Error`` when a non-retryable call failed (``None`` otherwise).
+    ``accumulated_messages`` includes the assistant replies (and the retry
+    nudge) so the flow history stays coherent.
+    """
+    working = list(messages)
+    for attempt in (0, 1):
+        try:
+            text = provider.chat(working)
+        except Phase1Error as exc:
+            if attempt == 0 and exc.code == MODEL_UPSTREAM_ERROR:
+                working = working + [{"role": "user", "content": _RETRY_NUDGE}]
+                continue
+            return "invalid", None, working, exc
+        kind, payload = parse_model_message(text)
+        if kind != "invalid":
+            return kind, payload, working + [{"role": "assistant", "content": text}], None
+        if attempt == 0:
+            working = working + [
+                {"role": "assistant", "content": text},
+                {"role": "user", "content": _RETRY_NUDGE},
+            ]
+    return "invalid", None, working, None
 
 
 def run_model_tool(
@@ -464,12 +577,9 @@ class ModelOrchestrator:
 
     def _node_call_model(self, state: _OrchState) -> dict:
         provider: OpenAICompatibleProvider = state["provider"]
-        try:
-            text = provider.chat(state["messages"])
-        except Phase1Error as exc:
-            return self._fail(state, exc.code, exc.message)
-        messages = state["messages"] + [{"role": "assistant", "content": text}]
-        kind, payload = parse_model_message(text)
+        kind, payload, messages, err = _call_model_with_retry(provider, state["messages"])
+        if err is not None:
+            return self._fail(state, err.code, err.message)
         if kind == "tool":
             return {"messages": messages, "pending": "tool", "candidate": payload}
         if kind == "intent":
@@ -982,12 +1092,9 @@ class ChatOrchestrator:
 
     def _node_call_model(self, state: _ChatState) -> dict:
         provider: OpenAICompatibleProvider = state["provider"]
-        try:
-            text = provider.chat(state["messages"])
-        except Phase1Error as exc:
-            return self._fail(state, exc.code, exc.message)
-        messages = state["messages"] + [{"role": "assistant", "content": text}]
-        kind, payload = parse_model_message(text)
+        kind, payload, messages, err = _call_model_with_retry(provider, state["messages"])
+        if err is not None:
+            return self._fail(state, err.code, err.message)
         if kind == "answer":
             answer = str(payload.get("text") or "").strip()
             if not answer:

@@ -463,6 +463,13 @@ export const useWorkspaceStore = defineStore('workspace', {
     /** 订阅当前会话的 chat.event（tail 续传；EventSource 断线自动带 Last-Event-ID 重连） */
     _subscribeChatEvents(sessionId: string) {
       this._cleanupChatEvents()
+      this._openChatEventStream(sessionId)
+    },
+
+    /** 打开/重开聊天事件流。服务端 tail 窗口（30s）结束后 stream.end，这里自动
+     *  重开一条流并从 lastChatSequence 续传，保证后续消息（含用户气泡）持续到达。 */
+    _openChatEventStream(sessionId: string) {
+      if (this.currentSessionId !== sessionId) return
       this.chatConnection = 'connecting'
       this._unsubscribeChatEvents = subscribeChatEvents(
         sessionId,
@@ -478,7 +485,9 @@ export const useWorkspaceStore = defineStore('workspace', {
           afterSequence: this.lastChatSequence,
           tail: true,
           onEnd: () => {
-            if (this.currentSessionId === sessionId) this.chatConnection = 'closed'
+            if (this.currentSessionId !== sessionId) return
+            this.chatConnection = 'closed'
+            this._openChatEventStream(sessionId)
           },
         },
       )
